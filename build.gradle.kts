@@ -1,5 +1,5 @@
 plugins {
-    val kotlinVersion = "1.9.20"
+    val kotlinVersion = "2.0.21"
     kotlin("jvm") version kotlinVersion
     kotlin("plugin.serialization") version kotlinVersion
 
@@ -17,8 +17,8 @@ repositories {
 }
 
 dependencies {
-    api("cn.hutool:hutool-all:5.8.18")
+    api("cn.hutool:hutool-all:6.0.0")
     api(files("libs/wifeOttery48-0.1.9-test4-mirai2.jar"))
-    implementation("com.belerweb:pinyin4j:2.5.0")
-    implementation("net.coobird:thumbnailator:0.4.14")
+    implementation("com.belerweb:pinyin4j:2.6.0")
+    implementation("net.coobird:thumbnailator:0.4.20")
 }
