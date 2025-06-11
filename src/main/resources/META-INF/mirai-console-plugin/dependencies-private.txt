@@ -1,0 +1,8 @@
+cn.hutool:hutool-all:5.8.18
+com.belerweb:pinyin4j:2.5.0
+net.coobird:thumbnailator:0.4.14
+org.jetbrains.kotlin:kotlin-stdlib-common:1.7.10
+org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.7.10
+org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.7.10
+org.jetbrains.kotlin:kotlin-stdlib:1.7.10
+org.jetbrains:annotations:13.0
