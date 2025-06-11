@@ -1,18 +1,15 @@
 on: [push, pull_request]
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest  # 指定Windows运行环境
     steps:
       - uses: actions/checkout@v3
-      - name: Set up JDK 11
+      - name: Set up JDK
         uses: actions/setup-java@v3
         with:
           java-version: '11'
           distribution: 'temurin'
-      - name: Build with Maven
-        run: mvn clean package -DskipTests
-      - name: Upload artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: target-jar
-          path: target/*.jar
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+      - name: Build with Gradle
+        run: gradlew.bat build  # Windows需使用bat脚本
