@@ -3,6 +3,6 @@ rootProject.name = "shitboy"
 pluginManagement {
     repositories {
         gradlePluginPortal()
-        maven("https://repo.mirai.mamoe.net/snapshots")
+        maven("https://maven.aliyun.com/repository/gradle-plugin")
     }
 }
