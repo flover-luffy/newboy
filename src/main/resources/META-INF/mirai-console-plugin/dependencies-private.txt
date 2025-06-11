@@ -1,5 +1,5 @@
-cn.hutool:hutool-all:6.0.0
-com.belerweb:pinyin4j:2.6.0
+cn.hutool:hutool-all:5.8.38
+com.belerweb:pinyin4j:2.5.0
 net.coobird:thumbnailator:0.4.20
 org.jetbrains.kotlin:kotlin-stdlib-common:2.0.21
 org.jetbrains.kotlin:kotlin-stdlib-jdk7:2.0.21
