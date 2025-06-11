@@ -12,7 +12,7 @@ version = "0.1.11-dev7"
 
 repositories {
     maven("https://maven.aliyun.com/repository/public")
-    maven("https://s01.oss.sonatype.org/content/repositories/snapshots")
+    maven("https://mcl.repo.mamoe.net/")
     mavenCentral()
 }
 
