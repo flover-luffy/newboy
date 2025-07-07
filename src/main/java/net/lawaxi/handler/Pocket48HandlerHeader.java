@@ -6,8 +6,8 @@ import net.lawaxi.util.Properties;
 public class Pocket48HandlerHeader {
 
     private final Properties properties;
-    private final String pa = "MTY3OTYzOTUwOTAwMCw3NDEwLEYyMzk2RkJGQTI5ODEwRUFFOEI4NEUyNDQ0RkREQjUzLDIwMjEwNjA5MDE=";
-    private final String version = "7.0.4";
+    private final String pa = "MTc1MTg5NTgzMjAwMCwzODMzLEQ3ODVBRENBM0U3QTkzRDVFNTJCMjVDQUJDRUY4NDczLA==";
+    private final String version = "7.1.34";
     private String token;
 
     public Pocket48HandlerHeader(Properties properties) {
@@ -27,8 +27,8 @@ public class Pocket48HandlerHeader {
                 request.header("Content-Type", "application/json;charset=utf-8")
                         .header("Host", "pocketapi.48.cn")
                         .header("pa", pa)
-                        .header("User-Agent", "PocketFans201807/7.0.4 (iPhone; iOS 16.2; Scale/3.00)")
-                        .header("appInfo", String.format("{\"vendor\":\"apple\",\"deviceId\":\"5857F116-D35C-478E-95B1-8540034740B3\",\"appVersion\":\"%s\",\"appBuild\":\"23011601\",\"osVersion\":\"16.2.0\",\"osType\":\"ios\",\"deviceName\":\"iPhone 13\",\"os\":\"ios\"}", version));
+                        .header("User-Agent", "PocketFans201807/7.1.34 (iPhone; iOS 19.0; Scale/2.00)")
+                        .header("appInfo", String.format("{\"vendor\":\"apple\",\"deviceId\":\"8D6DDD0B-2233-4622-89AA-AABB14D4F37B\",\"appVersion\":\"%s\",\"appBuild\":\"25060602\",\"osVersion\":\"19.0\",\"osType\":\"ios\",\"deviceName\":\"iPhone 11\",\"os\":\"ios\"}", version));
     }
 
     public HttpRequest setLoginHeader(HttpRequest request) {
