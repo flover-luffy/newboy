@@ -1,174 +1,220 @@
-# Shitboy：丝芭应援群机器人插件
+# Newboy - 傻妞一号
 
-Mirai-Console插件，构建mirai（[mamoe/mirai](https://github.com/mamoe/mirai), [docs.mirai.mamoe.net](https://docs.mirai.mamoe.net/)）后拖入plugins文件夹运行即可，首次运行生成配置，全部内容可在QQ中使用指令自助完成。
+一个基于 Mirai Console 的多功能 QQ 机器人插件，专为 SNH48 Group 相关服务设计。
 
-## Add-on
+## ✨ 功能特性
 
-本插件尽可能简化功能，如您需要更多功能，推荐您在**安装本插件的同时**安装下列Add-ons
+### 📱 口袋48 播报
+- **房间消息监控**: 实时监控指定房间的消息并转发到 QQ 群
+- **开播提醒**: 自动检测成员开播状态并发送通知
+- **多群组支持**: 支持同时向多个 QQ 群推送消息
+- **消息过滤**: 智能过滤重复和无效消息
 
-- [Lawaxi/ShitBoyJuJuAddon](https://github.com/Lawaxi/ShitBoyJuJuAddon)
-  - 在所有房间监测某些聚聚的发言
-  - 注：本插件需要将Shitboy配置中pocket48/save_login设置为false
-- [Lawaxi/ShitBoyWeidianAddon](https://github.com/Lawaxi/ShitBoyWeidianAddon)
-  - 微店订单抽卡
-  - 微店PK
+### 📊 在线状态监控
+- **成员状态追踪**: 实时监控指定成员的在线/离线状态
+- **状态变化通知**: 成员上线/下线时自动发送格式化通知
+- **多成员管理**: 支持同时监控多个成员
+- **历史记录**: 保存状态变化历史记录
+- **灵活配置**: 支持自定义监控间隔和通知格式
 
-## 使用说明
+### 🌐 微博监控
+- **用户动态**: 监控指定用户的微博动态
+- **超话监控**: 跟踪超级话题的最新内容
+- **实时推送**: 新动态自动推送到指定群组
 
-在群内或私聊机器人输入`“/帮助”“/help”“/?”`均可获得指令表
+### 🛒 微店订单监控
+- **订单提醒**: 监控微店新订单并及时通知
+- **商品更新**: 跟踪商品信息变化
+- **多店铺支持**: 支持监控多个微店账号
 
-### （0）通用功能
+## 🚀 快速开始
 
-1. 欢迎新成员：群管理私聊机器人输入`“/欢迎 <群id> xxx”`可开启欢迎，可多行
+### 环境要求
+- Java 8 或更高版本
+- Mirai Console 2.16.0+
+- Kotlin 2.0.21+
 
-### （1）口袋48
+### 安装步骤
 
-1. 关注：
-    - 群管理在群内直接输入`“/口袋 关注 room_id”`
-    - 同上`“/口袋 取消关注 room_id”`
-    - 任意群成员输入`“/口袋 关注列表”`
-    - room_id可以通过查询指令获取或从机器人外其他渠道获取
-    - 关注加密房间需要额外输入指令`“/口袋 连接 room_id server_id”`（server_id通过查询指令获取）（无需密码）
-2. 查询：
-    - 口袋48官方设定为
-        - 每个账号（成员&聚聚）有一个id（或star_id）
-        - 在团成员/袋王账号id下属一个server_id，队伍房单独有server_id
-        - server_id就是口袋48软件里小偶像菜单的本质，可以下属多个room_id（或channel_id）
-    - 任意群成员输入`“/口袋 搜索 小偶像名”`可以自动查询id、server_id、room_id
-    - 同上`“/口袋 查询 id”`可根据id自动查询server_id、room_id
-    - 同上`“/口袋 查询2 server_id”`可根据server_id查下属room_id
+1. **下载插件**
+   ```bash
+   git clone https://github.com/your-repo/newboy.git
+   cd newboy
+   ```
 
-### （2）B站
+2. **编译插件**
+   ```bash
+   ./gradlew buildPlugin
+   ```
 
-1. 博主关注
-   - 群管理在群内直接输入`“/bili 关注 uid”`
-   - 同上`“/bili 取消关注 uid”`
-   - 任意群成员输入`“/bili 关注列表”`
-2. 直播关注
-    - 群管理在群内直接输入`“/bililive 关注 room_id”`
-    - 同上`“/bililive 取消关注 room_id”`
-    - 任意群成员输入`“/bililive 关注列表”`
-    - room_id为直播间链接最后的数字，是直播间单独，区别于主站uid
+3. **安装插件**
+   - 编译完成后，插件文件位于 `build/mirai/` 目录
+   - 将 `.mirai2.jar` 文件复制到 Mirai Console 的 `plugins` 目录
 
-### （3）微博
+4. **启动 Mirai Console**
+   - 首次启动会自动生成配置文件
+   - 配置文件位于 `config/net.luffy.newboy/config.setting`
 
-1. 博主关注
-    - 群管理在群内直接输入`“/微博 关注 uid”`
-    - 同上`“/微博 取消关注 uid”`
-    - 任意群成员输入`“/微博 关注列表”`
-1. 超话关注
-    - 群管理在群内直接输入`“/超话 关注 超话id”`
-    - 同上`“/超话 取消关注 超话id”`
-    - 任意群成员输入`“/超话 关注列表”`
+## ⚙️ 配置说明
 
-### （4）微店
+### 基础配置
+```ini
+# 插件启用状态
+enable=true
 
-1. 提交Cookie
-    - 一切的开始
-    - 群管理私聊机器人输入`“/微店 <群id> cookie xxx”`，xxx为以`__spider__`开头的一串
-    - 同上`“/微店 <群id> 关闭”`可删除提交的cookie并关闭微店功能
-    - 群播报默认开启，群管理私聊机器人输入`“/微店 <群id> 群播报”`切换
-    - 不知道如何获取cookie的饭头可以参考http://www.lgyzero.top/weidianCookie
-    - cookie基本上是微店全权，勿轻易外泄
-2. 屏蔽/普链/特殊链
-    - 【订单播报】普通商品和特殊商品均播报订单，屏蔽商品不播报
-    - 【商品详情（包括排行）播报】普通商品仅在有订单时附带播报，特殊商品会定期播报不管是否有新订单
-    - 建议比较糊的yyh在pk时使用特殊商品增加pk氛围，随时有订单的yyh无所谓
-    - 屏蔽后自动发货取消，可用于应援物等非jz类商品
-    - 方法
-      - 商品默认不屏蔽，群管理私聊机器人输入`“/微店 <群id> 屏蔽 商品id”`可切换
-      - 商品默认为普链，群管理私聊机器人输入`“/微店 <群id> # 商品id”`可切换
-      - 商品id可通过“全部商品”查询功能获得
-3. 功能
-    - 自动发货（出现新订单时自动发货）：群管理私聊机器人输入`“/微店 <群id> 自动发货”`可切换
-    - 全部商品：`“/微店 <群id> 全部”`
-    - 全部发货（包括旧订单）：`“/微店 <群id> 全部发货”`
-    - 查单个商品进度、贡献排行：`“/微店 <群id> 查 商品id”`
+# 管理员QQ号（多个用逗号分隔）
+admins=123456789,987654321
 
-### （4）配置文件 ./config/net.lawaxi.shitboy/config.setting
+# 安全群组（仅这些群可使用管理命令）
+secureGroup=111111111,222222222
+```
 
-~~~python
-[]
-enable = true #开启插件
-admins = #安全的人，QQ号以逗号隔开，在任意群内无论是否为管理员都可使用管理员指令
-secureGroup = #安全的群，以逗号隔开，在这些群内任何成员可使用管理员指令
-[pocket48]
-account = #口袋手机号
-password = #口袋密码
-#需要输入口袋账密后重启才可使用口袋机器人功能
-schedule = * * * * * #监测时间间隔，具体搜索Cron定时任务表达式
-~~~
+### 口袋48 配置
+```ini
+# 监控间隔（Cron表达式）
+pocket48_pattern=*/30 * * * * ?
 
-## 更新日志
+# 登录方式1：使用账号密码
+pocket48_account=your_account
+pocket48_password=your_password
 
-### 0.1.0
+# 登录方式2：使用Token（推荐）
+pocket48_token=your_token
+```
 
-1. 口袋48房间播报：除文字消息外均提示“不支持的消息”
+### 在线状态监控配置
+```ini
+# 启用在线状态监控
+onlineStatus_enable=true
 
-### 0.1.1 (内测更新)
+# 监控间隔（每2分钟检查一次）
+[schedule]
+onlineStatus=*/2 * * * *
 
-1. 口袋48房间播报更新：提示全部消息
-2. 易拉罐群特殊代码目前仅出现在util/Listener中，删掉即可正常使用
+# 监控订阅配置
+[subscribe]
+onlineStatus=[{"qqGroup":123456789,"memberSubs":["成员1","成员2"]}]
+```
 
-### 0.1.2
+### 微博配置
+```ini
+# 监控间隔
+weibo_pattern=*/5 * * * * ?
 
-1. Bilibili直播提醒功能
+# 用户订阅配置
+[subscribe]
+weibo_user=[{"qqGroup":123456789,"userSubs":[123456,789012]}]
+weibo_superTopic=[{"qqGroup":123456789,"sTopicSubs":["话题1","话题2"]}]
+```
 
-### 0.1.3
+## 🎮 命令使用
 
-1. 增加了群成员查询&关注&取关的功能<br>鉴于胡乱设置可能被群友群起而攻之，暂未添加权限功能
-2. 常规消息合并发送
-3. 易拉罐群特殊代码都在util/ListenerYLG中，删掉或用其他插件禁用即可正常使用
-4. test6-新增查直播&查录播功能
-5. test14-关注未解锁的加密房间
+### 基础命令
+- `/newboy help` - 显示帮助信息
+- `/newboy status` - 查看插件运行状态
+- `/newboy reload` - 重新加载插件配置
 
-### 0.1.5
+### 在线状态监控命令
+- `/newboy monitor` - 显示监控功能帮助
+- `/newboy monitor add <成员名>` - 添加成员到监控列表
+- `/newboy monitor remove <成员名>` - 从监控列表移除成员
+- `/newboy monitor list` - 查看当前监控列表
+- `/newboy monitor list realtime` - 查看实时状态对比
+- `/newboy monitor check <成员名>` - 查询指定成员在线状态
+- `/newboy monitor toggle` - 开关监控功能
+- `/newboy monitor sync` - 同步所有成员状态
+- `/newboy monitor stats` - 查看监控统计信息
+- `/newboy monitor interval <cron表达式>` - 设置监控间隔
 
-1. 群聊从没有关注到有关注后无需重启
-2. 微博超话播报
-3. test3-微博博主播报
-4. test6-权限设计
-5. test8-微博解析更新，在有管理员权限的群使用@全体成员功能
-6. test9-对房间语音的初步支持
-7. test10-对房间语音的全面支持
-8. test10-搜索 & 查询2
+### 使用示例
+```
+# 添加成员到监控
+/newboy monitor add 张三
 
-### 0.1.6
+# 设置每5分钟检查一次
+/newboy monitor interval */5 * * * *
 
-1. 微店播报
-2. 监测时间间隔修复
+# 查看实时状态
+/newboy monitor list realtime
+```
 
-### 0.1.7
+## 🔧 开发说明
 
-1. BUG修复
-2. test2-欢迎功能
-3. test4-Schedule Pattern可自定义
-4. test8-清理功能 & 全面优化
-5. test10-微店功能更新
-6. test15-save_login
-7. test16-getUserNickName
-9. test19-微店BUG修复 & 调增
-10. test20-WeidianBuyer使用int储存金额
+### 项目结构
+```
+src/main/java/net/luffy/
+├── Newboy.java              # 主插件类
+├── Listener.java            # 消息监听器
+├── command/
+│   └── NewboyCommand.java   # 命令处理器
+├── handler/                 # 各功能处理器
+│   ├── Pocket48Handler.java
+│   ├── WeiboHandler.java
+│   ├── WeidianHandler.java
+│   └── Xox48Handler.java
+├── util/                    # 工具类
+│   ├── ConfigOperator.java # 配置管理
+│   ├── OnlineStatusMonitor.java # 在线状态监控
+│   └── Properties.java     # 配置属性
+├── model/                   # 数据模型
+└── sender/                  # 消息发送器
+```
 
-### 0.1.8
+### 依赖库
+- **Hutool**: 5.8.38 - Java工具库
+- **pinyin4j**: 2.5.0 - 中文转拼音
+- **thumbnailator**: 0.4.20 - 图片处理
+- **Mirai Console**: 2.16.0 - 机器人框架
 
-1. B站主站关注
+### 构建命令
+```bash
+# 编译项目
+./gradlew build
 
-### 0.1.9
+# 构建插件
+./gradlew buildPlugin
 
-1. 微店订单播报显示买家排名（主插件重置微店播报功能，如使用WeidianAddon也需更新0.1.1以上版本）
-2. test4-B站主站关注BUG修复
-3. test5-未登录机器人时微店正常自动发货
-4. test6-微店排名标明是否为并列
+# 清理构建文件
+./gradlew clean
+```
 
-### 0.1.10
+## 📝 更新日志
 
-1. api更新（Addon请使用Maven: <scope>provided</scope>, Gradle: compile/api形式引用）
-2. test4-BUG修复
-3. test4-微店更新
-4. test5-BUG修复
+### v1.0.0
+- ✨ 初始版本发布
+- 🎉 支持口袋48消息播报
+- 📊 新增在线状态监控功能
+- 🌐 支持微博动态监控
+- 🛒 支持微店订单监控
+- 🎮 完整的命令系统
+- ⚙️ 灵活的配置管理
 
-### 0.1.11
+## 🤝 贡献指南
 
-1. 口袋更新：视频、视频翻牌采用短视频播报
-2. 查询成员显示贡献榜
+欢迎提交 Issue 和 Pull Request！
+
+1. Fork 本仓库
+2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
+3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
+4. 推送到分支 (`git push origin feature/AmazingFeature`)
+5. 开启 Pull Request
+
+## 📄 许可证
+
+本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情。
+
+## 🙏 致谢
+
+- [Mirai](https://github.com/mamoe/mirai) - 优秀的 QQ 机器人框架
+- [Hutool](https://hutool.cn/) - 强大的 Java 工具库
+- 所有贡献者和用户的支持
+
+## 📞 联系方式
+
+- 作者: luffy
+- 项目地址: [GitHub Repository](https://github.com/your-repo/newboy)
+- 问题反馈: [Issues](https://github.com/your-repo/newboy/issues)
+
+---
+
+**注意**: 本插件仅供学习和研究使用，请遵守相关平台的使用条款和法律法规。
