@@ -5,9 +5,24 @@ import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import net.luffy.Newboy;
 
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+
+/**
+ * 增强的Xox48处理器
+ * 提供成员在线状态查询，支持缓存、重试、性能监控等功能
+ */
 public class Xox48Handler extends WebHandler {
 
     private static final String API_MEMBER_ONLINE = "https://xox48.top/Api/member_online";
+    
+    // 配置管理
+    private final net.luffy.util.MonitorConfig config = net.luffy.util.MonitorConfig.getInstance();
+    
+    // 缓存和失败统计
+    private final ConcurrentHashMap<String, CachedResult> resultCache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, FailureStats> failureStats = new ConcurrentHashMap<>();
 
     public Xox48Handler() {
         super();
@@ -33,33 +48,87 @@ public class Xox48Handler extends WebHandler {
     }
 
     /**
-     * 查询成员在线状态 - 支持成员名称
-     * 判断逻辑：
-     * 1. 首先检查API响应中的msg字段是否为"success"
-     * 2. 然后检查error字段是否为"0"
-     * 3. 最后解析is_online字段获取在线状态
+     * 查询成员在线状态 - 支持成员名称（增强版）
+     * 功能特性：
+     * 1. 缓存机制：30秒内重复查询直接返回缓存结果
+     * 2. 失败统计：记录连续失败次数，超过阈值进入冷却期
+     * 3. 详细错误信息：提供具体的失败原因
+     * 4. 性能监控：记录查询耗时和成功率
      * @param name 成员名称
      * @return 在线状态信息对象，包含状态、消息等信息
      */
     public OnlineStatusResult queryMemberOnlineStatus(String name) {
+        if (name == null || name.trim().isEmpty()) {
+            return new OnlineStatusResult(false, "成员名称不能为空", name, -1, null, null, null);
+        }
+        
+        String normalizedName = name.trim();
+        long currentTime = System.currentTimeMillis();
+        
+        // 1. 检查缓存
+        CachedResult cached = resultCache.get(normalizedName);
+        if (cached != null && (currentTime - cached.timestamp) < config.getCacheExpireTime()) {
+            logInfo(String.format("使用缓存结果查询成员 %s 状态", normalizedName));
+            return cached.result;
+        }
+        
+        // 2. 检查失败统计，是否在冷却期
+        FailureStats stats = failureStats.get(normalizedName);
+        if (stats != null && stats.isInCooldown(currentTime)) {
+            String cooldownMsg = String.format("成员 %s 查询失败次数过多，冷却中 (剩余 %d 秒)", 
+                normalizedName, (stats.cooldownUntil - currentTime) / 1000);
+            logWarning(cooldownMsg);
+            return new OnlineStatusResult(false, cooldownMsg, normalizedName, -1, null, null, null);
+        }
+        
+        // 3. 执行查询
+        long startTime = System.currentTimeMillis();
         try {
-            // 直接构建请求体，避免字符串拼接
-            String requestBody = "name=" + name;
+            String requestBody = "name=" + normalizedName;
             
-            // 一次性设置所有请求参数，减少方法调用
-            HttpRequest request = HttpRequest.post(API_MEMBER_ONLINE)
-                    .header("Accept", "application/json, text/plain, */*")
-                    .header("Content-Type", "application/x-www-form-urlencoded")
-                    .header("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) AppleWebKit/605.1.15")
-                    .header("Origin", "https://xox48.top")
-                    .header("Referer", "https://xox48.top/v2024/")
-                    .body(requestBody);
+            String response = executeWithRetry(() -> {
+                HttpRequest request = HttpRequest.post(API_MEMBER_ONLINE)
+                        .header("Accept", "application/json, text/plain, */*")
+                        .header("Content-Type", "application/x-www-form-urlencoded")
+                        .header("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) AppleWebKit/605.1.15")
+                        .header("Origin", "https://xox48.top")
+                        .header("Referer", "https://xox48.top/v2024/")
+                        .setConnectionTimeout(DEFAULT_CONNECT_TIMEOUT)
+                        .setReadTimeout(DEFAULT_READ_TIMEOUT)
+                        .body(requestBody);
+                
+                return request.execute().body();
+            }, API_MEMBER_ONLINE, "POST");
             
-            String response = request.execute().body();
             JSONObject jsonResponse = JSONUtil.parseObj(response);
-            return parseOnlineStatusResponse(jsonResponse, name);
+            OnlineStatusResult result = parseOnlineStatusResponse(jsonResponse, normalizedName);
+            
+            long queryTime = System.currentTimeMillis() - startTime;
+            
+            if (result.isSuccess()) {
+                // 查询成功，缓存结果并重置失败统计
+                resultCache.put(normalizedName, new CachedResult(result, currentTime));
+                failureStats.remove(normalizedName);
+                
+                logInfo(String.format("成功查询成员 %s 状态，耗时 %d ms", normalizedName, queryTime));
+            } else {
+                // 查询失败，更新失败统计
+                updateFailureStats(normalizedName, currentTime);
+                logWarning(String.format("查询成员 %s 状态失败: %s，耗时 %d ms", 
+                    normalizedName, result.getMessage(), queryTime));
+            }
+            
+            return result;
+            
         } catch (Exception e) {
-            return new OnlineStatusResult(false, "查询失败", name, -1, null, null, null);
+            long queryTime = System.currentTimeMillis() - startTime;
+            updateFailureStats(normalizedName, currentTime);
+            
+            String errorMsg = String.format("查询异常: %s", e.getMessage());
+            logError(String.format("查询成员 %s 状态异常: %s，耗时 %d ms", 
+                normalizedName, e.getMessage(), queryTime));
+            
+            return new OnlineStatusResult(false, errorMsg, normalizedName, -1, null, null, null);
         }
     }
     
@@ -245,6 +314,113 @@ public class Xox48Handler extends WebHandler {
             }
             
             return result.toString();
+        }
+    }
+    
+    /**
+     * 更新失败统计
+     */
+    private void updateFailureStats(String memberName, long currentTime) {
+        failureStats.compute(memberName, (key, stats) -> {
+            if (stats == null) {
+                stats = new FailureStats();
+            }
+            stats.recordFailure(currentTime);
+            return stats;
+        });
+    }
+    
+    /**
+     * 清理过期的缓存和失败统计
+     */
+    public void cleanupCache() {
+        long currentTime = System.currentTimeMillis();
+        
+        // 清理过期缓存
+        resultCache.entrySet().removeIf(entry -> 
+            (currentTime - entry.getValue().timestamp) > config.getCacheExpireTime());
+        
+        // 清理过期的失败统计
+        failureStats.entrySet().removeIf(entry -> 
+            !entry.getValue().isInCooldown(currentTime) && 
+            entry.getValue().consecutiveFailures.get() == 0);
+        
+        logInfo(String.format("缓存清理完成: 缓存条目 %d, 失败统计 %d", 
+            resultCache.size(), failureStats.size()));
+    }
+    
+    /**
+     * 获取缓存统计信息
+     */
+    public String getCacheStats() {
+        long currentTime = System.currentTimeMillis();
+        int validCacheCount = 0;
+        int expiredCacheCount = 0;
+        
+        for (CachedResult cached : resultCache.values()) {
+            if ((currentTime - cached.timestamp) < config.getCacheExpireTime()) {
+                validCacheCount++;
+            } else {
+                expiredCacheCount++;
+            }
+        }
+        
+        int cooldownCount = (int) failureStats.values().stream()
+            .filter(stats -> stats.isInCooldown(currentTime))
+            .count();
+        
+        return String.format("缓存统计: 有效 %d, 过期 %d, 冷却中 %d, 失败统计 %d",
+            validCacheCount, expiredCacheCount, cooldownCount, failureStats.size());
+    }
+    
+    /**
+     * 重置所有缓存和统计
+     */
+    public void resetCache() {
+        resultCache.clear();
+        failureStats.clear();
+        resetStats();
+        logInfo("已重置所有缓存和统计信息");
+    }
+    
+    /**
+     * 缓存结果内部类
+     */
+    private static class CachedResult {
+        final OnlineStatusResult result;
+        final long timestamp;
+        
+        CachedResult(OnlineStatusResult result, long timestamp) {
+            this.result = result;
+            this.timestamp = timestamp;
+        }
+    }
+    
+    /**
+     * 失败统计内部类
+     */
+    private static class FailureStats {
+        final AtomicInteger consecutiveFailures = new AtomicInteger(0);
+        volatile long lastFailureTime = 0;
+        volatile long cooldownUntil = 0;
+        
+        void recordFailure(long currentTime) {
+            int failures = consecutiveFailures.incrementAndGet();
+            lastFailureTime = currentTime;
+            
+            if (failures >= config.getMaxConsecutiveFailures()) {
+                cooldownUntil = currentTime + config.getFailureCooldown();
+            }
+        }
+        
+        boolean isInCooldown(long currentTime) {
+            return currentTime < cooldownUntil;
+        }
+        
+        void reset() {
+            consecutiveFailures.set(0);
+            lastFailureTime = 0;
+            cooldownUntil = 0;
         }
     }
 }

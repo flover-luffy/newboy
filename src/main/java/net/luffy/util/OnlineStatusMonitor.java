@@ -10,10 +10,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 /**
- * 在线状态监控器
- * 提供成员在线状态的监控和通知功能
+ * 增强的在线状态监控器
+ * 提供成员在线状态的监控和通知功能，支持健康检查、失败统计、性能监控等
  */
 public class OnlineStatusMonitor {
     
@@ -24,6 +28,20 @@ public class OnlineStatusMonitor {
     
     // 存储监控状态的变化历史
     private final Map<String, StatusHistory> statusHistory = new ConcurrentHashMap<>();
+    
+    // 健康检查和监控指标
+    private final Map<String, MemberHealthStats> memberHealthStats = new ConcurrentHashMap<>();
+    private final AtomicLong totalChecks = new AtomicLong(0);
+    private final AtomicLong totalFailures = new AtomicLong(0);
+    private final AtomicLong totalNotifications = new AtomicLong(0);
+    private volatile long lastCheckTime = 0;
+    private volatile boolean isHealthy = true;
+    
+    // 配置管理
+    private final MonitorConfig config = MonitorConfig.getInstance();
+    
+    // 上次健康警告发送时间
+    private volatile long lastHealthWarningTime = 0;
     
     // 定时任务ID
     private String cronScheduleID;
@@ -373,10 +391,25 @@ public class OnlineStatusMonitor {
     }
     
     /**
-     * 检查所有监控的成员状态变化
+     * 检查所有监控的成员状态变化（增强版）
      * 这个方法应该被定时任务调用
+     * 功能特性：
+     * 1. 健康检查：监控整体系统健康状态
+     * 2. 失败统计：记录每个成员的查询失败情况
+     * 3. 自动恢复：对连续失败的成员进行特殊处理
+     * 4. 性能监控：记录查询耗时和成功率
      */
     public void checkStatusChanges() {
+        long startTime = System.currentTimeMillis();
+        lastCheckTime = startTime;
+        
+        int totalMembers = 0;
+        int successCount = 0;
+        int failureCount = 0;
+        int statusChangeCount = 0;
+        
+        Newboy.INSTANCE.getLogger().info("开始检查成员状态变化...");
+        
         for (Map.Entry<Long, Map<String, Integer>> groupEntry : groupMonitorConfig.entrySet()) {
             long groupId = groupEntry.getKey();
             Map<String, Integer> memberConfig = groupEntry.getValue();
@@ -384,19 +417,48 @@ public class OnlineStatusMonitor {
             for (Map.Entry<String, Integer> memberEntry : memberConfig.entrySet()) {
                 String memberName = memberEntry.getKey();
                 int lastStatus = memberEntry.getValue();
+                totalMembers++;
+                
+                // 获取或创建健康统计
+                MemberHealthStats healthStats = memberHealthStats.computeIfAbsent(
+                    memberName, k -> new MemberHealthStats(memberName));
                 
                 try {
+                    totalChecks.incrementAndGet();
+                    
+                    // 检查是否应该跳过此成员（连续失败过多）
+                    if (healthStats.shouldSkipCheck()) {
+                        Newboy.INSTANCE.getLogger().warning(
+                            String.format("跳过成员 %s 检查 - 连续失败 %d 次，下次检查时间: %s", 
+                                memberName, healthStats.consecutiveFailures.get(),
+                                LocalDateTime.ofEpochSecond(healthStats.nextCheckTime / 1000, 0, 
+                                    java.time.ZoneOffset.systemDefault().getRules().getOffset(java.time.Instant.now()))
+                                    .format(DateTimeFormatter.ofPattern("HH:mm:ss"))));
+                        continue;
+                    }
+                    
                     // 使用成员名称查询当前状态
                     Xox48Handler.OnlineStatusResult result = Newboy.INSTANCE.getHandlerXox48().queryMemberOnlineStatus(memberName);
                     
                     if (!result.isSuccess()) {
-                        Newboy.INSTANCE.getLogger().warning("监控成员 " + memberName + " 状态查询失败: " + result.getMessage());
+                        failureCount++;
+                        totalFailures.incrementAndGet();
+                        healthStats.recordFailure();
+                        
+                        Newboy.INSTANCE.getLogger().warning(
+                            String.format("监控成员 %s 状态查询失败: %s (连续失败 %d 次)", 
+                                memberName, result.getMessage(), healthStats.consecutiveFailures.get()));
                         continue;
                     }
+                    
+                    // 查询成功，重置失败计数
+                    successCount++;
+                    healthStats.recordSuccess();
                     
                     int currentStatus = result.getIsOnline();
                     
                     if (currentStatus != lastStatus) {
+                        statusChangeCount++;
                         // 状态发生变化，发送通知
                         String oldStatusText = lastStatus == 1 ? "在线" : "离线";
                         String newStatusText = currentStatus == 1 ? "在线" : "离线";
@@ -408,23 +470,28 @@ public class OnlineStatusMonitor {
                             notification = String.format(
                                 "%s\n" +
                                 "🟢上线啦！\n" +
-                                "上线时间：%s",
+                                "上线时间：%s\n" +
+                                "健康度：%.1f%%",
                                 memberName,
-                                java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+                                LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
+                                healthStats.getSuccessRate() * 100
                             );
                         } else {
                             // 下线通知
                             notification = String.format(
                                 "%s\n" +
                                 "🔴下线啦！\n" +
-                                "下线时间：%s",
+                                "下线时间：%s\n" +
+                                "健康度：%.1f%%",
                                 memberName,
-                                java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+                                LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
+                                healthStats.getSuccessRate() * 100
                             );
                         }
                         
                         // 发送通知到对应群
                         sendNotificationToGroup(groupId, notification);
+                        totalNotifications.incrementAndGet();
                         
                         // 更新状态
                         memberConfig.put(memberName, currentStatus);
@@ -434,11 +501,71 @@ public class OnlineStatusMonitor {
                         if (history != null) {
                             history.recordChange(currentStatus);
                         }
+                        
+                        Newboy.INSTANCE.getLogger().info(String.format(
+                            "成员 %s 状态变化: %s → %s (健康度: %.1f%%)", 
+                            memberName, oldStatusText, newStatusText, healthStats.getSuccessRate() * 100));
                     }
                 } catch (Exception e) {
-                    Newboy.INSTANCE.getLogger().warning("监控成员 " + memberName + " 状态时发生错误: " + e.getMessage());
+                    failureCount++;
+                    totalFailures.incrementAndGet();
+                    
+                    // 获取健康统计并记录异常
+                    MemberHealthStats healthStats = memberHealthStats.computeIfAbsent(
+                        memberName, k -> new MemberHealthStats(memberName));
+                    healthStats.recordFailure();
+                    
+                    Newboy.INSTANCE.getLogger().warning(
+                        String.format("监控成员 %s 状态时发生错误: %s (连续失败 %d 次)", 
+                            memberName, e.getMessage(), healthStats.consecutiveFailures.get()));
                 }
             }
+        }
+        
+        // 计算本次检查的性能指标
+        long endTime = System.currentTimeMillis();
+        long duration = endTime - startTime;
+        double successRate = totalMembers > 0 ? (double) successCount / totalMembers : 1.0;
+        
+        // 更新系统健康状态
+        isHealthy = successRate >= (1.0 - config.getFailureRateThreshold()) && failureCount < totalMembers * 0.3;
+        
+        // 记录检查结果
+        if (config.isVerboseLogging()) {
+            Newboy.INSTANCE.getLogger().info(
+                String.format("状态检查完成 - 耗时: %dms, 总成员: %d, 成功: %d, 失败: %d, 状态变化: %d, 成功率: %.1f%%, 系统健康: %s",
+                    duration, totalMembers, successCount, failureCount, statusChangeCount, 
+                    successRate * 100, isHealthy ? "是" : "否"));
+        }
+        
+        // 如果系统不健康且启用了健康警告，发送警告
+        if (!isHealthy && totalMembers > 0 && config.isSystemHealthWarning()) {
+            long currentTime = System.currentTimeMillis();
+            // 检查是否需要发送健康警告（避免频繁发送）
+            if (currentTime - lastHealthWarningTime > config.getHealthWarningInterval()) {
+                String healthWarning = String.format(
+                    "⚠️ 监控系统健康警告\n" +
+                    "成功率: %.1f%% (阈值: %.1f%%)\n" +
+                    "失败数: %d/%d\n" +
+                    "检查时间: %s\n" +
+                    "建议检查网络连接和API状态",
+                    successRate * 100, (1.0 - config.getFailureRateThreshold()) * 100,
+                    failureCount, totalMembers,
+                    LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")));
+                
+                // 向所有监控群发送健康警告
+                for (long groupId : groupMonitorConfig.keySet()) {
+                    sendNotificationToGroup(groupId, healthWarning);
+                }
+                
+                lastHealthWarningTime = currentTime;
+                Newboy.INSTANCE.getLogger().warning("已发送监控系统健康警告");
+            }
+        }
+        
+        // 定期清理过期的健康统计数据
+        if (System.currentTimeMillis() % config.getHealthCheckInterval() < 60000) {
+            cleanupHealthStats();
         }
     }
     
@@ -564,7 +691,7 @@ public class OnlineStatusMonitor {
     }
     
     /**
-     * 获取监控配置统计信息
+     * 获取监控配置统计信息（增强版）
      * @return 统计信息字符串
      */
     public String getMonitorStats() {
@@ -590,6 +717,21 @@ public class OnlineStatusMonitor {
         result.append(String.format("👥 监控成员: %d 个\n", totalMembers));
         result.append(String.format("🟢 在线成员: %d 个\n", onlineMembers));
         result.append(String.format("🔴 离线成员: %d 个\n", totalMembers - onlineMembers));
+        result.append(String.format("🔍 总检查次数: %d\n", totalChecks.get()));
+        result.append(String.format("❌ 总失败次数: %d\n", totalFailures.get()));
+        result.append(String.format("📢 总通知次数: %d\n", totalNotifications.get()));
+        
+        double overallSuccessRate = totalChecks.get() > 0 ? 
+            1.0 - (double) totalFailures.get() / totalChecks.get() : 1.0;
+        result.append(String.format("✅ 整体成功率: %.1f%%\n", overallSuccessRate * 100));
+        result.append(String.format("🏥 系统健康: %s\n", isHealthy ? "🟢 正常" : "🔴 异常"));
+        
+        if (lastCheckTime > 0) {
+            result.append(String.format("⏰ 最后检查: %s\n", 
+                LocalDateTime.ofEpochSecond(lastCheckTime / 1000, 0, 
+                    java.time.ZoneOffset.systemDefault().getRules().getOffset(java.time.Instant.now()))
+                    .format(DateTimeFormatter.ofPattern("MM-dd HH:mm:ss"))));
+        }
         
         // 显示各群组详情
         if (!groupMonitorConfig.isEmpty()) {
@@ -598,13 +740,207 @@ public class OnlineStatusMonitor {
                 long groupId = entry.getKey();
                 Map<String, Integer> members = entry.getValue();
                 int groupOnline = (int) members.values().stream().filter(status -> status == 1).count();
-                result.append(String.format("  群 %d: %d 个成员 (%d 在线)\n", 
-                    groupId, members.size(), groupOnline));
+                result.append(String.format("  群 %d: %d 个成员 (🟢%d 🔴%d)\n", 
+                    groupId, members.size(), groupOnline, members.size() - groupOnline));
             }
         }
         
         result.append("━━━━━━━━━━━━━━━━━━━━");
         return result.toString();
+    }
+    
+    /**
+     * 重置所有统计数据
+     */
+    public void resetStats() {
+        totalChecks.set(0);
+        totalFailures.set(0);
+        totalNotifications.set(0);
+        memberHealthStats.clear();
+        lastCheckTime = 0;
+        isHealthy = true;
+        
+        Newboy.INSTANCE.getLogger().info("监控统计数据已重置");
+    }
+    
+    /**
+     * 获取指定成员的详细健康信息
+     * @param memberName 成员名称
+     * @return 成员健康信息字符串
+     */
+    public String getMemberHealthInfo(String memberName) {
+        MemberHealthStats stats = memberHealthStats.get(memberName);
+        if (stats == null) {
+            return String.format("成员 %s 暂无健康统计数据", memberName);
+        }
+        
+        StringBuilder info = new StringBuilder();
+        info.append(String.format("👤 成员: %s\n", memberName));
+        info.append("━━━━━━━━━━━━━━━━━━━━\n");
+        info.append(String.format("🔍 总检查次数: %d\n", stats.totalChecks.get()));
+        info.append(String.format("❌ 总失败次数: %d\n", stats.totalFailures.get()));
+        info.append(String.format("🔥 连续失败: %d 次\n", stats.consecutiveFailures.get()));
+        info.append(String.format("✅ 成功率: %.1f%%\n", stats.getSuccessRate() * 100));
+        
+        if (stats.lastCheckTime > 0) {
+            info.append(String.format("⏰ 最后检查: %s\n", 
+                LocalDateTime.ofEpochSecond(stats.lastCheckTime / 1000, 0, 
+                    java.time.ZoneOffset.systemDefault().getRules().getOffset(java.time.Instant.now()))
+                    .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))));
+        }
+        
+        if (stats.shouldSkipCheck()) {
+            info.append(String.format("⏸️ 下次检查: %s\n", 
+                LocalDateTime.ofEpochSecond(stats.nextCheckTime / 1000, 0, 
+                    java.time.ZoneOffset.systemDefault().getRules().getOffset(java.time.Instant.now()))
+                    .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))));
+        }
+        
+        // 显示状态历史
+        StatusHistory history = statusHistory.get(memberName);
+        if (history != null) {
+            info.append(String.format("📊 状态变化: %d 次\n", history.changeCount));
+            if (history.lastChangeTime != null) {
+                info.append(String.format("📅 最后变化: %s\n", history.lastChangeTime));
+            }
+            info.append(String.format("🔄 当前状态: %s\n", history.currentStatus == 1 ? "在线" : "离线"));
+        }
+        
+        info.append("━━━━━━━━━━━━━━━━━━━━");
+        return info.toString();
+    }
+    
+    /**
+     * 清理过期的健康统计数据
+     */
+    private void cleanupHealthStats() {
+        long currentTime = System.currentTimeMillis();
+        int cleanedCount = 0;
+        
+        var iterator = memberHealthStats.entrySet().iterator();
+        while (iterator.hasNext()) {
+            var entry = iterator.next();
+            MemberHealthStats stats = entry.getValue();
+            // 使用配置的保留时间
+            if ((currentTime - stats.lastCheckTime) > config.getHealthStatsRetention()) {
+                iterator.remove();
+                cleanedCount++;
+            }
+        }
+        
+        if (cleanedCount > 0 && config.isVerboseLogging()) {
+            Newboy.INSTANCE.getLogger().info(
+                String.format("清理了 %d 个过期的成员健康统计数据", cleanedCount));
+        }
+    }
+    
+    /**
+     * 获取系统健康状态报告
+     * @return 健康状态报告字符串
+     */
+    public String getHealthReport() {
+        StringBuilder report = new StringBuilder();
+        report.append("🏥 监控系统健康报告\n");
+        report.append("━━━━━━━━━━━━━━━━━━━━\n");
+        
+        report.append(String.format("🔧 系统状态: %s\n", isHealthy ? "🟢 健康" : "🔴 异常"));
+        report.append(String.format("⏰ 最后检查: %s\n", 
+            lastCheckTime > 0 ? LocalDateTime.ofEpochSecond(lastCheckTime / 1000, 0, 
+                java.time.ZoneOffset.systemDefault().getRules().getOffset(java.time.Instant.now()))
+                .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) : "未知"));
+        
+        report.append(String.format("📊 总检查次数: %d\n", totalChecks.get()));
+        report.append(String.format("❌ 总失败次数: %d\n", totalFailures.get()));
+        report.append(String.format("📢 总通知次数: %d\n", totalNotifications.get()));
+        
+        double overallSuccessRate = totalChecks.get() > 0 ? 
+            1.0 - (double) totalFailures.get() / totalChecks.get() : 1.0;
+        report.append(String.format("✅ 整体成功率: %.1f%%\n", overallSuccessRate * 100));
+        
+        // 显示问题成员
+        List<MemberHealthStats> problemMembers = memberHealthStats.values().stream()
+            .filter(stats -> stats.consecutiveFailures.get() > 0)
+            .sorted((a, b) -> Integer.compare(b.consecutiveFailures.get(), a.consecutiveFailures.get()))
+            .collect(java.util.stream.Collectors.toList());
+        
+        if (!problemMembers.isEmpty()) {
+            report.append("\n⚠️ 问题成员:\n");
+            for (MemberHealthStats stats : problemMembers) {
+                report.append(String.format("  %s: 连续失败 %d 次 (成功率: %.1f%%)\n",
+                    stats.memberName, stats.consecutiveFailures.get(), stats.getSuccessRate() * 100));
+            }
+        }
+        
+        report.append("━━━━━━━━━━━━━━━━━━━━");
+        return report.toString();
+    }
+    
+    /**
+     * 成员健康统计类
+     */
+    private class MemberHealthStats {
+        private final String memberName;
+        private final AtomicInteger totalChecks = new AtomicInteger(0);
+        private final AtomicInteger totalFailures = new AtomicInteger(0);
+        private final AtomicInteger consecutiveFailures = new AtomicInteger(0);
+        private volatile long lastCheckTime = System.currentTimeMillis();
+        private volatile long nextCheckTime = 0;
+        
+        public MemberHealthStats(String memberName) {
+            this.memberName = memberName;
+        }
+        
+        public void recordSuccess() {
+            totalChecks.incrementAndGet();
+            consecutiveFailures.set(0);
+            lastCheckTime = System.currentTimeMillis();
+            nextCheckTime = 0; // 重置下次检查时间
+        }
+        
+        public void recordFailure() {
+            totalChecks.incrementAndGet();
+            totalFailures.incrementAndGet();
+            int failures = consecutiveFailures.incrementAndGet();
+            lastCheckTime = System.currentTimeMillis();
+            
+            // 根据连续失败次数设置延迟检查时间
+            if (failures >= config.getMaxConsecutiveFailures()) {
+                // 延迟检查：失败次数越多，延迟越长
+                long delayMinutes = Math.min(
+                    failures * config.getFailureCooldownBase(), 
+                    config.getFailureCooldownMax());
+                nextCheckTime = System.currentTimeMillis() + delayMinutes * 60 * 1000;
+                
+                if (config.isVerboseLogging()) {
+                    Newboy.INSTANCE.getLogger().warning(
+                        String.format("成员 %s 连续失败 %d 次，延迟 %d 分钟后重试", 
+                            memberName, failures, delayMinutes));
+                }
+            }
+        }
+        
+        public boolean shouldSkipCheck() {
+            return consecutiveFailures.get() >= config.getMaxConsecutiveFailures() && 
+                   System.currentTimeMillis() < nextCheckTime;
+        }
+        
+        public double getSuccessRate() {
+            int total = totalChecks.get();
+            if (total == 0) return 1.0;
+            return 1.0 - (double) totalFailures.get() / total;
+        }
+        
+        /**
+         * 获取下次检查时间的可读格式
+         */
+        public String getNextCheckTimeFormatted() {
+            if (nextCheckTime <= System.currentTimeMillis()) {
+                return "立即";
+            }
+            return LocalDateTime.ofEpochSecond(nextCheckTime / 1000, 0, 
+                java.time.ZoneOffset.systemDefault().getRules().getOffset(java.time.Instant.now()))
+                .format(DateTimeFormatter.ofPattern("HH:mm:ss"));
+        }
     }
     
     /**
@@ -627,8 +963,8 @@ public class OnlineStatusMonitor {
             if (newStatus != currentStatus) {
                 this.currentStatus = newStatus;
                 this.changeCount++;
-                this.lastChangeTime = java.time.LocalDateTime.now()
-                    .format(java.time.format.DateTimeFormatter.ofPattern("MM-dd HH:mm"));
+                this.lastChangeTime = LocalDateTime.now()
+                    .format(DateTimeFormatter.ofPattern("MM-dd HH:mm"));
             }
         }
         
