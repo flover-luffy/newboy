@@ -26,13 +26,10 @@ import java.util.List;
 public class CommandOperator {
 
     public static CommandOperator INSTANCE;
-    private final List<String> helps = new ArrayList<>();
-    private final HashMap<Long, List<String>> localHelps = new HashMap<>();
 
     public CommandOperator() {
         INSTANCE = this;
-        initHelp();
-        //需自行编写指令执行方法，本operator的插件外部方法仅addHelp
+        //需自行编写指令执行方法
     }
 
     public Message executePublic(String[] args, Group g, long senderID) {
@@ -340,7 +337,7 @@ public class CommandOperator {
                                 return new PlainText("您输入的ServerId并不包含此RoomId");
                         }
                     default:
-                        return getHelp(2);
+                        return getCategorizedHelp(-1);
                 }
 
 
@@ -416,7 +413,7 @@ public class CommandOperator {
                             }
                         }
                     default:
-                        return getHelp(3);
+                        return getCategorizedHelp(-1);
                 }
             case "/微博":
             case "/weibo":
@@ -476,7 +473,7 @@ public class CommandOperator {
                             }
                         }
                     default:
-                        return getHelp(4);
+                        return getCategorizedHelp(-1);
                 }
             case "/监控添加":
             case "/monitor_add": {
@@ -528,7 +525,7 @@ public class CommandOperator {
             case "/帮助":
             case "/help":
             case "/?":
-                return getHelp(-1, group);
+                return getCategorizedHelp(-1);
         }
 
         return null;
@@ -548,7 +545,7 @@ public class CommandOperator {
                     if (test != null)
                         return test;
                 } catch (Exception e) {
-                    return args[0].equals("微店") ? getHelp(5) : getHelp(1);
+                    return getCategorizedHelp(event.getSender().getId());
                 }
             }
         }
@@ -557,7 +554,7 @@ public class CommandOperator {
             case "/帮助":
             case "/help":
             case "/?":
-                return getHelp(-1, event.getSender().getId());
+                return getCategorizedHelp(event.getSender().getId());
             case "/在线":
             case "/online": {
                 if (args.length < 2 || args[1] == null || args[1].trim().isEmpty()) {
@@ -593,13 +590,25 @@ public class CommandOperator {
                 String result = OnlineStatusMonitor.INSTANCE.getMonitorList(event.getSender().getId());
                 return new PlainText(result);
             }
+            case "/口袋":
+            case "/pocket": {
+                return handlePrivatePocket48Command(args, event);
+            }
+            case "/微博":
+            case "/weibo": {
+                return handlePrivateWeiboCommand(args, event);
+            }
+            case "/超话":
+            case "/supertopic": {
+                return handlePrivateSuperTopicCommand(args, event);
+            }
             case "/微店":
             case "/weidian": {
                 long groupId;
                 try {
                     groupId = Long.valueOf(args[1]);
                 } catch (Exception e) {
-                    return getHelp(5);
+                    return getCategorizedHelp(event.getSender().getId());
                 }
 
                 if (args[2].startsWith("cookie")) {
@@ -725,7 +734,7 @@ public class CommandOperator {
                                 }
                             }
                         default:
-                            return getHelp(7);
+                            return getCategorizedHelp(event.getSender().getId());
                     }
                 }
             }
@@ -786,7 +795,7 @@ public class CommandOperator {
                 try {
                     groupId = Long.valueOf(args[1]);
                 } catch (Exception e) {
-                    return getHelp(1);
+                    return getCategorizedHelp(event.getSender().getId());
                 }
 
                 if (!args[2].equals("取消")) {
@@ -801,102 +810,9 @@ public class CommandOperator {
         return null;
     }
 
-    private void initHelp() {
-        addHelp("【管理员指令】\n" //0
-                + "(私聊) /清理\n");
-
-        addHelp("【通用】\n" //1
-                + "(私聊) /欢迎 <群id> 欢迎词(填写\"取消\"关闭)\n"
-                + "/在线 <成员名称> - 查询成员在线状态\n"
-                + "/监控添加 <成员ID> - 添加成员在线状态监控\n"
-                + "/监控移除 <成员ID> - 移除成员在线状态监控\n"
-                + "/监控列表 - 查看当前监控列表\n"
-                + "/监控开关 - 开启/关闭监控功能(管理员)\n"
-                + "/监控查询 <成员ID> - 查询指定成员在线状态\n"
-                + "(私聊) /监控添加 <成员名称> - 私聊添加监控\n"
-                + "(私聊) /监控移除 <成员名称> - 私聊移除监控\n"
-                + "(私聊) /监控列表 - 私聊查看监控列表\n");
-
-        addHelp("【口袋48相关】\n" //2
-                + "/口袋 搜索 <在团小偶像或队伍名>\n"
-                + "/口袋 查询 <ID>\n"
-                + "/口袋 查询2 <Server_id>\n"
-                + "/口袋 关注 <房间ID>\n"
-                + "/口袋 取消关注 <房间ID>\n"
-                + "/口袋 关注列表\n"
-                + "/口袋 连接 <加密房间ID> <ServerId>\n"
-                + "注1：关注步骤：搜索名字，关注房间\n"
-                + "注2：不知道密码的加密房间如果知道Server_Id，通过连接功能连接以后照样可以关注并获取消息\n");
 
 
 
-        addHelp("【微博超话相关】\n" //3
-                + "/超话 关注 <超话ID>\n"
-                + "/超话 取消关注 <超话ID>\n"
-                + "/超话 关注列表\n");
-
-        addHelp("【微博相关】\n" //4
-                + "/微博 关注 <UID>\n"
-                + "/微博 取消关注 <UID>\n"
-                + "/微博 关注列表\n");
-
-        addHelp("【微店相关】\n" //5
-                + "(私聊)/微店 <群id> cookie <Cookie>\n"
-                + "(私聊)/微店 <群id> 群播报\n"
-                + "(私聊)/微店 <群id> 自动发货\n"
-                + "(私聊)/微店 <群id> 全部发货\n"
-                + "(私聊)/微店 <群id> 查 <商品id>\n"
-                + "(私聊)/微店 <群id> # <商品id>\n"
-                + "(私聊)/微店 <群id> 屏蔽 <商品id>\n"
-                + "(私聊)/微店 <群id> 全部\n"
-                + "(私聊)/微店 <群id> 关闭\n"
-                + "注：\"#\"指令的意思是切换一个商品的普链/特殊链形质，特殊链会实时播报\n"
-                + "注：\"查询\"#指令可以获取榜单\n");
-    }
-
-    public Message getHelp(int id) {
-        return getHelp(id, 0);
-    }
-
-    public Message getHelp(int id, long contactId) {
-        if (id < getSize() && id > -1)
-            return new PlainText(helps.get(id));
-
-        else {
-            String a = "";
-            for (String help : this.helps) {
-                a += help;
-            }
-
-            String b = getLocalHelp(contactId);
-            return new PlainText(b == null ? a : a + b);
-        }
-    }
-
-    public String getLocalHelp(long contactId) {
-        if (!this.localHelps.containsKey(contactId))
-            return null;
-
-        String a = "";
-        for (String help : this.localHelps.get(contactId)) {
-            a += help;
-        }
-        return a;
-    }
-
-    public int getSize() {
-        return this.helps.size();
-    }
-
-    public void addHelp(String help) {
-        this.helps.add(help);
-    }
-
-    public void addLocalHelp(long contactId, String help) {
-        if (!this.localHelps.containsKey(contactId))
-            this.localHelps.put(contactId, new ArrayList<>());
-        this.localHelps.get(contactId).add(help);
-    }
 
     private String[] splitPrivateCommand(String command) {
         String[] out = new String[3];
@@ -934,12 +850,517 @@ public class CommandOperator {
         return null;
     }
 
+    // 私聊口袋48订阅管理
+    private Message handlePrivatePocket48Command(String[] args, UserMessageEvent event) {
+        if (args.length < 2) {
+            return new PlainText("❌ 参数不足\n💡 使用方法：/口袋 <操作> [参数]\n📋 可用操作：关注、取消关注、关注列表、搜索、查询");
+        }
+
+        switch (args[1]) {
+            case "关注列表": {
+                return getPrivatePocket48SubscribeList(event.getSender().getId());
+            }
+            case "搜索": {
+                if (args.length < 3) {
+                    return new PlainText("❌ 请输入搜索关键词\n💡 使用方法：/口袋 搜索 <关键词>");
+                }
+                return searchPocket48ForPrivate(args[2]);
+            }
+            case "查询": {
+                if (args.length < 3) {
+                    return new PlainText("❌ 请输入用户ID\n💡 使用方法：/口袋 查询 <用户ID>");
+                }
+                return queryPocket48UserForPrivate(args[2]);
+            }
+            case "关注": {
+                if (args.length < 4) {
+                    return new PlainText("❌ 参数不足\n💡 使用方法：/口袋 关注 <房间ID> <群号>\n📝 示例：/口袋 关注 123456 987654321");
+                }
+                return addPrivatePocket48Subscribe(args[2], args[3], event);
+            }
+            case "取消关注": {
+                if (args.length < 4) {
+                    return new PlainText("❌ 参数不足\n💡 使用方法：/口袋 取消关注 <房间ID> <群号>\n📝 示例：/口袋 取消关注 123456 987654321");
+                }
+                return removePrivatePocket48Subscribe(args[2], args[3], event);
+            }
+            default:
+                return new PlainText("❌ 未知操作\n📋 可用操作：关注、取消关注、关注列表、搜索、查询");
+        }
+    }
+
+    // 私聊微博订阅管理
+    private Message handlePrivateWeiboCommand(String[] args, UserMessageEvent event) {
+        if (args.length < 2) {
+            return new PlainText("❌ 参数不足\n💡 使用方法：/微博 <操作> [参数]\n📋 可用操作：关注、取消关注、关注列表");
+        }
+
+        switch (args[1]) {
+            case "关注列表": {
+                return getPrivateWeiboSubscribeList(event.getSender().getId());
+            }
+            case "关注": {
+                if (args.length < 4) {
+                    return new PlainText("❌ 参数不足\n💡 使用方法：/微博 关注 <用户UID> <群号>\n📝 示例：/微博 关注 1234567890 987654321");
+                }
+                return addPrivateWeiboSubscribe(args[2], args[3], event);
+            }
+            case "取消关注": {
+                if (args.length < 4) {
+                    return new PlainText("❌ 参数不足\n💡 使用方法：/微博 取消关注 <用户UID> <群号>\n📝 示例：/微博 取消关注 1234567890 987654321");
+                }
+                return removePrivateWeiboSubscribe(args[2], args[3], event);
+            }
+            default:
+                return new PlainText("❌ 未知操作\n📋 可用操作：关注、取消关注、关注列表");
+        }
+    }
+
+    // 私聊超话订阅管理
+    private Message handlePrivateSuperTopicCommand(String[] args, UserMessageEvent event) {
+        if (args.length < 2) {
+            return new PlainText("❌ 参数不足\n💡 使用方法：/超话 <操作> [参数]\n📋 可用操作：关注、取消关注、关注列表");
+        }
+
+        switch (args[1]) {
+            case "关注列表": {
+                return getPrivateSuperTopicSubscribeList(event.getSender().getId());
+            }
+            case "关注": {
+                if (args.length < 4) {
+                    return new PlainText("❌ 参数不足\n💡 使用方法：/超话 关注 <超话ID> <群号>\n📝 示例：/超话 关注 abc123 987654321");
+                }
+                return addPrivateSuperTopicSubscribe(args[2], args[3], event);
+            }
+            case "取消关注": {
+                if (args.length < 4) {
+                    return new PlainText("❌ 参数不足\n💡 使用方法：/超话 取消关注 <超话ID> <群号>\n📝 示例：/超话 取消关注 abc123 987654321");
+                }
+                return removePrivateSuperTopicSubscribe(args[2], args[3], event);
+            }
+            default:
+                return new PlainText("❌ 未知操作\n📋 可用操作：关注、取消关注、关注列表");
+        }
+    }
+
+    // 分类帮助信息
+    public Message getCategorizedHelp(long contactId) {
+        StringBuilder help = new StringBuilder();
+        help.append("🤖 Newboy 帮助菜单\n");
+        help.append("━━━━━━━━━━━━━━━━━━━━\n\n");
+        
+        help.append("📱 口袋48功能\n");
+        help.append("群聊命令：\n");
+        help.append("  /口袋 搜索 <关键词> - 搜索成员/队伍\n");
+        help.append("  /口袋 查询 <用户ID> - 查询用户信息\n");
+        help.append("  /口袋 关注 <房间ID> - 关注房间\n");
+        help.append("  /口袋 取消关注 <房间ID> - 取消关注\n");
+        help.append("  /口袋 关注列表 - 查看关注列表\n");
+        help.append("私聊命令：\n");
+        help.append("  /口袋 关注 <房间ID> <群号> - 为指定群添加关注\n");
+        help.append("  /口袋 取消关注 <房间ID> <群号> - 为指定群取消关注\n");
+        help.append("  /口袋 关注列表 - 查看所有群的关注情况\n\n");
+        
+        help.append("🐦 微博功能\n");
+        help.append("群聊命令：\n");
+        help.append("  /微博 关注 <用户UID> - 关注微博用户\n");
+        help.append("  /微博 取消关注 <用户UID> - 取消关注\n");
+        help.append("  /微博 关注列表 - 查看关注列表\n");
+        help.append("私聊命令：\n");
+        help.append("  /微博 关注 <用户UID> <群号> - 为指定群添加关注\n");
+        help.append("  /微博 取消关注 <用户UID> <群号> - 为指定群取消关注\n");
+        help.append("  /微博 关注列表 - 查看所有群的关注情况\n\n");
+        
+        help.append("🔥 超话功能\n");
+        help.append("群聊命令：\n");
+        help.append("  /超话 关注 <超话ID> - 关注超话\n");
+        help.append("  /超话 取消关注 <超话ID> - 取消关注\n");
+        help.append("  /超话 关注列表 - 查看关注列表\n");
+        help.append("私聊命令：\n");
+        help.append("  /超话 关注 <超话ID> <群号> - 为指定群添加关注\n");
+        help.append("  /超话 取消关注 <超话ID> <群号> - 为指定群取消关注\n");
+        help.append("  /超话 关注列表 - 查看所有群的关注情况\n\n");
+        
+        help.append("🛍️ 微店功能\n");
+        help.append("私聊命令：\n");
+        help.append("  /微店 <群号> cookie <Cookie> - 设置微店Cookie\n");
+        help.append("  /微店 <群号> 全部 - 查看商品列表\n");
+        help.append("  /微店 <群号> 自动发货 - 切换自动发货\n");
+        help.append("  /微店 <群号> 群播报 - 切换群播报\n");
+        help.append("  /微店 <群号> 查 <商品ID> - 查看商品详情\n\n");
+        
+        help.append("👥 在线状态监控\n");
+        help.append("群聊命令：\n");
+        help.append("  /newboy monitor - 查看监控帮助\n");
+        help.append("私聊命令：\n");
+        help.append("  /监控添加 <成员名> - 添加监控\n");
+        help.append("  /监控移除 <成员名> - 移除监控\n");
+        help.append("  /监控列表 - 查看监控列表\n");
+        help.append("  /在线 <成员名> - 查询在线状态\n\n");
+        
+        help.append("🔧 管理功能\n");
+        help.append("私聊命令（管理员）：\n");
+        help.append("  /欢迎 <群号> <欢迎词> - 设置群欢迎语\n");
+        help.append("  /欢迎 <群号> 取消 - 取消群欢迎语\n");
+        help.append("  /清理 - 清理失效群配置\n\n");
+        
+        help.append("💡 提示：\n");
+        help.append("• 私聊命令可以无感添加配置，不打扰群组\n");
+        help.append("• 管理员可以通过私聊为任意群配置功能\n");
+        help.append("• 使用 /帮助 随时查看此帮助信息");
+        
+        return new PlainText(help.toString());
+    }
+
+    // 获取私聊口袋48订阅列表
+    private Message getPrivatePocket48SubscribeList(long userId) {
+        StringBuilder result = new StringBuilder();
+        result.append("📱 口袋48订阅列表\n");
+        result.append("━━━━━━━━━━━━━━━━━━━━\n");
+        
+        Properties properties = Newboy.INSTANCE.getProperties();
+        boolean hasSubscription = false;
+        
+        for (long groupId : properties.pocket48_subscribe.keySet()) {
+            if (!properties.pocket48_subscribe.get(groupId).getRoomIDs().isEmpty()) {
+                hasSubscription = true;
+                result.append("\n🏠 群组：").append(groupId).append("\n");
+                
+                int count = 1;
+                for (long roomId : properties.pocket48_subscribe.get(groupId).getRoomIDs()) {
+                    try {
+                        Pocket48RoomInfo roomInfo = Newboy.INSTANCE.getHandlerPocket48().getRoomInfoByChannelID(roomId);
+                        if (roomInfo != null) {
+                            result.append("  ").append(count).append(". ").append(roomInfo.getRoomName());
+                            result.append(" (").append(roomInfo.getOwnerName()).append(")\n");
+                            result.append("     房间ID: ").append(roomId).append("\n");
+                        } else {
+                            result.append("  ").append(count).append(". 未知房间 (ID: ").append(roomId).append(")\n");
+                        }
+                        count++;
+                    } catch (Exception e) {
+                        result.append("  ").append(count).append(". 获取信息失败 (ID: ").append(roomId).append(")\n");
+                        count++;
+                    }
+                }
+            }
+        }
+        
+        if (!hasSubscription) {
+            result.append("\n❌ 暂无订阅\n");
+            result.append("💡 使用 /口袋 关注 <房间ID> <群号> 添加订阅");
+        }
+        
+        return new PlainText(result.toString());
+    }
+
+    // 搜索口袋48（私聊版本）
+    private Message searchPocket48ForPrivate(String keyword) {
+        Object[] servers = Newboy.INSTANCE.getHandlerPocket48().search(keyword);
+        StringBuilder out = new StringBuilder();
+        out.append("🔍 搜索结果：").append(keyword).append("\n");
+        out.append("━━━━━━━━━━━━━━━━━━━━\n");
+
+        if (servers.length == 0) {
+            out.append("\n❌ 未找到相关结果\n");
+            out.append("💡 提示：仅支持搜索在团小偶像/队伍名");
+            return new PlainText(out.toString());
+        }
+
+        int count = 1;
+        for (Object server_ : servers) {
+            JSONObject server = JSONUtil.parseObj(server_);
+            String name = server.getStr("serverDefaultName");
+            String serverName = server.getStr("serverName");
+            long starId = server.getLong("serverOwner");
+            Long serverId = server.getLong("serverId");
+
+            out.append("\n📍 ").append(count).append(". ").append(name);
+            if (!name.equals(serverName)) {
+                out.append("(").append(serverName).append(")");
+            }
+            out.append("\n👤 用户ID: ").append(starId);
+            out.append("\n🏠 服务器ID: ").append(serverId != null ? serverId : "未知");
+            
+            try {
+                String roomInfo = informationFromPocketServerId(serverId);
+                String[] lines = roomInfo.split("\n");
+                for (String line : lines) {
+                    if (line.startsWith("Server_id:")) {
+                        continue;
+                    } else if (line.contains(")") && !line.equals("无房间")) {
+                        if (line.contains("加密房间")) {
+                            out.append("\n🔒 ").append(line);
+                        } else if (line.contains("直播")) {
+                            out.append("\n📺 ").append(line);
+                        } else {
+                            out.append("\n🏠 ").append(line);
+                        }
+                    } else if (line.equals("无房间")) {
+                        out.append("\n❌ 无可用房间");
+                    }
+                }
+            } catch (Exception e) {
+                out.append("\n❌ 房间信息获取失败");
+            }
+            
+            out.append("\n💡 使用 /口袋 关注 <房间ID> <群号> 添加订阅");
+            if (count < servers.length) {
+                out.append("\n");
+            }
+            count++;
+        }
+        return new PlainText(out.toString());
+    }
+
+    // 查询口袋48用户（私聊版本）
+    private Message queryPocket48UserForPrivate(String userIdStr) {
+        try {
+            long userId = Long.parseLong(userIdStr);
+            JSONObject info = Newboy.INSTANCE.getHandlerPocket48().getUserInfo(userId);
+            if (info == null) {
+                return new PlainText("❌ 用户不存在");
+            }
+
+            boolean star = info.getBool("isStar");
+            int followers = info.getInt("followers");
+            int friends = info.getInt("friends");
+            String nickName = info.getStr("nickname");
+            String starName = info.getStr("starName");
+
+            StringBuilder result = new StringBuilder();
+            result.append("👤 用户信息\n");
+            result.append("━━━━━━━━━━━━━━━━━━━━\n");
+            result.append("昵称：").append(nickName).append("\n");
+            if (star && starName != null && !starName.isEmpty()) {
+                result.append("艺名：").append(starName).append("\n");
+            }
+            result.append("用户ID：").append(userId).append("\n");
+            result.append("身份：").append(star ? "⭐ 偶像" : "👤 普通用户").append("\n");
+            result.append("关注者：").append(followers).append("\n");
+            result.append("好友：").append(friends).append("\n");
+            result.append("\n💡 使用 /口袋 搜索 ").append(nickName).append(" 查找相关房间");
+
+            return new PlainText(result.toString());
+        } catch (NumberFormatException e) {
+            return new PlainText("❌ 用户ID格式错误，请输入数字");
+        }
+    }
+
+    // 添加私聊口袋48订阅
+    private Message addPrivatePocket48Subscribe(String roomIdStr, String groupIdStr, UserMessageEvent event) {
+        try {
+            long roomId = Long.parseLong(roomIdStr);
+            long groupId = Long.parseLong(groupIdStr);
+            
+            // 权限检查
+            Message permissionTest = testPermission(groupId, event);
+            if (permissionTest != null) {
+                return permissionTest;
+            }
+            
+            boolean success = Newboy.INSTANCE.getConfig().addPocket48RoomSubscribe(roomId, groupId);
+            if (success) {
+                try {
+                    Pocket48RoomInfo roomInfo = Newboy.INSTANCE.getHandlerPocket48().getRoomInfoByChannelID(roomId);
+                    if (roomInfo != null) {
+                        return new PlainText(String.format("✅ 成功为群 %d 添加口袋48订阅\n🏠 房间：%s\n👤 主播：%s\n🆔 房间ID：%d", 
+                            groupId, roomInfo.getRoomName(), roomInfo.getOwnerName(), roomId));
+                    } else {
+                        return new PlainText(String.format("✅ 成功为群 %d 添加口袋48订阅\n🆔 房间ID：%d\n⚠️ 无法获取房间详细信息", groupId, roomId));
+                    }
+                } catch (Exception e) {
+                    return new PlainText(String.format("✅ 成功为群 %d 添加口袋48订阅\n🆔 房间ID：%d\n⚠️ 获取房间信息时出错", groupId, roomId));
+                }
+            } else {
+                return new PlainText(String.format("❌ 群 %d 已订阅房间 %d", groupId, roomId));
+            }
+        } catch (NumberFormatException e) {
+            return new PlainText("❌ 参数格式错误，房间ID和群号必须是数字");
+        }
+    }
+
+    // 移除私聊口袋48订阅
+    private Message removePrivatePocket48Subscribe(String roomIdStr, String groupIdStr, UserMessageEvent event) {
+        try {
+            long roomId = Long.parseLong(roomIdStr);
+            long groupId = Long.parseLong(groupIdStr);
+            
+            // 权限检查
+            Message permissionTest = testPermission(groupId, event);
+            if (permissionTest != null) {
+                return permissionTest;
+            }
+            
+            boolean success = Newboy.INSTANCE.getConfig().rmPocket48RoomSubscribe(roomId, groupId);
+            if (success) {
+                return new PlainText(String.format("✅ 成功为群 %d 移除口袋48订阅\n🆔 房间ID：%d", groupId, roomId));
+            } else {
+                return new PlainText(String.format("❌ 群 %d 未订阅房间 %d", groupId, roomId));
+            }
+        } catch (NumberFormatException e) {
+            return new PlainText("❌ 参数格式错误，房间ID和群号必须是数字");
+        }
+    }
+
+    // 获取私聊微博订阅列表
+    private Message getPrivateWeiboSubscribeList(long userId) {
+        StringBuilder result = new StringBuilder();
+        result.append("🐦 微博订阅列表\n");
+        result.append("━━━━━━━━━━━━━━━━━━━━\n");
+        
+        Properties properties = Newboy.INSTANCE.getProperties();
+        boolean hasSubscription = false;
+        
+        for (long groupId : properties.weibo_user_subscribe.keySet()) {
+            if (!properties.weibo_user_subscribe.get(groupId).isEmpty()) {
+                hasSubscription = true;
+                result.append("\n🏠 群组：").append(groupId).append("\n");
+                
+                int count = 1;
+                for (long uid : properties.weibo_user_subscribe.get(groupId)) {
+                    result.append("  ").append(count).append(". 用户UID: ").append(uid).append("\n");
+                    count++;
+                }
+            }
+        }
+        
+        if (!hasSubscription) {
+            result.append("\n❌ 暂无订阅\n");
+            result.append("💡 使用 /微博 关注 <用户UID> <群号> 添加订阅");
+        }
+        
+        return new PlainText(result.toString());
+    }
+
+    // 添加私聊微博订阅
+    private Message addPrivateWeiboSubscribe(String uidStr, String groupIdStr, UserMessageEvent event) {
+        try {
+            long uid = Long.parseLong(uidStr);
+            long groupId = Long.parseLong(groupIdStr);
+            
+            // 权限检查
+            Message permissionTest = testPermission(groupId, event);
+            if (permissionTest != null) {
+                return permissionTest;
+            }
+            
+            boolean success = Newboy.INSTANCE.getConfig().addWeiboUserSubscribe(uid, groupId);
+            if (success) {
+                return new PlainText(String.format("✅ 成功为群 %d 添加微博订阅\n👤 用户UID：%d", groupId, uid));
+            } else {
+                return new PlainText(String.format("❌ 群 %d 已订阅用户 %d", groupId, uid));
+            }
+        } catch (NumberFormatException e) {
+            return new PlainText("❌ 参数格式错误，用户UID和群号必须是数字");
+        }
+    }
+
+    // 移除私聊微博订阅
+    private Message removePrivateWeiboSubscribe(String uidStr, String groupIdStr, UserMessageEvent event) {
+        try {
+            long uid = Long.parseLong(uidStr);
+            long groupId = Long.parseLong(groupIdStr);
+            
+            // 权限检查
+            Message permissionTest = testPermission(groupId, event);
+            if (permissionTest != null) {
+                return permissionTest;
+            }
+            
+            boolean success = Newboy.INSTANCE.getConfig().rmWeiboUserSubscribe(uid, groupId);
+            if (success) {
+                return new PlainText(String.format("✅ 成功为群 %d 移除微博订阅\n👤 用户UID：%d", groupId, uid));
+            } else {
+                return new PlainText(String.format("❌ 群 %d 未订阅用户 %d", groupId, uid));
+            }
+        } catch (NumberFormatException e) {
+            return new PlainText("❌ 参数格式错误，用户UID和群号必须是数字");
+        }
+    }
+
+    // 获取私聊超话订阅列表
+    private Message getPrivateSuperTopicSubscribeList(long userId) {
+        StringBuilder result = new StringBuilder();
+        result.append("🔥 超话订阅列表\n");
+        result.append("━━━━━━━━━━━━━━━━━━━━\n");
+        
+        Properties properties = Newboy.INSTANCE.getProperties();
+        boolean hasSubscription = false;
+        
+        for (long groupId : properties.weibo_superTopic_subscribe.keySet()) {
+            if (!properties.weibo_superTopic_subscribe.get(groupId).isEmpty()) {
+                hasSubscription = true;
+                result.append("\n🏠 群组：").append(groupId).append("\n");
+                
+                int count = 1;
+                for (String topicId : properties.weibo_superTopic_subscribe.get(groupId)) {
+                    result.append("  ").append(count).append(". 超话ID: ").append(topicId).append("\n");
+                    count++;
+                }
+            }
+        }
+        
+        if (!hasSubscription) {
+            result.append("\n❌ 暂无订阅\n");
+            result.append("💡 使用 /超话 关注 <超话ID> <群号> 添加订阅");
+        }
+        
+        return new PlainText(result.toString());
+    }
+
+    // 添加私聊超话订阅
+    private Message addPrivateSuperTopicSubscribe(String topicId, String groupIdStr, UserMessageEvent event) {
+        try {
+            long groupId = Long.parseLong(groupIdStr);
+            
+            // 权限检查
+            Message permissionTest = testPermission(groupId, event);
+            if (permissionTest != null) {
+                return permissionTest;
+            }
+            
+            boolean success = Newboy.INSTANCE.getConfig().addWeiboSTopicSubscribe(topicId, groupId);
+            if (success) {
+                return new PlainText(String.format("✅ 成功为群 %d 添加超话订阅\n🔥 超话ID：%s", groupId, topicId));
+            } else {
+                return new PlainText(String.format("❌ 群 %d 已订阅超话 %s", groupId, topicId));
+            }
+        } catch (NumberFormatException e) {
+            return new PlainText("❌ 群号格式错误，必须是数字");
+        }
+    }
+
+    // 移除私聊超话订阅
+    private Message removePrivateSuperTopicSubscribe(String topicId, String groupIdStr, UserMessageEvent event) {
+        try {
+            long groupId = Long.parseLong(groupIdStr);
+            
+            // 权限检查
+            Message permissionTest = testPermission(groupId, event);
+            if (permissionTest != null) {
+                return permissionTest;
+            }
+            
+            boolean success = Newboy.INSTANCE.getConfig().rmWeiboSTopicSubscribe(topicId, groupId);
+            if (success) {
+                return new PlainText(String.format("✅ 成功为群 %d 移除超话订阅\n🔥 超话ID：%s", groupId, topicId));
+            } else {
+                return new PlainText(String.format("❌ 群 %d 未订阅超话 %s", groupId, topicId));
+            }
+        } catch (NumberFormatException e) {
+            return new PlainText("❌ 群号格式错误，必须是数字");
+        }
+    }
+
     public Message testPermission(UserMessageEvent event) {
         if (!Newboy.INSTANCE.getConfig().isAdmin(event.getSender().getId())) {
             return new PlainText("权限不足喵");
         }
         return null;
     }
+
+
 
     /* 函数工具 */
     private boolean testRoomIDWithServerID(long room_id, long server_id) {

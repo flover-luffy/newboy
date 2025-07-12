@@ -29,10 +29,23 @@ public class Pocket48SenderMessage {
     }
 
     public Message[] getUnjointMessage() {
-        if (title != null && message != null && message.length > 0 && message[0] != null) {
-            message[0] = title.plus(message[0]);
+        if (message == null) {
+            return new Message[0];
         }
-        return message;
+        
+        // 创建副本以避免修改原数组
+        Message[] result = new Message[message.length];
+        System.arraycopy(message, 0, result, 0, message.length);
+        
+        if (title != null && result.length > 0 && result[0] != null) {
+            try {
+                result[0] = title.plus(result[0]);
+            } catch (Exception e) {
+                System.err.println("合并消息时发生错误: " + e.getMessage());
+                // 如果合并失败，保持原消息不变
+            }
+        }
+        return result;
     }
 
     public boolean isSpecific() {

@@ -91,13 +91,22 @@ public class Pocket48Sender extends Sender {
                     for (int i = roomMessage.length - 1; i >= 0; i--) { //倒序输出
                         try {
                             Pocket48SenderMessage message1 = pharseMessage(roomMessage[i], group, subscribe.getRoomIDs().size() == 1);
-                            if (message1 == null)
+                            if (message1 == null) {
                                 continue;
+                            }
                             
-                            for (Message m : message1.getUnjointMessage()) {
-                                if (m != null) {
-                                    group.sendMessage(m);
+                            try {
+                                Message[] unjointMessages = message1.getUnjointMessage();
+                                if (unjointMessages != null && unjointMessages.length > 0) {
+                                    for (Message m : unjointMessages) {
+                                        if (m != null) {
+                                            group.sendMessage(m);
+                                        }
+                                    }
                                 }
+                            } catch (Exception ex) {
+                                System.err.println("处理消息时发生错误: " + ex.getMessage());
+                                ex.printStackTrace();
                             }
                         } catch (Exception e) {
                             e.printStackTrace();
@@ -126,16 +135,23 @@ public class Pocket48Sender extends Sender {
     }
 
     public Pocket48SenderMessage pharseMessage(Pocket48Message message, Group group, boolean single_subscribe) throws IOException {
+        if (message == null) {
+            return null;
+        }
+        
         Pocket48Handler pocket = Newboy.INSTANCE.getHandlerPocket48();
-        String n = message.getNickName() + (message.getNickName().indexOf(message.getStarName()) != -1 ? "" : "(" + message.getStarName() + ")");
-        String r = message.getRoom().getRoomName();
+        String nickName = message.getNickName() != null ? message.getNickName() : "未知用户";
+        String starName = message.getStarName() != null ? message.getStarName() : "";
+        String n = nickName + (nickName.indexOf(starName) != -1 ? "" : "(" + starName + ")");
+        String r = (message.getRoom() != null && message.getRoom().getRoomName() != null) ? message.getRoom().getRoomName() : "未知频道";
         String timeStr = cn.hutool.core.date.DateUtil.format(new java.util.Date(message.getTime()), "MM-dd HH:mm");
         String headerTemplate = "【" + n + "】:" + "\n频道：" + r + "\n时间:" + timeStr;
 
         switch (message.getType()) {
             case TEXT:
             case GIFT_TEXT:
-                String textContent = "【" + n + "】:" + pharsePocketTextWithFace(message.getBody()) + "\n频道：" + r + "\n时间:" + timeStr;
+                String body = message.getBody() != null ? message.getBody() : "[消息内容为空]";
+                String textContent = "【" + n + "】:" + pharsePocketTextWithFace(body) + "\n频道：" + r + "\n时间:" + timeStr;
                 return new Pocket48SenderMessage(false, null,
                         new Message[]{new PlainText(textContent)});
             case AUDIO: {
@@ -176,7 +192,14 @@ public class Pocket48Sender extends Sender {
             }
             case REPLY:
             case GIFTREPLY:
-                String replyContent = "【" + n + "】:\n" + message.getReply().getNameTo() + ":" + message.getReply().getMsgTo() + "\n" + message.getReply().getMsgFrom() + "\n频道：" + r + "\n时间:" + timeStr;
+                if (message.getReply() == null) {
+                    return new Pocket48SenderMessage(false, null,
+                            new Message[]{new PlainText("【" + n + "】:回复消息(内容为空)\n频道：" + r + "\n时间:" + timeStr)});
+                }
+                String nameTo = message.getReply().getNameTo() != null ? message.getReply().getNameTo() : "未知用户";
+                String msgTo = message.getReply().getMsgTo() != null ? message.getReply().getMsgTo() : "[消息为空]";
+                String msgFrom = message.getReply().getMsgFrom() != null ? message.getReply().getMsgFrom() : "[回复为空]";
+                String replyContent = "【" + n + "】:\n" + nameTo + ":" + msgTo + "\n" + msgFrom + "\n频道：" + r + "\n时间:" + timeStr;
                 return new Pocket48SenderMessage(false, null,
                         new Message[]{new PlainText(replyContent)});
             case LIVEPUSH:
@@ -204,11 +227,13 @@ public class Pocket48Sender extends Sender {
                      return new Pocket48SenderMessage(false, null, new Message[]{new PlainText(flipVideoContent), video});
                 }
             case PASSWORD_REDPACKAGE:
-                String redPackageContent = "【" + n + "】:发了一个口令红包\n" + message.getBody() + "\n频道：" + r + "\n时间:" + timeStr;
+                String redPackageBody = message.getBody() != null ? message.getBody() : "[红包内容为空]";
+                String redPackageContent = "【" + n + "】:发了一个口令红包\n" + redPackageBody + "\n频道：" + r + "\n时间:" + timeStr;
                 return new Pocket48SenderMessage(false, null,
                         new Message[]{new PlainText(redPackageContent)});
             case VOTE:
-                String voteContent = "【" + n + "】:发起了一个投票\n" + message.getBody() + "\n频道：" + r + "\n时间:" + timeStr;
+                String voteBody = message.getBody() != null ? message.getBody() : "[投票内容为空]";
+                String voteContent = "【" + n + "】:发起了一个投票\n" + voteBody + "\n频道：" + r + "\n时间:" + timeStr;
                 return new Pocket48SenderMessage(false, null,
                         new Message[]{new PlainText(voteContent)});
         }
@@ -218,6 +243,10 @@ public class Pocket48Sender extends Sender {
     }
 
     public Message pharsePocketTextWithFace(String body) {
+        if (body == null) {
+            return new PlainText("[消息内容为空]");
+        }
+        
         String[] a = body.split("\\[.*?\\]", -1);//其余部分，-1使其产生空字符串
         if (a.length < 2)
             return new PlainText(body);
