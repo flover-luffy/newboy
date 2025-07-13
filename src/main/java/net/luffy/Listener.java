@@ -59,14 +59,5 @@ public class Listener extends SimpleListenerHost {
         return ListeningStatus.LISTENING;
     }
 
-    @EventHandler()
-    public ListeningStatus onMemberJoin(MemberJoinEvent event) {
-        if (Newboy.INSTANCE.getProperties().welcome.containsKey(event.getGroupId())) {
-            Member member = event.getMember();
-            String welcome = Newboy.INSTANCE.getProperties().welcome.get(event.getGroupId());
-            event.getGroup().sendMessage(new At(member.getId()).plus(welcome));
-        }
-
-        return ListeningStatus.LISTENING;
-    }
+    // 进群欢迎功能已移除
 }

@@ -55,6 +55,11 @@ public class MonitorConfig {
     private final boolean asyncProcessingEnabled;
     private final int asyncThreadPoolSize;
     
+    // 批量查询配置
+    private final long batchQueryInterval;
+    private final long batchQueryTimeout;
+    private final int batchQueryMaxConcurrent;
+    
     private MonitorConfig() {
         properties = new Properties();
         loadConfiguration();
@@ -91,13 +96,18 @@ public class MonitorConfig {
         healthWarningInterval = getLongProperty("monitor.notification.health.warning.interval", 1800000L);
         
         // 初始化高级配置
-        adaptiveIntervalEnabled = getBooleanProperty("monitor.adaptive.interval.enabled", false);
+        adaptiveIntervalEnabled = getBooleanProperty("monitor.adaptive.interval.enabled", true);
         adaptiveIntervalMin = getLongProperty("monitor.adaptive.interval.min", 30000L);
         adaptiveIntervalMax = getLongProperty("monitor.adaptive.interval.max", 300000L);
-        batchQueryEnabled = getBooleanProperty("monitor.batch.query.enabled", false);
+        batchQueryEnabled = getBooleanProperty("monitor.batch.query.enabled", true);
         batchQuerySize = getIntProperty("monitor.batch.query.size", 5);
-        asyncProcessingEnabled = getBooleanProperty("monitor.async.processing.enabled", false);
+        asyncProcessingEnabled = getBooleanProperty("monitor.async.processing.enabled", true);
         asyncThreadPoolSize = getIntProperty("monitor.async.thread.pool.size", 3);
+        
+        // 初始化批量查询配置
+        batchQueryInterval = getLongProperty("monitor.batch.query.interval", 5000L);
+        batchQueryTimeout = getLongProperty("monitor.batch.query.timeout", 30000L);
+        batchQueryMaxConcurrent = getIntProperty("monitor.batch.query.max.concurrent", 3);
         
         logConfigurationSummary();
     }
@@ -215,13 +225,11 @@ public class MonitorConfig {
     public boolean isAsyncProcessingEnabled() { return asyncProcessingEnabled; }
     public int getAsyncThreadPoolSize() { return asyncThreadPoolSize; }
     
-    /**
-     * 重新加载配置
-     */
-    public void reload() {
-        loadConfiguration();
-        Newboy.INSTANCE.getLogger().info("监控配置已重新加载");
-    }
+    public long getBatchQueryInterval() { return batchQueryInterval; }
+    public long getBatchQueryTimeout() { return batchQueryTimeout; }
+    public int getBatchQueryMaxConcurrent() { return batchQueryMaxConcurrent; }
+    
+    // 热重载功能已移除 - 该功能无法正常工作
     
     /**
      * 获取配置摘要

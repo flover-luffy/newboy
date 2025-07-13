@@ -1,10 +1,11 @@
 package net.luffy.handler;
 
-import cn.hutool.http.HttpRequest;
 import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import net.luffy.Newboy;
+import okhttp3.Headers;
+import okhttp3.Request;
 import net.luffy.model.Pocket48Message;
 import net.luffy.model.Pocket48RoomInfo;
 
@@ -12,7 +13,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 
-public class Pocket48Handler extends WebHandler {
+public class Pocket48Handler extends AsyncWebHandlerBase {
 
     public static final String ROOT = "https://pocketapi.48.cn";
     public static final String SOURCEROOT = "https://source.48.cn/";
@@ -65,15 +66,27 @@ public class Pocket48Handler extends WebHandler {
 
     //登陆前
     public boolean login(String account, String password) {
-        String s = header.setLoginHeader(HttpRequest.post(APILogin))
-                .body(String.format("{\"pwd\":\"%s\",\"mobile\":\"%s\"}", password, account)).execute().body();
-        JSONObject object = JSONUtil.parseObj(s);
-        if (object.getInt("status") == 200) {
-            JSONObject content = JSONUtil.parseObj(object.getObj("content"));
-            login(content.getStr("token"), true);
-            return true;
-        } else {
-            logInfo("口袋48登陆失败：" + object.getStr("message"));
+        try {
+            String url = APILogin;
+            
+            JSONObject requestBody = new JSONObject();
+            requestBody.set("pwd", password);
+            requestBody.set("mobile", account);
+            
+            String s = post(url, requestBody.toString());
+            
+            JSONObject object = JSONUtil.parseObj(s);
+            if (object.getInt("status") == 200) {
+                JSONObject content = JSONUtil.parseObj(object.getObj("content"));
+                login(content.getStr("token"), true);
+                return true;
+            } else {
+                logInfo("口袋48登陆失败：" + object.getStr("message"));
+                return false;
+            }
+            
+        } catch (Exception e) {
+            logError("登录异常: " + e.getMessage());
             return false;
         }
     }
@@ -113,23 +126,50 @@ public class Pocket48Handler extends WebHandler {
         super.logError(msg);
     }
 
+    // 重写buildRequest方法以添加Token头
     @Override
-    protected HttpRequest setHeader(HttpRequest request) {
-        return header.setHeader(request);
+    protected Request.Builder buildRequest(String url) {
+        Request.Builder builder = super.buildRequest(url)
+                .addHeader("Content-Type", "application/json;charset=utf-8")
+                .addHeader("Host", "pocketapi.48.cn")
+                .addHeader("pa", "MTc1MTg5NTgzMjAwMCwzODMzLEQ3ODVBRENBM0U3QTkzRDVFNTJCMjVDQUJDRUY4NDczLA==")
+                .addHeader("User-Agent", "PocketFans201807/7.1.34 (iPhone; iOS 19.0; Scale/2.00)")
+                .addHeader("appInfo", "{\"vendor\":\"apple\",\"deviceId\":\"8D6DDD0B-2233-4622-89AA-AABB14D4F37B\",\"appVersion\":\"7.1.34\",\"appBuild\":\"25060602\",\"osVersion\":\"19.0\",\"osType\":\"ios\",\"deviceName\":\"iPhone 11\",\"os\":\"ios\"}");
+        
+        // 如果已登录，添加token头
+        if (header.getToken() != null) {
+            builder.addHeader("token", header.getToken());
+        }
+        
+        return builder;
     }
 
-    public int getBalance() {
-        String s = post(APIBalance, String.format("{\"token\":\"%s\"}", header.getToken()));
-        JSONObject object = JSONUtil.parseObj(s);
-
-        if (object.getInt("status") == 200) {
-            JSONObject content = JSONUtil.parseObj(object.getObj("content"));
-            return content.getInt("moneyTotal", 0);
-
-        } else {
-            logError(object.getStr("message"));
+    public String getBalance() {
+        try {
+            String url = "https://pocketapi.48.cn/user/api/v1/user/info/pfid";
+            
+            Headers headers = new Headers.Builder()
+                .add("token", header.getToken())
+                .add("User-Agent", "PocketFans201807/6.0.16 (iPhone; iOS 13.5.1; Scale/2.00)")
+                .add("Accept", "application/json")
+                .add("Accept-Language", "zh-Hans-CN;q=1")
+                .build();
+            
+            String response = get(url, headers);
+            
+            JSONObject jsonResponse = JSONUtil.parseObj(response);
+            if (jsonResponse.getInt("status") == 200) {
+                JSONObject content = jsonResponse.getJSONObject("content");
+                return content.getStr("pfid", "0");
+            } else {
+                logError("获取余额失败: " + jsonResponse.getStr("message"));
+                return "0";
+            }
+            
+        } catch (Exception e) {
+            logError("获取余额异常: " + e.getMessage());
+            return "0";
         }
-        return 0;
     }
 
     public String getStarNameByStarID(long starID) {

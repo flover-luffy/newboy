@@ -1,13 +1,14 @@
 package net.luffy.handler;
 
-import cn.hutool.http.HttpRequest;
+import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import net.luffy.Newboy;
+import okhttp3.Headers;
 
 import java.util.HashMap;
 
-public class WeiboHandler extends WebHandler {
+public class WeiboHandler extends AsyncWebHandlerBase {
 
     //微博监测采取游客登陆的方式，但也时刻要注意cookie失效
 
@@ -26,7 +27,7 @@ public class WeiboHandler extends WebHandler {
     public String getSuperTopicRes(String id) {
 
         if (!cookie.equals("")) {
-            String res = get(String.format(URLsuperTopic, id));
+            String res = get(String.format(URLsuperTopic, id), getHeadersWithCookie());
             if (!res.equals("")) //否则时效
                 return res.equals("{\"code\":\"100006\",\"msg\":\"\",\"data\":\"https:\\/\\/weibo.com\\/sorry?pagenotfound&\"}") ? null : res;
         }
@@ -58,7 +59,7 @@ public class WeiboHandler extends WebHandler {
 
     public JSONObject getUserInfo(long id) {
         if (!cookie.equals("")) {
-            String ret = get(String.format(APIUserProfile, id));
+            String ret = get(String.format(APIUserProfile, id), getHeadersWithCookie());
             if (!ret.equals("")) {
                 JSONObject o = JSONUtil.parseObj(ret);
                 if (o.getInt("ok") == 1) {
@@ -80,7 +81,7 @@ public class WeiboHandler extends WebHandler {
 
     public Object[] getUserBlog(long id) {
         if (!cookie.equals("")) {
-            String ret = get(String.format(APIUserBlog, id));
+            String ret = get(String.format(APIUserBlog, id), getHeadersWithCookie());
             if (!ret.equals("")) {
                 JSONObject o = JSONUtil.parseObj(ret);
                 if (o != null) {
@@ -129,27 +130,29 @@ public class WeiboHandler extends WebHandler {
         }
     }
 
-    public HttpRequest setDefaultHeader(HttpRequest request) {
-        return request.header("authority", "weibo.com").header(
-                "sec-ch-ua", "\"Chromium\";v=\"94\", \"Google Chrome\";v=\"94\", \";Not A Brand\";v=\"99\"").header(
-                "content-type", "application/x-www-form-urlencoded").header(
-                "x-requested-with", "XMLHttpRequest").header(
-                "sec-ch-ua-mobile", "?0").header(
-                "user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML).header( like Gecko) Chrome/94.0.4606.71 Safari/537.36").header(
-                "sec-ch-ua-platform", "\"Windows\"").header(
-                "accept", "*/*").header(
-                "sec-fetch-site", "same-origin").header(
-                "sec-fetch-mode", "cors").header(
-                "sec-fetch-dest", "empty");
+    public Headers getDefaultHeaders() {
+        return new Headers.Builder()
+                .add("authority", "weibo.com")
+                .add("sec-ch-ua", "\"Chromium\";v=\"94\", \"Google Chrome\";v=\"94\", \";Not A Brand\";v=\"99\"")
+                .add("content-type", "application/x-www-form-urlencoded")
+                .add("x-requested-with", "XMLHttpRequest")
+                .add("sec-ch-ua-mobile", "?0")
+                .add("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.71 Safari/537.36")
+                .add("sec-ch-ua-platform", "\"Windows\"")
+                .add("accept", "*/*")
+                .add("sec-fetch-site", "same-origin")
+                .add("sec-fetch-mode", "cors")
+                .add("sec-fetch-dest", "empty")
+                .build();
     }
 
-    @Override
-    protected HttpRequest setHeader(HttpRequest request) {
-        return setDefaultHeader(request).header("cookie", cookie);
+    public Headers getHeadersWithCookie() {
+        return getDefaultHeaders().newBuilder()
+                .add("cookie", cookie)
+                .build();
     }
 
     protected String getWithDefaultHeader(String url) {
-        return setDefaultHeader(HttpRequest.get(url))
-                .execute().body();
+        return get(url, getDefaultHeaders());
     }
 }

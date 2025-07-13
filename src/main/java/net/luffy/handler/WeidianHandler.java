@@ -11,7 +11,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
-public class WeidianHandler extends WebHandler {
+public class WeidianHandler extends AsyncWebHandlerBase {
 
     private static final String APIOrderList = "https://thor.weidian.com/tradeview/seller.getOrderListForPC/1.0";
     private static final String APIDeliver = "https://thor.weidian.com/tradeview/seller.deliverOrder/1.0";

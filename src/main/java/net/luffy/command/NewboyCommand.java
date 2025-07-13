@@ -19,20 +19,43 @@ public class NewboyCommand extends JCompositeCommand {
         super(Newboy.INSTANCE, "newboy");
     }
 
-    @SubCommand
-    public void reload(CommandSender sender) {
-        // Newboy.INSTANCE.reloadPlugin();
-        sender.sendMessage("Newboy 插件重新加载功能暂未实现");
-    }
+    // 热重载功能已移除 - 该功能无法正常工作
 
     @SubCommand
     public void status(CommandSender sender) {
+        // 检查权限
+        if (!checkPermission(sender)) {
+            sender.sendMessage("❌ 权限不足，只有管理员可以使用此命令");
+            return;
+        }
+        
         sender.sendMessage("Newboy 插件运行正常");
     }
 
     @SubCommand
     public void help(CommandSender sender) {
-        sender.sendMessage("Newboy 插件帮助:\n/newboy reload - 重新加载插件\n/newboy status - 查看插件状态\n/newboy help - 显示帮助信息\n/newboy monitor - 在线状态监控功能\n\n详细命令请使用 /newboy monitor 查看");
+        sender.sendMessage("Newboy 插件帮助:\n/newboy status - 查看插件状态\n/newboy help - 显示帮助信息\n/newboy monitor - 在线状态监控功能\n\n详细命令请使用 /newboy monitor 查看");
+    }
+    
+    /**
+     * 检查发送者是否有权限执行管理命令
+     */
+    private boolean checkPermission(CommandSender sender) {
+        try {
+            // 获取发送者ID
+            long senderId = sender.getUser() != null ? sender.getUser().getId() : -1;
+            
+            // 如果是控制台发送的命令，允许执行
+            if (senderId == -1) {
+                return true;
+            }
+            
+            // 检查是否为管理员
+            return Newboy.INSTANCE.getConfig().isAdmin(senderId);
+        } catch (Exception e) {
+            Newboy.INSTANCE.getLogger().error("权限检查失败", e);
+            return false;
+        }
     }
     
     @SubCommand

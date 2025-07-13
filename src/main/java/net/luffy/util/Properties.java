@@ -14,10 +14,9 @@ public class Properties {
     public File configData;
     public boolean enable;
     public boolean save_login;
-    public boolean ylg;
     public String[] admins;
     public String[] secureGroup;
-    public HashMap<Long, String> welcome = new HashMap<>();
+    // 进群欢迎功能已移除
 
     //口袋48
     public String pocket48_pattern;

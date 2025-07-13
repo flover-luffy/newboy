@@ -78,13 +78,13 @@ monitor.resetStats(); // 重置统计数据
 - ✅ **配置文件支持**：支持 properties 文件配置
 - ✅ **默认值保护**：配置缺失时使用合理默认值
 - ✅ **配置验证**：自动验证配置参数的合理性
-- ✅ **热重载支持**：支持运行时重新加载配置
+- ❌ **热重载支持**：热重载功能已移除（无法正常工作）
 
 ```java
 // 配置使用示例
 MonitorConfig config = MonitorConfig.getInstance();
 String summary = config.getConfigSummary(); // 获取配置摘要
-config.reload(); // 重新加载配置
+// 热重载功能已移除，需要重启Mirai Console来重新加载配置
 ```
 
 ## ⚙️ 配置文件说明

@@ -1,7 +1,8 @@
 package net.luffy.util.sender;
 
-import cn.hutool.http.HttpRequest;
+// HttpRequest已迁移到异步处理器
 import net.luffy.util.ThumbnailatorUtil;
+import net.luffy.handler.AsyncWebHandlerBase;
 import net.mamoe.mirai.Bot;
 import net.mamoe.mirai.contact.Group;
 import net.mamoe.mirai.contact.MemberPermission;
@@ -13,7 +14,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
 
-public class Sender extends Thread { //异步进程
+public class Sender extends AsyncWebHandlerBase implements Runnable { //异步进程
     public final Bot bot;
     public final long group_id;
     public final Group group;
@@ -34,7 +35,7 @@ public class Sender extends Thread { //异步进程
     }
 
     public InputStream getRes(String resLoc) {
-        return HttpRequest.get(resLoc).execute().bodyStream();
+        return getInputStream(resLoc);
     }
 
     public InputStream getVideoThumbnail(InputStream video, String defaultImg) {
@@ -65,5 +66,13 @@ public class Sender extends Thread { //异步进程
             }
             return t;
         }
+    }
+    
+    /**
+     * 默认的run方法实现，子类应该重写此方法
+     */
+    @Override
+    public void run() {
+        // 默认实现为空，子类应该重写此方法
     }
 }

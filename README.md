@@ -112,7 +112,7 @@ weibo_superTopic=[{"qqGroup":123456789,"sTopicSubs":["话题1","话题2"]}]
 ### 基础命令
 - `/newboy help` - 显示帮助信息
 - `/newboy status` - 查看插件运行状态
-- `/newboy reload` - 重新加载插件配置
+
 
 ### 在线状态监控命令
 - `/newboy monitor` - 显示监控功能帮助

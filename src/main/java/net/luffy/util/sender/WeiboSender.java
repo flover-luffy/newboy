@@ -1,7 +1,7 @@
 package net.luffy.util.sender;
 
 import cn.hutool.core.date.DateUtil;
-import cn.hutool.http.HttpRequest;
+// HttpRequest已迁移到异步处理器
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import net.luffy.Newboy;
@@ -277,7 +277,29 @@ public class WeiboSender extends Sender {
 
     @Override
     public InputStream getRes(String resLoc) {
-        return HttpRequest.get(resLoc).setReadTimeout(20000).header("Referer", "https://weibo.com/").execute().bodyStream();
+        // 使用父类的getInputStream方法，但需要设置Referer头
+        try {
+            okhttp3.Request request = buildRequest(resLoc)
+                    .addHeader("Referer", "https://weibo.com/")
+                    .get()
+                    .build();
+            
+            okhttp3.Response response = httpClient.newCall(request).execute();
+            if (!response.isSuccessful()) {
+                response.close();
+                throw new RuntimeException("HTTP请求失败: " + response.code() + " " + resLoc);
+            }
+            
+            okhttp3.ResponseBody body = response.body();
+            if (body == null) {
+                response.close();
+                throw new RuntimeException("响应体为空: " + resLoc);
+            }
+            
+            return body.byteStream();
+        } catch (Exception e) {
+            throw new RuntimeException("获取资源失败: " + e.getMessage(), e);
+        }
     }
 
     private String handleWeiboText(String oriText) {

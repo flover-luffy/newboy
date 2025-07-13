@@ -1,9 +1,10 @@
 package net.luffy.util;
 
-import cn.hutool.http.HttpRequest;
+// HttpRequest已迁移到异步处理器
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import net.luffy.Newboy;
+import net.luffy.handler.AsyncWebHandlerBase;
 import net.luffy.handler.Pocket48Handler;
 import net.luffy.handler.WeidianHandler;
 import net.luffy.handler.Xox48Handler;
@@ -23,7 +24,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 
-public class CommandOperator {
+public class CommandOperator extends AsyncWebHandlerBase {
 
     public static CommandOperator INSTANCE;
 
@@ -248,7 +249,7 @@ public class CommandOperator {
                                 }
 
                                 //头像
-                                try (ExternalResource avatarResource = ExternalResource.create(HttpRequest.get(avatar).execute().bodyStream())) {
+                                try (ExternalResource avatarResource = ExternalResource.create(getInputStream(avatar))) {
                                     return new PlainText(out.toString()).plus(
                                                     g.uploadImage(avatarResource))
                                             .plus(fan.toString());
@@ -538,6 +539,8 @@ public class CommandOperator {
         switch (args[0]) {
             case "/微店":
             case "/weidian":
+            // 进群欢迎功能已移除
+            /*
             case "/欢迎": {
                 try {
                     long groupId = Long.valueOf(args[1]);
@@ -790,6 +793,8 @@ public class CommandOperator {
                 }
                 //getHelp(0);
             }
+            // 进群欢迎功能已移除
+            /*
             case "/欢迎": {
                 long groupId;
                 try {
@@ -806,6 +811,7 @@ public class CommandOperator {
                     return new PlainText("取消成功");
                 }
             }
+            */
         }
         return null;
     }
@@ -1000,8 +1006,7 @@ public class CommandOperator {
         
         help.append("🔧 管理功能\n");
         help.append("私聊命令（管理员）：\n");
-        help.append("  /欢迎 <群号> <欢迎词> - 设置群欢迎语\n");
-        help.append("  /欢迎 <群号> 取消 - 取消群欢迎语\n");
+        // 进群欢迎功能已移除
         help.append("  /清理 - 清理失效群配置\n\n");
         
         help.append("💡 提示：\n");

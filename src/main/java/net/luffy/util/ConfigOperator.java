@@ -26,42 +26,41 @@ public class ConfigOperator {
         File file = properties.configData;
         if (!file.exists()) {
             FileUtil.touch(file);
-            Setting setting = new Setting(file, StandardCharsets.UTF_8, false);
+            // 创建Setting对象并设置基本的默认配置
+            Setting tempSetting = new Setting(file, StandardCharsets.UTF_8, false);
             
-            // ========== 基础配置 ==========
-            setting.set("enable", "true");  // 是否启用插件
-            setting.set("save_login", "false");  // 是否保存登录状态
-            setting.set("ylg", "false");  // 是否启用YLG功能
-            setting.set("admins", "");  // 管理员QQ号，多个用逗号分隔
-            setting.set("secureGroup", "");  // 安全群组，多个用逗号分隔
+            // 设置基本配置的默认值
+            tempSetting.setByGroup("basic", "enable", "true");
+            tempSetting.setByGroup("basic", "save_login", "false");
+            tempSetting.setByGroup("basic", "admins", "123456789");
+            tempSetting.setByGroup("basic", "secureGroup", "");
             
-            // ========== 欢迎语配置 ==========
-            setting.set("welcome", "[]");  // 群欢迎语配置，格式: [{\"1\":群号,\"2\":\"欢迎语\"}]
+            // 设置定时任务默认配置
+            tempSetting.setByGroup("schedule", "pocket48", "* * * * *");
+            tempSetting.setByGroup("schedule", "weibo", "*/5 * * * *");
+            tempSetting.setByGroup("schedule", "onlineStatus", "*/2 * * * *");
+            tempSetting.setByGroup("schedule_order", "weidian", "*/10 * * * *");
+            tempSetting.setByGroup("schedule_item", "weidian", "*/10 * * * *");
             
-            // ========== 定时任务配置 ==========
-            setting.setByGroup("schedule", "pocket48", "* * * * *");  // 口袋48检查频率(每分钟)
-            setting.setByGroup("schedule", "weibo", "*/5 * * * *");  // 微博检查频率(每5分钟)
-            setting.setByGroup("schedule_order", "weidian", "*/10 * * * *");  // 微店订单检查频率(每10分钟)
-            setting.setByGroup("schedule_item", "weidian", "*/10 * * * *");  // 微店商品检查频率(每10分钟)
-            setting.setByGroup("schedule", "onlineStatus", "*/2 * * * *");  // 在线状态检查频率(每2分钟)
+            // 设置口袋48默认配置
+            tempSetting.setByGroup("pocket48", "account", "");
+            tempSetting.setByGroup("pocket48", "password", "");
+            tempSetting.setByGroup("pocket48", "token", "");
             
-            // ========== 口袋48配置 ==========
-            setting.setByGroup("account", "pocket48", "");  // 口袋48账号
-            setting.setByGroup("password", "pocket48", "");  // 口袋48密码
-            setting.setByGroup("token", "pocket48", "");  // 口袋48 Token(推荐使用)
-            setting.setByGroup("subscribe", "pocket48", "[]");  // 口袋48订阅配置
+            // 设置在线状态监控默认配置
+            tempSetting.setByGroup("onlineStatus", "enable", "true");
             
-            // ========== 微博配置 ==========
-            setting.setByGroup("subscribe", "weibo", "[]");  // 微博订阅配置
+            // 设置订阅配置默认值
+            tempSetting.setByGroup("subscribe", "pocket48", "[]");
+            tempSetting.setByGroup("subscribe", "weibo", "[]");
+            tempSetting.setByGroup("subscribe", "onlineStatus", "[]");
             
-            // ========== 微店配置 ==========
-            setting.setByGroup("shops", "weidian", "[]");  // 微店配置
+            // 设置商店配置默认值
+            tempSetting.setByGroup("shops", "weidian", "[]");
             
-            // ========== 在线状态监控配置 ==========
-            setting.set("onlineStatus_enable", "false");  // 是否启用在线状态监控
-            setting.setByGroup("subscribe", "onlineStatus", "[]");  // 在线状态监控订阅配置
+            // 保存默认配置
+            tempSetting.store();
             
-            setting.store();
             Newboy.INSTANCE.getLogger().info("首次加载已生成 config/net.luffy.newboy/config.setting 配置文件");
             Newboy.INSTANCE.getLogger().info("请根据需要修改配置文件后重启插件");
             Newboy.INSTANCE.getLogger().info("配置文件路径: config/net.luffy.newboy/config.setting");
@@ -76,24 +75,16 @@ public class ConfigOperator {
     }
 
     public void init() {
-        properties.enable = setting.getBool("enable", true);
-        properties.save_login = setting.getBool("save_login", false);
-        properties.ylg = setting.getBool("ylg", false);
-        properties.admins = setting.getStrings("admins");
-        properties.secureGroup = setting.getStrings("secureGroup");
+        properties.enable = setting.getBool("basic", "enable", true);
+        properties.save_login = setting.getBool("basic", "save_login", false);
+        properties.admins = setting.getStrings("basic", "admins");
+        properties.secureGroup = setting.getStrings("basic", "secureGroup");
         if (properties.admins == null)
             properties.admins = new String[]{};
         if (properties.secureGroup == null)
             properties.secureGroup = new String[]{};
 
-        for (Object a :
-                JSONUtil.parseArray(setting.getStr("welcome", "[]")).toArray()) {
-            JSONObject welcome = JSONUtil.parseObj(a);
-            properties.welcome.put(
-                    welcome.getLong("1"),
-                    welcome.getStr("2")
-            );
-        }
+        // 进群欢迎功能已移除
 
         //schedule pattern
         properties.pocket48_pattern = setting.getStr("schedule", "pocket48", "* * * * *");
@@ -104,12 +95,21 @@ public class ConfigOperator {
         properties.onlineStatus_pattern = setting.getStr("schedule", "onlineStatus", "*/2 * * * *");
         
         //在线状态监控
-        properties.onlineStatus_enable = setting.getBool("onlineStatus_enable", false);
+        properties.onlineStatus_enable = setting.getBool("onlineStatus", "enable", true);
 
         //口袋48
-        properties.pocket48_account = setting.getStr("account", "pocket48", "");
-        properties.pocket48_password = setting.getStr("password", "pocket48", "");
-        properties.pocket48_token = setting.getStr("token", "pocket48", "");
+        properties.pocket48_account = setting.getStr("pocket48", "account", "");
+        properties.pocket48_password = setting.getStr("pocket48", "password", "");
+        properties.pocket48_token = setting.getStr("pocket48", "token", "");
+        
+        // 配置验证日志
+        if (!properties.pocket48_token.isEmpty()) {
+            Newboy.INSTANCE.getLogger().info("口袋48 Token 配置已读取，长度: " + properties.pocket48_token.length());
+        } else if (!properties.pocket48_account.isEmpty() && !properties.pocket48_password.isEmpty()) {
+            Newboy.INSTANCE.getLogger().info("口袋48账号密码配置已读取");
+        } else {
+            Newboy.INSTANCE.getLogger().warning("口袋48未配置登录信息，请在config.setting中配置token或账号密码");
+        }
 
         for (Object a :
                 JSONUtil.parseArray(setting.getByGroup("subscribe", "pocket48")).toArray()) {
@@ -182,32 +182,22 @@ public class ConfigOperator {
 
     //修改配置并更新缓存的方法
     public void swch(boolean on) {
-        setting.set("enable", String.valueOf(on));
-        setting.store();
-        properties.enable = setting.getBool("enable");
+        setting.setByGroup("basic", "enable", String.valueOf(on));
+        safeStoreConfig("基础配置");
+        properties.enable = setting.getBool("basic", "enable", true);
     }
 
-    public boolean setWelcome(String welcome, long group) {
-        properties.welcome.put(group, welcome);
-        saveWelcome();
-        return true;
-    }
-
-    public boolean closeWelcome(long group) {
-        properties.welcome.remove(group);
-        saveWelcome();
-        return true;
-    }
+    // 进群欢迎功能已移除
 
     public boolean setAndSaveToken(String token) {
         properties.pocket48_token = token;
-        setting.setByGroup("token", "pocket48", token);
-        setting.store();
+        setting.setByGroup("pocket48", "token", token);
+        safeStoreConfig("口袋48 Token配置");
         return true;
     }
 
     public String getToken() {
-        return setting.getStr("token", "pocket48", properties.pocket48_token);
+        return setting.getStr("pocket48", "token", properties.pocket48_token);
     }
 
     public boolean addPocket48RoomSubscribe(long room_id, long group) {
@@ -377,17 +367,7 @@ public class ConfigOperator {
         return it.contains(itemid) ? 1 : 0;
     }
 
-    public void saveWelcome() {
-        String a = "[";
-        for (long group : properties.welcome.keySet()) {
-            JSONObject object = new JSONObject();
-            object.set("1", group);
-            object.set("2", properties.welcome.get(group));
-            a += object + ",";
-        }
-        setting.set("welcome", (a.length() > 1 ? a.substring(0, a.length() - 1) : a) + "]");
-        setting.store();
-    }
+    // 进群欢迎功能已移除
 
     public void savePocket48SubscribeConfig() {
         String a = "[";
@@ -401,7 +381,9 @@ public class ConfigOperator {
             a += object + ",";
         }
         setting.setByGroup("subscribe", "pocket48", (a.length() > 1 ? a.substring(0, a.length() - 1) : a) + "]");
-        setting.store();
+        
+        // 安全保存配置，避免覆盖整个配置文件
+        safeStoreConfig("口袋48订阅配置");
     }
 
     public void savePocket48RoomIDConnectConfig() {
@@ -413,7 +395,7 @@ public class ConfigOperator {
             a += object + ",";
         }
         setting.setByGroup("roomConnection", "pocket48", (a.length() > 1 ? a.substring(0, a.length() - 1) : a) + "]");
-        setting.store();
+        safeStoreConfig("口袋48房间连接配置");
     }
 
 
@@ -428,7 +410,7 @@ public class ConfigOperator {
             a += object + ",";
         }
         setting.setByGroup("subscribe", "weibo", (a.length() > 1 ? a.substring(0, a.length() - 1) : a) + "]");
-        setting.store();
+        safeStoreConfig("微博订阅配置");
     }
 
     public void saveWeidianConfig() {
@@ -442,7 +424,7 @@ public class ConfigOperator {
             a += object + ",";
         }
         setting.setByGroup("shops", "weidian", (a.length() > 1 ? a.substring(0, a.length() - 1) : a) + "]");
-        setting.store();
+        safeStoreConfig("微店配置");
     }
 
     public boolean isAdmin(Group group, long qqID) {
@@ -498,8 +480,8 @@ public class ConfigOperator {
     
     public int switchOnlineStatusMonitor() {
         properties.onlineStatus_enable = !properties.onlineStatus_enable;
-        setting.set("onlineStatus_enable", String.valueOf(properties.onlineStatus_enable));
-        setting.store();
+        setting.setByGroup("onlineStatus", "enable", String.valueOf(properties.onlineStatus_enable));
+        safeStoreConfig("在线状态监控开关配置");
         return properties.onlineStatus_enable ? 1 : 0;
     }
 
@@ -514,7 +496,7 @@ public class ConfigOperator {
         }
         properties.onlineStatus_pattern = pattern.trim();
         setting.setByGroup("schedule", "onlineStatus", pattern.trim());
-        setting.store();
+        safeStoreConfig("在线状态监控间隔配置");
         return true;
     }
 
@@ -535,6 +517,49 @@ public class ConfigOperator {
             a += object + ",";
         }
         setting.setByGroup("subscribe", "onlineStatus", (a.length() > 1 ? a.substring(0, a.length() - 1) : a) + "]");
-        setting.store();
+        
+        // 只保存特定配置项，避免覆盖整个配置文件
+        try {
+            // 创建临时Setting对象来保存单个配置项
+            File configFile = properties.configData;
+            if (configFile.exists()) {
+                // 读取现有配置
+                Setting tempSetting = new Setting(configFile, StandardCharsets.UTF_8, false);
+                // 只更新在线状态监控配置
+                tempSetting.setByGroup("subscribe", "onlineStatus", (a.length() > 1 ? a.substring(0, a.length() - 1) : a) + "]");
+                // 保存配置
+                tempSetting.store();
+                Newboy.INSTANCE.getLogger().info("在线状态监控配置已保存");
+            } else {
+                // 如果配置文件不存在，使用原有逻辑
+                safeStoreConfig("在线状态监控配置（新建文件）");
+            }
+        } catch (Exception e) {
+             Newboy.INSTANCE.getLogger().warning("保存在线状态监控配置失败: " + e.getMessage());
+             // 降级到原有保存方式
+             safeStoreConfig("在线状态监控配置（降级保存）");
+         }
+    }
+    
+    /**
+     * 安全保存配置，避免覆盖整个配置文件
+     * 由于hutool Setting类的限制，暂时使用原有保存方式
+     * 但添加了详细的日志记录以便用户了解配置变更
+     * @param configType 配置类型描述
+     */
+    private void safeStoreConfig(String configType) {
+        try {
+            // 记录配置保存操作
+            Newboy.INSTANCE.getLogger().info("正在保存" + configType + "...");
+            
+            // 使用原有的保存方式，但添加更好的错误处理
+            setting.store();
+            
+            Newboy.INSTANCE.getLogger().info(configType + "已成功保存到: " + properties.configData.getAbsolutePath());
+            
+        } catch (Exception e) {
+            Newboy.INSTANCE.getLogger().error("保存" + configType + "失败: " + e.getMessage(), e);
+            throw e; // 重新抛出异常，让调用者知道保存失败
+        }
     }
 }

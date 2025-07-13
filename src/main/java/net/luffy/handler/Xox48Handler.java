@@ -1,24 +1,47 @@
 package net.luffy.handler;
 
-import cn.hutool.http.HttpRequest;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import net.luffy.Newboy;
+import net.luffy.util.AsyncOnlineStatusMonitor;
+import okhttp3.Request;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.CompletableFuture;
+import java.util.List;
+import java.util.Arrays;
+import java.util.Random;
 
 /**
- * 增强的Xox48处理器
- * 提供成员在线状态查询，支持缓存、重试、性能监控等功能
+ * 增强的Xox48异步处理器
+ * 提供成员在线状态查询，支持异步处理、多UA随机选择、缓存、重试、性能监控等功能
  */
-public class Xox48Handler extends WebHandler {
+public class Xox48Handler extends AsyncWebHandlerBase {
 
     private static final String API_MEMBER_ONLINE = "https://xox48.top/Api/member_online";
     
     // 配置管理
     private final net.luffy.util.MonitorConfig config = net.luffy.util.MonitorConfig.getInstance();
+    
+    // 异步监控器
+    private final AsyncOnlineStatusMonitor asyncMonitor = AsyncOnlineStatusMonitor.INSTANCE;
+    
+    // 多个User-Agent配置，每次请求随机选择
+    private static final List<String> USER_AGENTS = Arrays.asList(
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 15_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6 Mobile/15E148 Safari/604.1",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15",
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    );
+    
+    // 随机数生成器，用于UA选择
+    private final Random random = new Random();
     
     // 缓存和失败统计
     private final ConcurrentHashMap<String, CachedResult> resultCache = new ConcurrentHashMap<>();
@@ -29,35 +52,97 @@ public class Xox48Handler extends WebHandler {
     }
 
     /**
-     * 设置请求头
+     * 获取默认请求头（使用随机UA）
      */
-    @Override
-    protected HttpRequest setHeader(HttpRequest request) {
-        return request.header("Accept", "application/json, text/plain, */*")
-                .header("Content-Type", "application/x-www-form-urlencoded")
-                .header("Sec-Fetch-Site", "same-origin")
-                .header("Origin", "https://xox48.top")
-                .header("Sec-Fetch-Mode", "cors")
-                .header("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1")
-                .header("Referer", "https://xox48.top/v2024/")
-                .header("Sec-Fetch-Dest", "empty")
-                .header("Accept-Language", "zh-SG,zh-CN;q=0.9,zh-Hans;q=0.8")
-                .header("Priority", "u=3, i")
-                .header("Accept-Encoding", "gzip, deflate, br, zstd")
-                .header("Connection", "keep-alive");
+    private okhttp3.Headers getDefaultHeaders() {
+        String randomUserAgent = getRandomUserAgent();
+        return new okhttp3.Headers.Builder()
+                .add("Accept", "application/json, text/plain, */*")
+                .add("Content-Type", "application/x-www-form-urlencoded")
+                .add("Sec-Fetch-Site", "same-origin")
+                .add("Origin", "https://xox48.top")
+                .add("Sec-Fetch-Mode", "cors")
+                .add("User-Agent", randomUserAgent)
+                .add("Referer", "https://xox48.top/v2024/")
+                .add("Sec-Fetch-Dest", "empty")
+                .add("Accept-Language", "zh-SG,zh-CN;q=0.9,zh-Hans;q=0.8")
+                .add("Priority", "u=3, i")
+                .add("Accept-Encoding", "gzip, deflate, br, zstd")
+                .add("Connection", "keep-alive")
+                .build();
+    }
+    
+    /**
+     * 随机选择User-Agent
+     */
+    private String getRandomUserAgent() {
+        return USER_AGENTS.get(random.nextInt(USER_AGENTS.size()));
     }
 
     /**
-     * 查询成员在线状态 - 支持成员名称（增强版）
+     * 异步查询成员在线状态 - 新的异步方法
+     * 功能特性：
+     * 1. 异步处理：使用CompletableFuture实现非阻塞查询
+     * 2. 批量优化：自动合并到批量查询中提升性能
+     * 3. 随机UA：每次请求使用不同的User-Agent
+     * 4. 缓存机制：30秒内重复查询直接返回缓存结果
+     * 5. 失败统计：记录连续失败次数，超过阈值进入冷却期
+     * @param name 成员名称
+     * @return CompletableFuture包装的在线状态信息对象
+     */
+    public CompletableFuture<OnlineStatusResult> queryMemberOnlineStatusAsync(String name) {
+        if (name == null || name.trim().isEmpty()) {
+            return CompletableFuture.completedFuture(
+                new OnlineStatusResult(false, "成员名称不能为空", name, -1, null, null, null));
+        }
+        
+        String normalizedName = name.trim();
+        
+        // 使用异步监控器进行查询
+        return asyncMonitor.queryMemberStatusAsync(normalizedName)
+                .thenApply(batchResult -> {
+                    if (batchResult.isSuccess()) {
+                        try {
+                            // 解析批量查询结果为OnlineStatusResult
+                            JSONObject jsonResponse = JSONUtil.parseObj(batchResult.getRawResponse());
+                            return parseOnlineStatusResponse(jsonResponse, normalizedName);
+                        } catch (Exception e) {
+                            return new OnlineStatusResult(false, "解析响应失败: " + e.getMessage(), 
+                                normalizedName, -1, null, null, null);
+                        }
+                    } else {
+                        return new OnlineStatusResult(false, batchResult.getStatus(), 
+                            normalizedName, -1, null, null, null);
+                    }
+                });
+    }
+    
+    /**
+     * 查询成员在线状态 - 支持成员名称（兼容性方法，内部使用异步实现）
      * 功能特性：
      * 1. 缓存机制：30秒内重复查询直接返回缓存结果
      * 2. 失败统计：记录连续失败次数，超过阈值进入冷却期
      * 3. 详细错误信息：提供具体的失败原因
      * 4. 性能监控：记录查询耗时和成功率
+     * 5. 异步优化：内部使用异步处理器提升性能
      * @param name 成员名称
      * @return 在线状态信息对象，包含状态、消息等信息
      */
     public OnlineStatusResult queryMemberOnlineStatus(String name) {
+        try {
+            // 使用异步方法并等待结果，保持向后兼容
+            return queryMemberOnlineStatusAsync(name).get();
+        } catch (Exception e) {
+            return new OnlineStatusResult(false, "查询异常: " + e.getMessage(), name, -1, null, null, null);
+        }
+    }
+    
+    /**
+     * 查询成员在线状态 - 原始同步实现（已弃用，保留用于紧急回退）
+     * @deprecated 请使用 queryMemberOnlineStatusAsync 或 queryMemberOnlineStatus
+     */
+    @Deprecated
+    public OnlineStatusResult queryMemberOnlineStatusSync(String name) {
         if (name == null || name.trim().isEmpty()) {
             return new OnlineStatusResult(false, "成员名称不能为空", name, -1, null, null, null);
         }
@@ -86,19 +171,9 @@ public class Xox48Handler extends WebHandler {
         try {
             String requestBody = "name=" + normalizedName;
             
-            String response = executeWithRetry(() -> {
-                HttpRequest request = HttpRequest.post(API_MEMBER_ONLINE)
-                        .header("Accept", "application/json, text/plain, */*")
-                        .header("Content-Type", "application/x-www-form-urlencoded")
-                        .header("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) AppleWebKit/605.1.15")
-                        .header("Origin", "https://xox48.top")
-                        .header("Referer", "https://xox48.top/v2024/")
-                        .setConnectionTimeout(DEFAULT_CONNECT_TIMEOUT)
-                        .setReadTimeout(DEFAULT_READ_TIMEOUT)
-                        .body(requestBody);
-                
-                return request.execute().body();
-            }, API_MEMBER_ONLINE, "POST");
+            okhttp3.Headers headers = getDefaultHeaders();
+            
+            String response = post(API_MEMBER_ONLINE, headers, requestBody);
             
             JSONObject jsonResponse = JSONUtil.parseObj(response);
             OnlineStatusResult result = parseOnlineStatusResponse(jsonResponse, normalizedName);
@@ -129,6 +204,52 @@ public class Xox48Handler extends WebHandler {
                 normalizedName, e.getMessage(), queryTime));
             
             return new OnlineStatusResult(false, errorMsg, normalizedName, -1, null, null, null);
+        }
+    }
+    
+    /**
+     * 批量异步查询成员在线状态
+     * @param memberNames 成员名称列表
+     * @return CompletableFuture包装的批量查询结果列表
+     */
+    public CompletableFuture<List<OnlineStatusResult>> batchQueryMemberOnlineStatusAsync(List<String> memberNames) {
+        if (memberNames == null || memberNames.isEmpty()) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+        
+        return asyncMonitor.batchQueryMemberStatus(memberNames)
+                .thenApply(batchResults -> 
+                    batchResults.stream()
+                            .map(batchResult -> {
+                                if (batchResult.isSuccess()) {
+                                    try {
+                                        JSONObject jsonResponse = JSONUtil.parseObj(batchResult.getRawResponse());
+                                        return parseOnlineStatusResponse(jsonResponse, batchResult.getMemberName());
+                                    } catch (Exception e) {
+                                        return new OnlineStatusResult(false, "解析响应失败: " + e.getMessage(), 
+                                            batchResult.getMemberName(), -1, null, null, null);
+                                    }
+                                } else {
+                                    return new OnlineStatusResult(false, batchResult.getStatus(), 
+                                        batchResult.getMemberName(), -1, null, null, null);
+                                }
+                            })
+                            .collect(java.util.stream.Collectors.toList())
+                );
+    }
+    
+    /**
+     * 批量查询成员在线状态（同步版本）
+     * @param memberNames 成员名称列表
+     * @return 批量查询结果列表
+     */
+    public List<OnlineStatusResult> batchQueryMemberOnlineStatus(List<String> memberNames) {
+        try {
+            return batchQueryMemberOnlineStatusAsync(memberNames).get();
+        } catch (Exception e) {
+            return memberNames.stream()
+                    .map(name -> new OnlineStatusResult(false, "批量查询异常: " + e.getMessage(), name, -1, null, null, null))
+                    .collect(java.util.stream.Collectors.toList());
         }
     }
     
@@ -325,7 +446,7 @@ public class Xox48Handler extends WebHandler {
             if (stats == null) {
                 stats = new FailureStats();
             }
-            stats.recordFailure(currentTime);
+            stats.recordFailure(currentTime, config);
             return stats;
         });
     }
@@ -380,7 +501,42 @@ public class Xox48Handler extends WebHandler {
         resultCache.clear();
         failureStats.clear();
         resetStats();
-        logInfo("已重置所有缓存和统计信息");
+        asyncMonitor.resetAsyncStats();
+        logInfo("已重置所有缓存和统计信息（包括异步监控统计）");
+    }
+    
+    /**
+     * 获取异步监控统计信息
+     */
+    public String getAsyncMonitorStats() {
+        return asyncMonitor.getAsyncMonitorStats();
+    }
+    
+    /**
+     * 获取批量查询性能报告
+     */
+    public String getBatchQueryReport() {
+        return asyncMonitor.getBatchQueryReport();
+    }
+    
+    /**
+     * 获取完整的性能统计报告
+     */
+    public String getFullPerformanceReport() {
+        StringBuilder report = new StringBuilder();
+        report.append("🚀 Xox48Handler 完整性能报告\n");
+        report.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+        report.append("📊 传统缓存统计:\n");
+        report.append(getCacheStats()).append("\n\n");
+        report.append("⚡ 异步监控统计:\n");
+        report.append(getAsyncMonitorStats()).append("\n\n");
+        report.append("📈 批量查询报告:\n");
+        report.append(getBatchQueryReport()).append("\n\n");
+        report.append("🔧 User-Agent 配置:\n");
+        report.append(String.format("可用UA数量: %d\n", USER_AGENTS.size()));
+        report.append("当前随机UA: ").append(getRandomUserAgent());
+        report.append("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        return report.toString();
     }
     
     /**
@@ -404,7 +560,7 @@ public class Xox48Handler extends WebHandler {
         volatile long lastFailureTime = 0;
         volatile long cooldownUntil = 0;
         
-        void recordFailure(long currentTime) {
+        void recordFailure(long currentTime, net.luffy.util.MonitorConfig config) {
             int failures = consecutiveFailures.incrementAndGet();
             lastFailureTime = currentTime;
             

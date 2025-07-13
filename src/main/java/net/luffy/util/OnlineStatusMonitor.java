@@ -7,6 +7,7 @@ import net.mamoe.mirai.contact.Group;
 import net.mamoe.mirai.message.data.PlainText;
 
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -510,9 +511,7 @@ public class OnlineStatusMonitor {
                     failureCount++;
                     totalFailures.incrementAndGet();
                     
-                    // 获取健康统计并记录异常
-                    MemberHealthStats healthStats = memberHealthStats.computeIfAbsent(
-                        memberName, k -> new MemberHealthStats(memberName));
+                    // 记录异常到健康统计
                     healthStats.recordFailure();
                     
                     Newboy.INSTANCE.getLogger().warning(
@@ -811,15 +810,40 @@ public class OnlineStatusMonitor {
     }
     
     /**
+     * 清理资源和停止监控
+     */
+    public void cleanup() {
+        if (config.isVerboseLogging()) {
+            Newboy.INSTANCE.getLogger().info("正在清理在线状态监控资源...");
+        }
+        
+        // 清理健康统计数据
+        cleanupHealthStats();
+        
+        // 清理状态历史
+        statusHistory.clear();
+        memberHealthStats.clear();
+        
+        // 重置统计计数器
+        totalChecks.set(0);
+        totalFailures.set(0);
+        totalNotifications.set(0);
+        
+        if (config.isVerboseLogging()) {
+            Newboy.INSTANCE.getLogger().info("在线状态监控资源清理完成");
+        }
+    }
+    
+    /**
      * 清理过期的健康统计数据
      */
     private void cleanupHealthStats() {
         long currentTime = System.currentTimeMillis();
         int cleanedCount = 0;
         
-        var iterator = memberHealthStats.entrySet().iterator();
+        Iterator<Map.Entry<String, MemberHealthStats>> iterator = memberHealthStats.entrySet().iterator();
         while (iterator.hasNext()) {
-            var entry = iterator.next();
+            Map.Entry<String, MemberHealthStats> entry = iterator.next();
             MemberHealthStats stats = entry.getValue();
             // 使用配置的保留时间
             if ((currentTime - stats.lastCheckTime) > config.getHealthStatsRetention()) {

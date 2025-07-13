@@ -41,6 +41,7 @@ public final class Newboy extends JavaPlugin {
     public WeidianSenderHandler handlerWeidianSender;
     public Xox48Handler handlerXox48;
     private OnlineStatusMonitor onlineStatusMonitor;
+    private Scheduler scheduler;
 
     private Newboy() {
         super(new JvmPluginDescriptionBuilder(ID, VERSION +
@@ -91,10 +92,7 @@ public final class Newboy extends JavaPlugin {
         getLogger().info("New boy!");
 
         // ------------------------------------------------
-        // YLG
-
-        if (properties.ylg)
-            GlobalEventChannel.INSTANCE.registerListenerHost(new ListenerYLG());
+        // YLG功能已移除
     }
 
     private void initProperties() {
@@ -143,6 +141,85 @@ public final class Newboy extends JavaPlugin {
     public OnlineStatusMonitor getOnlineStatusMonitor() {
         return onlineStatusMonitor;
     }
+    
+    /**
+     * 热重载插件配置和功能
+     * 参考 debug-helper 项目实现
+     */
+    // 热重载功能已移除 - 该功能无法正常工作，请重启Mirai Console来重新加载插件
+    
+    /**
+     * 停止所有定时任务
+     */
+    private void stopAllScheduledTasks() {
+        if (scheduler != null) {
+            try {
+                scheduler.stop();
+                getLogger().info("所有定时任务已停止");
+            } catch (Exception e) {
+                getLogger().error("停止定时任务时发生错误", e);
+            }
+        }
+    }
+    
+    /**
+     * 重新初始化处理器
+     */
+    private void initHandlers() {
+        handlerPocket48 = new Pocket48Handler();
+        handlerWeibo = new WeiboHandler();
+        handlerWeidian = new WeidianHandler();
+        handlerWeidianSender = new WeidianSenderHandler();
+        handlerXox48 = new Xox48Handler();
+        onlineStatusMonitor = new OnlineStatusMonitor();
+    }
+    
+    /**
+     * 重新启动服务
+     */
+    private void restartServices() {
+        // 重新检查登录状态并启动服务
+        boolean pocket48_has_login = false;
+        boolean weibo_has_login = false;
+        
+        if (properties.pocket48_token != null && !properties.pocket48_token.isEmpty()) {
+            handlerPocket48.login(properties.pocket48_token, false);
+            pocket48_has_login = true;
+        } else if (properties.pocket48_account != null && !properties.pocket48_account.isEmpty() &&
+                   properties.pocket48_password != null && !properties.pocket48_password.isEmpty()) {
+            pocket48_has_login = handlerPocket48.login(properties.pocket48_account, properties.pocket48_password);
+        }
+        
+        try {
+            handlerWeibo.updateLoginToSuccess();
+            weibo_has_login = true;
+        } catch (Exception e) {
+            getLogger().warning("微博登录失败: " + e.getMessage());
+            weibo_has_login = false;
+        }
+        
+        // 重新启动监听广播
+        listenBroadcast(pocket48_has_login, weibo_has_login);
+    }
+    
+    @Override
+    public void onDisable() {
+        try {
+            getLogger().info("正在关闭插件...");
+            
+            // 停止所有定时任务
+            stopAllScheduledTasks();
+            
+            // 清理资源
+            if (onlineStatusMonitor != null) {
+                onlineStatusMonitor.cleanup();
+            }
+            
+            getLogger().info("插件已安全关闭");
+        } catch (Exception e) {
+            getLogger().error("插件关闭时发生错误", e);
+        }
+    }
 
     private void loadConfig() {
         configOperator.load(properties);
@@ -172,11 +249,16 @@ public final class Newboy extends JavaPlugin {
         // status: 上次检测的开播状态
         HashMap<Long, HashMap<Long, List<Long>>> pocket48VoiceStatus = new HashMap<>();
 
-        Scheduler sb = new Scheduler();
+        // 停止旧的调度器
+        if (scheduler != null) {
+            scheduler.stop();
+        }
+        
+        scheduler = new Scheduler();
 
         // 服务
         if (pocket48_has_login) {
-            handlerPocket48.setCronScheduleID(sb.schedule(properties.pocket48_pattern, new Runnable() {
+            handlerPocket48.setCronScheduleID(scheduler.schedule(properties.pocket48_pattern, new Runnable() {
                 @Override
                 public void run() {
                     if (getHandlerPocket48().isLogin()) {
@@ -193,8 +275,8 @@ public final class Newboy extends JavaPlugin {
                                     pocket48VoiceStatus.put(group, new HashMap<>());
                                 }
 
-                                new Pocket48Sender(b, group, pocket48RoomEndTime.get(group),
-                                        pocket48VoiceStatus.get(group), cache).start();
+                                new Thread(new Pocket48Sender(b, group, pocket48RoomEndTime.get(group),
+                                        pocket48VoiceStatus.get(group), cache)).start();
 
                             }
                         }
@@ -208,7 +290,7 @@ public final class Newboy extends JavaPlugin {
         }
 
         if (weibo_has_login) {
-            handlerWeibo.setCronScheduleID(sb.schedule(properties.weibo_pattern, new Runnable() {
+            handlerWeibo.setCronScheduleID(scheduler.schedule(properties.weibo_pattern, new Runnable() {
                 @Override
                 public void run() {
                     for (Bot b : Bot.getInstances()) {
@@ -219,7 +301,7 @@ public final class Newboy extends JavaPlugin {
                             if (!weiboEndTime.containsKey(group))
                                 weiboEndTime.put(group, new HashMap<>());
 
-                            new WeiboSender(b, group, weiboEndTime.get(group)).start();
+                            new Thread(new WeiboSender(b, group, weiboEndTime.get(group))).start();
                         }
                     }
                 }
@@ -227,7 +309,7 @@ public final class Newboy extends JavaPlugin {
         }
 
         // 微店订单播报
-        sb.schedule(properties.weidian_pattern_order, new Runnable() {
+        scheduler.schedule(properties.weidian_pattern_order, new Runnable() {
             @Override
             public void run() {
 
@@ -245,7 +327,7 @@ public final class Newboy extends JavaPlugin {
                         if (!weidianEndTime.containsKey(group))
                             weidianEndTime.put(group, new EndTime());
 
-                        new WeidianOrderSender(b, group, weidianEndTime.get(group), handlerWeidianSender, cache)
+                        new Thread(new WeidianOrderSender(b, group, weidianEndTime.get(group), handlerWeidianSender, cache))
                                 .start();
                     }
                 }
@@ -254,14 +336,14 @@ public final class Newboy extends JavaPlugin {
                 for (long group : properties.weidian_cookie.keySet()) {
                     WeidianCookie cookie = properties.weidian_cookie.get(group);
                     if (cookie != null && cookie.autoDeliver && !cache.containsKey(cookie)) {
-                        new WeidianOrderSender(null, group, new EndTime(), handlerWeidianSender, cache).start();
+                        new Thread(new WeidianOrderSender(null, group, new EndTime(), handlerWeidianSender, cache)).start();
                     }
                 }
             }
         });
 
         // 微店商品播报
-        handlerWeidian.setCronScheduleID(sb.schedule(properties.weidian_pattern_item, new Runnable() {
+        handlerWeidian.setCronScheduleID(scheduler.schedule(properties.weidian_pattern_item, new Runnable() {
             @Override
             public void run() {
                 for (Bot b : Bot.getInstances()) {
@@ -270,7 +352,7 @@ public final class Newboy extends JavaPlugin {
                         if (cookie == null || b.getGroup(group) == null)
                             continue;
 
-                        new WeidianItemSender(b, group, handlerWeidianSender).start();
+                        new Thread(new WeidianItemSender(b, group, handlerWeidianSender)).start();
                     }
                 }
             }
@@ -278,7 +360,7 @@ public final class Newboy extends JavaPlugin {
         
         // 在线状态监控
         if (properties.onlineStatus_enable) {
-            onlineStatusMonitor.setCronScheduleID(sb.schedule(properties.onlineStatus_pattern, new Runnable() {
+            onlineStatusMonitor.setCronScheduleID(scheduler.schedule(properties.onlineStatus_pattern, new Runnable() {
                 @Override
                 public void run() {
                     for (Bot b : Bot.getInstances()) {
@@ -298,7 +380,7 @@ public final class Newboy extends JavaPlugin {
 
         // ------------------------------------------------
         if (properties.enable) {
-            sb.start();
+            scheduler.start();
         } else {
             // 停止
         }
