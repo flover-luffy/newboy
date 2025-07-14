@@ -117,20 +117,22 @@ public class AsyncOnlineStatusMonitor {
                     totalBatchTime.addAndGet(batchTime);
                     concurrentBatches.decrementAndGet();
                     
-                    if (config.isVerboseLogging()) {
-                        System.out.println(String.format(
-                            "批量查询完成: %d个成员, 耗时: %dms, 成功: %d, 失败: %d",
-                            results.size(), batchTime,
-                            (int) results.stream().filter(BatchMemberStatusResult::isSuccess).count(),
-                            (int) results.stream().filter(r -> !r.isSuccess()).count()
-                        ));
-                    }
+                    // 已禁用控制台输出
+                    // if (config.isVerboseLogging()) {
+                    //     Newboy.INSTANCE.getLogger().info(String.format(
+                    //         "批量查询完成: %d个成员, 耗时: %dms, 成功: %d, 失败: %d",
+                    //         results.size(), batchTime,
+                    //         (int) results.stream().filter(BatchMemberStatusResult::isSuccess).count(),
+                    //         (int) results.stream().filter(r -> !r.isSuccess()).count()
+                    //     ));
+                    // }
                     
                     return results;
                 })
                 .exceptionally(throwable -> {
                     concurrentBatches.decrementAndGet();
-                    System.err.println("批量查询失败: " + throwable.getMessage());
+                    // 已禁用控制台输出
+                    // Newboy.INSTANCE.getLogger().error("批量查询失败: " + throwable.getMessage());
                     
                     // 返回失败结果
                     return memberNames.stream()
@@ -208,9 +210,10 @@ public class AsyncOnlineStatusMonitor {
                 }
             }
             
-            if (config.isVerboseLogging() && cleanedCount > 0) {
-                System.out.println(String.format("异步缓存清理完成: 清理了 %d 个过期条目", cleanedCount));
-            }
+            // 已禁用控制台输出
+            // if (config.isVerboseLogging() && cleanedCount > 0) {
+            //     Newboy.INSTANCE.getLogger().info(String.format("异步缓存清理完成: 清理了 %d 个过期条目", cleanedCount));
+            // }
         }, config.getCacheCleanupInterval(), config.getCacheCleanupInterval(), TimeUnit.MILLISECONDS);
     }
     

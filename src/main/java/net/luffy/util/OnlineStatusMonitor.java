@@ -417,7 +417,7 @@ public class OnlineStatusMonitor {
         int failureCount = 0;
         int statusChangeCount = 0;
         
-        Newboy.INSTANCE.getLogger().info("开始检查成员状态变化...");
+        // Newboy.INSTANCE.getLogger().info("开始检查成员状态变化...");
         
         for (Map.Entry<Long, Map<String, Integer>> groupEntry : groupMonitorConfig.entrySet()) {
             long groupId = groupEntry.getKey();
@@ -537,13 +537,13 @@ public class OnlineStatusMonitor {
         // 更新系统健康状态
         isHealthy = successRate >= (1.0 - config.getFailureRateThreshold()) && failureCount < totalMembers * 0.3;
         
-        // 记录检查结果
-        if (config.isVerboseLogging()) {
-            Newboy.INSTANCE.getLogger().info(
-                String.format("状态检查完成 - 耗时: %dms, 总成员: %d, 成功: %d, 失败: %d, 状态变化: %d, 成功率: %.1f%%, 系统健康: %s",
-                    duration, totalMembers, successCount, failureCount, statusChangeCount, 
-                    successRate * 100, isHealthy ? "是" : "否"));
-        }
+        // 记录检查结果 - 已禁用控制台输出
+        // if (config.isVerboseLogging()) {
+        //     Newboy.INSTANCE.getLogger().info(
+        //         String.format("状态检查完成 - 耗时: %dms, 总成员: %d, 成功: %d, 失败: %d, 状态变化: %d, 成功率: %.1f%%, 系统健康: %s",
+        //             duration, totalMembers, successCount, failureCount, statusChangeCount, 
+        //             successRate * 100, isHealthy ? "是" : "否"));
+        // }
         
         // 如果系统不健康且启用了健康警告，发送警告
         if (!isHealthy && totalMembers > 0 && config.isSystemHealthWarning()) {
@@ -589,7 +589,7 @@ public class OnlineStatusMonitor {
                 }
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            Newboy.INSTANCE.getLogger().error("发送通知到群组失败: " + e.getMessage());
         }
     }
     
@@ -821,9 +821,10 @@ public class OnlineStatusMonitor {
      * 清理资源和停止监控
      */
     public void cleanup() {
-        if (config.isVerboseLogging()) {
-            Newboy.INSTANCE.getLogger().info("正在清理在线状态监控资源...");
-        }
+        // 已禁用控制台输出
+        // if (config.isVerboseLogging()) {
+        //     Newboy.INSTANCE.getLogger().info("正在清理在线状态监控资源...");
+        // }
         
         // 清理健康统计数据
         cleanupHealthStats();
@@ -837,9 +838,10 @@ public class OnlineStatusMonitor {
         totalFailures.set(0);
         totalNotifications.set(0);
         
-        if (config.isVerboseLogging()) {
-            Newboy.INSTANCE.getLogger().info("在线状态监控资源清理完成");
-        }
+        // 已禁用控制台输出
+        // if (config.isVerboseLogging()) {
+        //     Newboy.INSTANCE.getLogger().info("在线状态监控资源清理完成");
+        // }
     }
     
     /**
@@ -860,10 +862,11 @@ public class OnlineStatusMonitor {
             }
         }
         
-        if (cleanedCount > 0 && config.isVerboseLogging()) {
-            Newboy.INSTANCE.getLogger().info(
-                String.format("清理了 %d 个过期的成员健康统计数据", cleanedCount));
-        }
+        // 已禁用控制台输出
+        // if (cleanedCount > 0 && config.isVerboseLogging()) {
+        //     Newboy.INSTANCE.getLogger().info(
+        //         String.format("清理了 %d 个过期的成员健康统计数据", cleanedCount));
+        // }
     }
     
     /**

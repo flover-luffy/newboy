@@ -466,8 +466,9 @@ public class Xox48Handler extends AsyncWebHandlerBase {
             !entry.getValue().isInCooldown(currentTime) && 
             entry.getValue().consecutiveFailures.get() == 0);
         
-        logInfo(String.format("缓存清理完成: 缓存条目 %d, 失败统计 %d", 
-            resultCache.size(), failureStats.size()));
+        // 已禁用控制台输出
+        // logInfo(String.format("缓存清理完成: 缓存条目 %d, 失败统计 %d", 
+        //     resultCache.size(), failureStats.size()));
     }
     
     /**
@@ -502,7 +503,8 @@ public class Xox48Handler extends AsyncWebHandlerBase {
         failureStats.clear();
         resetStats();
         asyncMonitor.resetAsyncStats();
-        logInfo("已重置所有缓存和统计信息（包括异步监控统计）");
+        // 已禁用控制台输出
+        // logInfo("已重置所有缓存和统计信息（包括异步监控统计）");
     }
     
     /**

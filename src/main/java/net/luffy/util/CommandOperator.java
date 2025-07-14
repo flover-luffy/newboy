@@ -7,19 +7,24 @@ import net.luffy.Newboy;
 import net.luffy.handler.AsyncWebHandlerBase;
 import net.luffy.handler.Pocket48Handler;
 import net.luffy.handler.WeidianHandler;
+import net.luffy.handler.WeidianSenderHandler;
 import net.luffy.handler.Xox48Handler;
 import net.luffy.util.OnlineStatusMonitor;
 import net.luffy.model.Pocket48RoomInfo;
+import net.luffy.model.WeidianBuyer;
 import net.luffy.model.WeidianCookie;
 import net.luffy.model.WeidianItem;
+import net.luffy.model.WeidianOrder;
 import net.mamoe.mirai.Bot;
 import net.mamoe.mirai.contact.Group;
 import net.mamoe.mirai.event.events.UserMessageEvent;
+import net.mamoe.mirai.message.data.Image;
 import net.mamoe.mirai.message.data.Message;
 import net.mamoe.mirai.message.data.PlainText;
 import net.mamoe.mirai.utils.ExternalResource;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -637,18 +642,56 @@ public class CommandOperator extends AsyncWebHandlerBase {
                 }
 
                 if (args[2].startsWith("cookie")) {
+                    String cookie;
                     if (args[2].contains(" ")) {
-                        String cookie = args[2].substring(args[2].indexOf(" ") + 1);
+                        // 传统格式：cookie <实际cookie内容>
+                        cookie = args[2].substring(args[2].indexOf(" ") + 1);
+                    } else if (args[2].length() > 6) {
+                        // 直接提供cookie内容，去掉"cookie"前缀
+                        cookie = args[2].substring(6);
+                    } else {
+                        return new PlainText("❌ 请输入Cookie\n💡 使用方法：/微店 " + groupId + " cookie <您的cookie内容>\n📝 或者直接：/微店 " + groupId + " <您的完整cookie>");
+                    }
+                    
+                    // 验证cookie格式（必须包含wdtoken）
+                    if (!cookie.contains("wdtoken=")) {
+                        return new PlainText("❌ Cookie格式错误\n💡 Cookie必须包含wdtoken参数\n📋 请确保从微店网站复制完整的Cookie");
+                    }
+                    
+                    try {
                         Newboy.INSTANCE.getConfig().setWeidianCookie(cookie, groupId);
                         WeidianCookie cookie1 = Newboy.INSTANCE.getProperties().weidian_cookie.get(groupId);
-                        return new PlainText("设置Cookie成功，当前自动发货为：" + (cookie1.autoDeliver ? "开启" : "关闭") + "。您可以通过\"/微店 " + groupId + " 自动发货\"切换");
+                        if (cookie1 == null) {
+                            return new PlainText("❌ Cookie设置失败\n💡 请检查Cookie格式是否正确");
+                        }
+                        return new PlainText("✅ 设置Cookie成功\n🚚 当前自动发货：" + (cookie1.autoDeliver ? "开启" : "关闭") + "\n📢 当前群播报：" + (cookie1.doBroadcast ? "开启" : "关闭") + "\n💡 您可以通过\"/微店 " + groupId + " 自动发货\"和\"/微店 " + groupId + " 群播报\"进行切换");
+                    } catch (Exception e) {
+                        return new PlainText("❌ Cookie设置失败：" + e.getMessage());
                     }
-                    return new PlainText("请输入Cookie");
+                }
+                
+                // 支持直接输入完整cookie（不以cookie开头但包含wdtoken）
+                if (args[2].contains("wdtoken=") && args[2].contains(";")) {
+                    try {
+                        Newboy.INSTANCE.getConfig().setWeidianCookie(args[2], groupId);
+                        WeidianCookie cookie1 = Newboy.INSTANCE.getProperties().weidian_cookie.get(groupId);
+                        if (cookie1 == null) {
+                            return new PlainText("❌ Cookie设置失败\n💡 请检查Cookie格式是否正确");
+                        }
+                        return new PlainText("✅ 设置Cookie成功\n🚚 当前自动发货：" + (cookie1.autoDeliver ? "开启" : "关闭") + "\n📢 当前群播报：" + (cookie1.doBroadcast ? "开启" : "关闭") + "\n💡 您可以通过\"/微店 " + groupId + " 自动发货\"和\"/微店 " + groupId + " 群播报\"进行切换");
+                    } catch (Exception e) {
+                        return new PlainText("❌ Cookie设置失败：" + e.getMessage());
+                    }
                 }
 
                 if (!Newboy.INSTANCE.getProperties().weidian_cookie.containsKey(groupId)) {
                     return new PlainText("该群未设置Cookie");
                 } else {
+                    // 检查第三个参数是否为空
+                    if (args[2] == null || args[2].trim().isEmpty()) {
+                        return new PlainText("❌ 请输入操作命令\n💡 使用方法：/微店 " + groupId + " <操作>\n📋 可用操作：全部、关闭、自动发货、群播报、全部发货、# <商品ID>、屏蔽 <商品ID>、查 <商品ID>");
+                    }
+                    
                     String[] argsIn = args[2].split(" ");
                     switch (argsIn.length) {
                         case 1:
@@ -705,12 +748,71 @@ public class CommandOperator extends AsyncWebHandlerBase {
                                 case "全部发货": {
                                     WeidianHandler weidian = Newboy.INSTANCE.getHandlerWeidian();
                                     WeidianCookie cookie = Newboy.INSTANCE.getProperties().weidian_cookie.get(groupId);
+                                    
+                                    if (cookie == null) {
+                                        return new PlainText("❌ 该群未配置微店Cookie\n🔧 请使用以下命令设置：\n`/微店 " + groupId + " cookie <您的Cookie>`");
+                                    }
+                                    
+                                    if (cookie.invalid) {
+                                        return new PlainText("❌ 微店Cookie已失效\n🔧 请重新设置Cookie：\n`/微店 " + groupId + " cookie <新Cookie>`");
+                                    }
+                                    
+                                    // Newboy.INSTANCE.getLogger().info("[全部发货] 开始执行全部发货命令，群号: " + groupId);
+                        // Newboy.INSTANCE.getLogger().info("[全部发货] Cookie自动发货状态: " + cookie.autoDeliver);
+                                    
                                     boolean pre = cookie.autoDeliver;
                                     cookie.autoDeliver = true;
-                                    weidian.getOrderList(cookie);
-                                    cookie.autoDeliver = pre;
-                                    return new PlainText("全部订单发货成功(不包括包含屏蔽商品的订单)");
+                                    
+                                    try {
+                                        WeidianOrder[] orders = weidian.getOrderList(cookie);
+                                        // Newboy.INSTANCE.getLogger().info("[全部发货] 处理完成，订单数量: " + (orders != null ? orders.length : 0));
+                                        return new PlainText("✅ 全部发货命令执行完成\n📦 处理订单数量: " + (orders != null ? orders.length : 0) + "\n💡 详细日志已写入日志文件\n⚠️ 不包括包含屏蔽商品的订单");
+                                    } catch (Exception e) {
+                                        // Newboy.INSTANCE.getLogger().warning("[全部发货] 执行异常: " + e.getMessage());
+                                        e.printStackTrace();
+                                        return new PlainText("❌ 全部发货执行失败: " + e.getMessage());
+                                    } finally {
+                                        cookie.autoDeliver = pre;
+                                        // Newboy.INSTANCE.getLogger().info("[全部发货] 恢复Cookie自动发货状态: " + cookie.autoDeliver);
+                                    }
                                 }
+                                case "状态":
+                                case "检查": {
+                                    WeidianHandler weidian = Newboy.INSTANCE.getHandlerWeidian();
+                                    WeidianCookie cookie = Newboy.INSTANCE.getProperties().weidian_cookie.get(groupId);
+                                    
+                                    if (cookie == null) {
+                                        return new PlainText("❌ 该群未配置微店Cookie\n🔧 请使用以下命令设置：\n`/微店 " + groupId + " cookie <您的Cookie>`");
+                                    }
+                                    
+                                    StringBuilder status = new StringBuilder();
+                                    status.append("🏪 微店状态检查\n");
+                                    status.append("群号：").append(groupId).append("\n");
+                                    status.append("群播报：").append(cookie.doBroadcast ? "✅ 开启" : "❌ 关闭").append("\n");
+                                    status.append("自动发货：").append(cookie.autoDeliver ? "✅ 开启" : "❌ 关闭").append("\n");
+                                    
+                                    // 测试API连接
+                                    status.append("\n🔍 正在检查Cookie状态...");
+                                    WeidianItem[] items = weidian.getItems(cookie);
+                                    
+                                    if (items != null) {
+                                        status.append("\n✅ Cookie状态：正常");
+                                        status.append("\n📦 商品数量：").append(items.length).append("个");
+                                        if (cookie.invalid) {
+                                            cookie.invalid = false;
+                                        }
+                                    } else {
+                                        status.append("\n❌ Cookie状态：失效");
+                                        status.append("\n🔧 请重新设置Cookie：\n`/微店 ").append(groupId).append(" cookie <新Cookie>`");
+                                        if (!cookie.invalid) {
+                                            cookie.invalid = true;
+                                        }
+                                    }
+                                    
+                                    return new PlainText(status.toString());
+                                }
+                                default:
+                                    return new PlainText("❌ 未知操作\n💡 使用方法：/微店 " + groupId + " <操作>\n📋 可用操作：全部、关闭、自动发货、群播报、全部发货、状态");
                             }
                         case 2:
                             switch (argsIn[0]) {
@@ -745,21 +847,73 @@ public class CommandOperator extends AsyncWebHandlerBase {
                                     if (item == null) {
                                         return new PlainText("❌ 未找到该商品\n\n💡 提示：您可以使用 \"/微店 " + groupId + " 全部\" 获取商品列表");
                                     } else {
-                                        StringBuilder itemInfo = new StringBuilder();
-                                        itemInfo.append("🛍️ 商品详情\n");
-                        
-                                        String status = cookie.shieldedItem.contains(id) ? "🚫 屏蔽" : (cookie.highlightItem.contains(id) ? "🔗 特殊链" : "🔗 普链");
-                                        itemInfo.append("状态：").append(status).append("\n");
-                                        itemInfo.append("商品ID：").append(item.id).append("\n");
-                                        itemInfo.append("商品名称：").append(item.name).append("\n");
-                        
-                                        return new PlainText(itemInfo.toString())
-                                                .plus(Newboy.INSTANCE.getHandlerWeidianSender().executeItemMessages(item, event.getBot().getGroup(groupId), 0).getMessage());
+                                        // 获取购买者信息和统计数据
+                                        WeidianBuyer[] buyers = weidian.getItemBuyer(cookie, id);
+                                        
+                                        // 构建消息，包含图片
+                                        Message itemMessage = new PlainText(item.name + "\n");
+                                        
+                                        // 尝试加载并嵌入商品图片
+                                        if (!item.pic.equals("")) {
+                                            try {
+                                                WeidianSenderHandler handler = Newboy.INSTANCE.getHandlerWeidianSender();
+                                                try (InputStream imageStream = handler.getRes(item.pic)) {
+                                                    if (imageStream != null) {
+                                                        // 无论群聊还是私聊都嵌入图片
+                                                        if (event.getSubject() instanceof Group) {
+                                                            Group group = (Group) event.getSubject();
+                                                            Image image = group.uploadImage(net.mamoe.mirai.utils.ExternalResource.create(imageStream));
+                                                            itemMessage = itemMessage.plus(image);
+                                                        } else {
+                                                            // 私聊中也嵌入图片
+                                                            Image image = event.getSubject().uploadImage(net.mamoe.mirai.utils.ExternalResource.create(imageStream));
+                                                            itemMessage = itemMessage.plus(image);
+                                                        }
+                                                    } else {
+                                                        itemMessage = itemMessage.plus(new PlainText("[商品图片无法获取]\n"));
+                                                        // Newboy.INSTANCE.getLogger().warning("[微店查询] 商品ID " + id + " 图片数据为空，URL: " + item.pic);
+                                                    }
+                                                }
+                                            } catch (Exception e) {
+                                                // 图片加载失败时显示提示，不再显示URL链接
+                                                itemMessage = itemMessage.plus(new PlainText("[图片加载失败: " + e.getMessage() + "]\n"));
+                                                // Newboy.INSTANCE.getLogger().warning("[微店查询] 商品ID " + id + " 图片加载失败: " + e.getMessage());
+                                            }
+                                        } else {
+                                            itemMessage = itemMessage.plus(new PlainText("[暂无商品图片]\n"));
+                                        }
+                                        
+                                        // 显示购买统计信息
+                                        if (buyers != null && buyers.length > 0) {
+                                            long totalAmount = 0;
+                                            for (WeidianBuyer buyer : buyers) {
+                                                totalAmount += buyer.contribution;
+                                            }
+                                            
+                                            itemMessage = itemMessage.plus(new PlainText("人数：" + buyers.length + "\n"));
+                                            itemMessage = itemMessage.plus(new PlainText("进度：¥" + String.format("%.2f", totalAmount / 100.0) + "\n"));
+                                            itemMessage = itemMessage.plus(new PlainText("人均：¥" + String.format("%.2f", totalAmount / 100.0 / buyers.length) + "\n"));
+                                            itemMessage = itemMessage.plus(new PlainText(cn.hutool.core.date.DateTime.now() + "\n"));
+                                            itemMessage = itemMessage.plus(new PlainText("──────────────────────\n"));
+                                            itemMessage = itemMessage.plus(new PlainText("购买者列表:\n"));
+                                            for (int i = 0; i < buyers.length; i++) {
+                                                itemMessage = itemMessage.plus(new PlainText((i + 1) + ". ¥" + String.format("%.2f", buyers[i].contribution / 100.0) + " " + buyers[i].name + "\n"));
+                                            }
+                                        } else {
+                                            itemMessage = itemMessage.plus(new PlainText("人数：0\n"));
+                                            itemMessage = itemMessage.plus(new PlainText("进度：¥0.00\n"));
+                                            itemMessage = itemMessage.plus(new PlainText(cn.hutool.core.date.DateTime.now() + "\n"));
+                                            itemMessage = itemMessage.plus(new PlainText("暂无购买记录\n"));
+                                        }
+                                        
+                                        return itemMessage;
                                     }
                                 }
+                                default:
+                                    return new PlainText("未知操作\n使用方法：/微店 " + groupId + " <操作> <参数>\n可用操作：# <商品ID>、屏蔽 <商品ID>、查 <商品ID>");
                             }
                         default:
-                            return getCategorizedHelp(event.getSender().getId());
+                            return new PlainText("未知操作\n使用方法：/微店 " + groupId + " <操作>\n可用操作：全部、关闭、自动发货、群播报、全部发货、# <商品ID>、屏蔽 <商品ID>、查 <商品ID>");
                     }
                 }
             }
@@ -780,7 +934,7 @@ public class CommandOperator extends AsyncWebHandlerBase {
                     }
                     if (match > 0) {
                         config.savePocket48SubscribeConfig();
-                        log.plus("口袋48关注失效群: " + match + "个\n");
+                        log = log.plus(new PlainText("口袋48关注失效群: " + match + "个\n"));
                         match = 0;
                     }
 
@@ -796,7 +950,7 @@ public class CommandOperator extends AsyncWebHandlerBase {
                     }
                     if (match > 0) {
                         config.saveWeiboConfig();
-                        log.plus("微博关注失效群: " + match + "个\n");
+                        log = log.plus(new PlainText("微博关注失效群: " + match + "个\n"));
                         match = 0;
                     }
 
@@ -809,11 +963,14 @@ public class CommandOperator extends AsyncWebHandlerBase {
                     }
                     if (match > 0) {
                         config.saveWeidianConfig();
-                        log.plus("微店播报失效群: " + match + "个\n");
+                        log = log.plus(new PlainText("微店播报失效群: " + match + "个\n"));
                         match = 0;
                     }
+                    
+                    return log;
+                } else {
+                    return new PlainText("权限不足喵");
                 }
-                //getHelp(0);
             }
             // 进群欢迎功能已移除
             /*
@@ -1027,7 +1184,9 @@ public class CommandOperator extends AsyncWebHandlerBase {
         help.append("  /微店 <群号> 全部发货 - 手动发货所有订单\n");
         help.append("  /微店 <群号> # <商品ID> - 切换商品特殊链状态\n");
         help.append("  /微店 <群号> 屏蔽 <商品ID> - 切换商品屏蔽状态\n");
-        help.append("  /微店 <群号> 查 <商品ID> - 查看商品详情\n\n");
+        help.append("  /微店 <群号> 查 <商品ID> - 查看商品详情和购买统计\n");
+        help.append("  /微店 <群号> 状态 - 检查微店Cookie状态\n");
+        help.append("  /微店 <群号> 检查 - 检查商品数量\n\n");
         
         help.append("👥 在线状态监控\n");
         help.append("群聊命令：\n");

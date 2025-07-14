@@ -1,7 +1,7 @@
 package net.luffy;
 
 import cn.hutool.cron.Scheduler;
-import net.luffy.command.NewboyCommand;
+
 import net.luffy.handler.Pocket48Handler;
 import net.luffy.handler.WeiboHandler;
 import net.luffy.handler.WeidianHandler;
@@ -26,7 +26,9 @@ import net.mamoe.mirai.console.plugin.jvm.JvmPluginDescriptionBuilder;
 import net.mamoe.mirai.event.GlobalEventChannel;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public final class Newboy extends JavaPlugin {
     public static final String ID = "net.luffy.newboy";
@@ -57,7 +59,7 @@ public final class Newboy extends JavaPlugin {
         initProperties();
         loadConfig();
         registerPermission();
-        registerCommand();
+
         GlobalEventChannel.INSTANCE.registerListenerHost(new Listener());
 
         // ------------------------------------------------
@@ -106,9 +108,7 @@ public final class Newboy extends JavaPlugin {
         onlineStatusMonitor = new OnlineStatusMonitor();
     }
 
-    private void registerCommand() {
-        CommandManager.INSTANCE.registerCommand(NewboyCommand.INSTANCE, false);
-    }
+
 
     public ConfigOperator getConfig() {
         return configOperator;
@@ -140,6 +140,10 @@ public final class Newboy extends JavaPlugin {
     
     public OnlineStatusMonitor getOnlineStatusMonitor() {
         return onlineStatusMonitor;
+    }
+    
+    public Scheduler getCronScheduler() {
+        return scheduler;
     }
     
     /**
@@ -314,29 +318,29 @@ public final class Newboy extends JavaPlugin {
             public void run() {
 
                 HashMap<WeidianCookie, WeidianOrder[]> cache = new HashMap<>();
+                Set<Long> processedGroups = new HashSet<>();
 
                 for (Bot b : Bot.getInstances()) {
                     for (long group : properties.weidian_cookie.keySet()) {
                         WeidianCookie cookie = properties.weidian_cookie.get(group);
-                        if (cookie == null || !cookie.doBroadcast)
-                            continue;
-
-                        if (b.getGroup(group) == null)
+                        if (cookie == null)
                             continue;
 
                         if (!weidianEndTime.containsKey(group))
                             weidianEndTime.put(group, new EndTime());
 
-                        new Thread(new WeidianOrderSender(b, group, weidianEndTime.get(group), handlerWeidianSender, cache))
-                                .start();
-                    }
-                }
-
-                // 机器人不在线/不播报也自动发货
-                for (long group : properties.weidian_cookie.keySet()) {
-                    WeidianCookie cookie = properties.weidian_cookie.get(group);
-                    if (cookie != null && cookie.autoDeliver && !cache.containsKey(cookie)) {
-                        new Thread(new WeidianOrderSender(null, group, new EndTime(), handlerWeidianSender, cache)).start();
+                        // 如果需要播报且机器人在群中
+                        if (cookie.doBroadcast && b.getGroup(group) != null) {
+                            new Thread(new WeidianOrderSender(b, group, weidianEndTime.get(group), handlerWeidianSender, cache))
+                                    .start();
+                            processedGroups.add(group);
+                        }
+                        // 如果只需要自动发货且还未处理过
+                        else if (cookie.autoDeliver && !processedGroups.contains(group)) {
+                            new Thread(new WeidianOrderSender(null, group, weidianEndTime.get(group), handlerWeidianSender, cache))
+                                    .start();
+                            processedGroups.add(group);
+                        }
                     }
                 }
             }

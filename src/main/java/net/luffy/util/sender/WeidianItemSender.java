@@ -11,7 +11,7 @@ import net.mamoe.mirai.message.data.Message;
 import java.util.ArrayList;
 import java.util.List;
 
-public class WeidianItemSender extends Sender {
+public class WeidianItemSender extends SyncSender {
 
     private final WeidianSenderHandler handler;
 
@@ -25,18 +25,32 @@ public class WeidianItemSender extends Sender {
     public void run() {
         WeidianHandler weidian = Newboy.INSTANCE.getHandlerWeidian();
         WeidianCookie cookie = Newboy.INSTANCE.getProperties().weidian_cookie.get(group_id);
+        
+        if (cookie == null) {
+            // 没有配置cookie，静默返回
+            return;
+        }
 
         WeidianItem[] items = weidian.getItems(cookie);
         if (items == null) {
             if (!cookie.invalid) {
-                group.getOwner().sendMessage("微店Cookie失效，请尽快更换：“/微店 " + group_id + " cookie <Cookie>”");
+                // 发送详细的错误提示
+                String errorMsg = "❌ 微店Cookie已失效\n" +
+                        "🔧 请使用以下命令重新设置：\n" +
+                        "`/微店 " + group_id + " cookie <您的新Cookie>`\n" +
+                        "💡 获取Cookie方法：\n" +
+                        "1. 登录微店商家后台\n" +
+                        "2. 按F12打开开发者工具\n" +
+                        "3. 在Network标签页找到请求头中的Cookie\n" +
+                        "4. 复制完整的Cookie值";
+                group.getOwner().sendMessage(errorMsg);
                 cookie.invalid = true;
             }
             return;
         }
 
         if (cookie.invalid) {
-            group.getOwner().sendMessage("微店Cookie有效，无需更换");
+            group.getOwner().sendMessage("✅ 微店Cookie已恢复正常，无需更换");
             cookie.invalid = false;
         }
 

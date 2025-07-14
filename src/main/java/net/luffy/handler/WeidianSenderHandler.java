@@ -1,5 +1,6 @@
 package net.luffy.handler;
 
+import cn.hutool.http.HttpRequest;
 import net.luffy.Newboy;
 import net.luffy.model.*;
 import net.mamoe.mirai.contact.Group;
@@ -8,19 +9,13 @@ import net.mamoe.mirai.utils.ExternalResource;
 
 import java.io.InputStream;
 
-public class WeidianSenderHandler extends AsyncWebHandlerBase {
+public class WeidianSenderHandler {
 
     public WeidianSenderHandler() {
-        super();
     }
 
     public InputStream getRes(String resLoc) {
-        try {
-            return getInputStream(resLoc);
-        } catch (Exception e) {
-            logInfo("获取资源失败: " + e.getMessage());
-            return null;
-        }
+        return HttpRequest.get(resLoc).execute().bodyStream();
     }
 
     //普链订单播报, pickAmount = 5
@@ -38,8 +33,8 @@ public class WeidianSenderHandler extends AsyncWebHandlerBase {
 
         Image image = null;
         if (!item.pic.equals("")) {
-            try (ExternalResource imageResource = ExternalResource.create(getRes(item.pic))) {
-                image = group.uploadImage(imageResource);
+            try {
+                image = group.uploadImage(ExternalResource.create(getRes(item.pic)));
             } catch (Exception e) {
             }
         }

@@ -44,10 +44,12 @@ public class AudioFormatConverter {
                 
                 if (success && Files.exists(tempOutputFile) && Files.size(tempOutputFile) > 0) {
                     // 转换成功，返回转换后的文件流
-                    System.out.println("[音频转换] 成功将" + originalFormat + "格式转换为AMR格式");
+                    // 已禁用控制台输出
+                    // System.out.println("[音频转换] 成功将" + originalFormat + "格式转换为AMR格式");
                     return Files.newInputStream(tempOutputFile);
                 } else {
-                    System.err.println("[音频转换] 转换失败，使用原始音频");
+                    // 已禁用控制台输出
+                    // System.err.println("[音频转换] 转换失败，使用原始音频");
                     // 转换失败，返回原始流（重新读取临时输入文件）
                     return Files.newInputStream(tempInputFile);
                 }
@@ -57,7 +59,8 @@ public class AudioFormatConverter {
                 tempOutputFile.toFile().deleteOnExit();
             }
         } catch (Exception e) {
-            System.err.println("[音频转换] 转换过程中发生异常: " + e.getMessage());
+            // 已禁用控制台输出
+            // System.err.println("[音频转换] 转换过程中发生异常: " + e.getMessage());
             return inputStream; // 返回原始流
         }
     }
@@ -103,27 +106,31 @@ public class AudioFormatConverter {
             
             if (!finished) {
                 process.destroyForcibly();
-                System.err.println("[音频转换] FFmpeg转换超时");
+                // 已禁用控制台输出
+                // System.err.println("[音频转换] FFmpeg转换超时");
                 return false;
             }
             
             int exitCode = process.exitValue();
             if (exitCode == 0) {
-                System.out.println("[音频转换] FFmpeg转换成功");
+                // 已禁用控制台输出
+                // System.out.println("[音频转换] FFmpeg转换成功");
                 return true;
             } else {
-                System.err.println("[音频转换] FFmpeg转换失败，退出码: " + exitCode);
+                // 已禁用控制台输出
+                // System.err.println("[音频转换] FFmpeg转换失败，退出码: " + exitCode);
                 // 读取错误输出
-                try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        System.err.println("[FFmpeg] " + line);
-                    }
-                }
+                // try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                //     String line;
+                //     while ((line = reader.readLine()) != null) {
+                //         System.err.println("[FFmpeg] " + line);
+                //     }
+                // }
                 return false;
             }
         } catch (Exception e) {
-            System.err.println("[音频转换] FFmpeg执行异常: " + e.getMessage());
+            // 已禁用控制台输出
+            // System.err.println("[音频转换] FFmpeg执行异常: " + e.getMessage());
             return false;
         }
     }

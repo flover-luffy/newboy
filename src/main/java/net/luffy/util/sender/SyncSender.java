@@ -1,8 +1,7 @@
 package net.luffy.util.sender;
 
-// HttpRequest已迁移到异步处理器
+import cn.hutool.http.HttpRequest;
 import net.luffy.util.ThumbnailatorUtil;
-import net.luffy.handler.AsyncWebHandlerBase;
 import net.mamoe.mirai.Bot;
 import net.mamoe.mirai.contact.Group;
 import net.mamoe.mirai.contact.MemberPermission;
@@ -14,12 +13,16 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
 
-public class Sender extends AsyncWebHandlerBase implements Runnable { //异步进程
+/**
+ * 同步发送器基类
+ * 替代异步的Sender类，提供同步实现
+ */
+public abstract class SyncSender implements Runnable {
     public final Bot bot;
     public final long group_id;
     public final Group group;
 
-    public Sender(Bot bot, long group) {
+    public SyncSender(Bot bot, long group) {
         this.bot = bot;
         this.group_id = group;
         if (bot != null)
@@ -28,14 +31,14 @@ public class Sender extends AsyncWebHandlerBase implements Runnable { //异步�
             this.group = null;
     }
 
-    public Sender(Bot bot, Group group) {
+    public SyncSender(Bot bot, Group group) {
         this.bot = bot;
         this.group = group;
         this.group_id = group.getId();
     }
 
     public InputStream getRes(String resLoc) {
-        return getInputStream(resLoc);
+        return HttpRequest.get(resLoc).execute().bodyStream();
     }
 
     public InputStream getVideoThumbnail(InputStream video, String defaultImg) {
@@ -70,12 +73,10 @@ public class Sender extends AsyncWebHandlerBase implements Runnable { //异步�
             return t;
         }
     }
-    
+
     /**
-     * 默认的run方法实现，子类应该重写此方法
+     * 子类需要实现的运行逻辑
      */
     @Override
-    public void run() {
-        // 默认实现为空，子类应该重写此方法
-    }
+    public abstract void run();
 }

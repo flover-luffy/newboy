@@ -39,8 +39,8 @@ public class ConfigOperator {
             tempSetting.setByGroup("schedule", "pocket48", "* * * * *");
             tempSetting.setByGroup("schedule", "weibo", "*/5 * * * *");
             tempSetting.setByGroup("schedule", "onlineStatus", "*/2 * * * *");
-            tempSetting.setByGroup("schedule_order", "weidian", "*/10 * * * *");
-            tempSetting.setByGroup("schedule_item", "weidian", "*/10 * * * *");
+            tempSetting.setByGroup("schedule_order", "weidian", "*/2 * * * *");
+            tempSetting.setByGroup("schedule_item", "weidian", "*/5 * * * *");
             
             // 设置口袋48默认配置
             tempSetting.setByGroup("pocket48", "account", "");

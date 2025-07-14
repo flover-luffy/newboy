@@ -73,7 +73,7 @@ public class WeidianItemMessage implements WeidianMessage {
         } else {
             return this.setMessage(m.plus("人数：" + number +
                     "\n进度：" + new BigDecimal(amountTotal).divide(new BigDecimal("100.0")).toPlainString() +
-                    "\n均：" + new BigDecimal(amountAverage).divide(new BigDecimal("100.0")).toPlainString() +
+                    "\n人均：" + new BigDecimal(amountAverage).divide(new BigDecimal("100.0")).toPlainString() +
                     "\n" + DateTime.now() +
                     "\n---------" + pickBuyer(buyers, pickAmount)));
         }

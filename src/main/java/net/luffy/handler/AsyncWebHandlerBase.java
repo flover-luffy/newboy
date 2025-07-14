@@ -213,7 +213,9 @@ public class AsyncWebHandlerBase {
                 .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
                 .addHeader("Accept", "application/json, text/plain, */*")
                 .addHeader("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
-                .addHeader("Connection", "keep-alive");
+                .addHeader("Connection", "keep-alive")
+                // 不手动设置Accept-Encoding，让OkHttp自动处理gzip解压缩
+                .addHeader("Accept-Charset", "UTF-8");
     }
     
     /**
