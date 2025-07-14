@@ -6,6 +6,7 @@ import net.mamoe.mirai.Bot;
 import net.mamoe.mirai.contact.Group;
 import net.mamoe.mirai.message.data.PlainText;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -37,6 +38,7 @@ public class OnlineStatusMonitor {
     private final AtomicLong totalNotifications = new AtomicLong(0);
     private volatile long lastCheckTime = 0;
     private volatile boolean isHealthy = true;
+    private final long startTime = System.currentTimeMillis();
     
     // 配置管理
     private final MonitorConfig config = MonitorConfig.getInstance();
@@ -248,6 +250,12 @@ public class OnlineStatusMonitor {
      * @return 格式化的监控列表字符串
      */
     public String getMonitorList(long groupId, boolean realTime) {
+        // 检查是否为私聊（用户ID而非群ID）
+        if (groupId > 0 && !groupMonitorConfig.containsKey(groupId)) {
+            // 这是私聊请求，返回全局监控统计信息
+            return getGlobalMonitorStats();
+        }
+        
         Map<String, Integer> groupConfig = groupMonitorConfig.get(groupId);
         
         if (groupConfig == null || groupConfig.isEmpty()) {
@@ -856,6 +864,94 @@ public class OnlineStatusMonitor {
             Newboy.INSTANCE.getLogger().info(
                 String.format("清理了 %d 个过期的成员健康统计数据", cleanedCount));
         }
+    }
+    
+    /**
+     * 获取全局监控统计信息（用于私聊）
+     * @return 全局监控统计信息字符串
+     */
+    public String getGlobalMonitorStats() {
+        StringBuilder result = new StringBuilder();
+        result.append("=== 在线状态监控统计 ===\n");
+        
+        // 收集所有成员信息
+        int totalMembers = 0;
+        List<String> onlineMembers = new ArrayList<>();
+        List<String> offlineMembers = new ArrayList<>();
+        int todayChanges = 0;
+        
+        for (Map<String, Integer> groupConfig : groupMonitorConfig.values()) {
+            for (Map.Entry<String, Integer> memberEntry : groupConfig.entrySet()) {
+                String memberName = memberEntry.getKey();
+                int status = memberEntry.getValue();
+                totalMembers++;
+                
+                if (status == 1) {
+                    onlineMembers.add(memberName);
+                } else {
+                    offlineMembers.add(memberName);
+                }
+                
+                // 统计今日状态变化次数
+                StatusHistory history = statusHistory.get(memberName);
+                if (history != null) {
+                    todayChanges += history.getChangeCount();
+                }
+            }
+        }
+        
+        // 格式化输出
+        result.append(String.format("监控用户数: %d\n", totalMembers));
+        
+        // 当前在线成员名称
+        result.append("当前在线: ");
+        if (onlineMembers.isEmpty()) {
+            result.append("无");
+        } else {
+            result.append(String.join(", ", onlineMembers));
+        }
+        result.append("\n");
+        
+        // 当前离线成员名称
+        result.append("当前离线: ");
+        if (offlineMembers.isEmpty()) {
+            result.append("无");
+        } else {
+            result.append(String.join(", ", offlineMembers));
+        }
+        result.append("\n");
+        
+        result.append(String.format("今日状态变化: %d\n", todayChanges));
+        
+        // 最后更新时间
+        if (lastCheckTime > 0) {
+            result.append(String.format("最后更新: %s\n", 
+                LocalDateTime.ofEpochSecond(lastCheckTime / 1000, 0, 
+                    java.time.ZoneOffset.systemDefault().getRules().getOffset(java.time.Instant.now()))
+                    .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))));
+        } else {
+            result.append("最后更新: 未知\n");
+        }
+        
+        // 监控运行时间（从启动到现在）
+        long runtimeMs = System.currentTimeMillis() - startTime;
+        long runtimeHours = runtimeMs / (1000 * 60 * 60);
+        long runtimeMinutes = (runtimeMs % (1000 * 60 * 60)) / (1000 * 60);
+        result.append(String.format("监控运行时间: %d小时%d分钟\n", runtimeHours, runtimeMinutes));
+        
+        // 健康状态
+        result.append(String.format("健康状态: %s\n", isHealthy ? "正常" : "异常"));
+        
+        // 成功率
+        double successRate = totalChecks.get() > 0 ? 
+            (1.0 - (double) totalFailures.get() / totalChecks.get()) * 100 : 100.0;
+        result.append(String.format("成功率: %.1f%%\n", successRate));
+        
+        result.append(String.format("总检查次数: %d\n", totalChecks.get()));
+        result.append(String.format("失败次数: %d\n", totalFailures.get()));
+        result.append(String.format("通知次数: %d", totalNotifications.get()));
+        
+        return result.toString();
     }
     
     /**

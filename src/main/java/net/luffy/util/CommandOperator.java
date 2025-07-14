@@ -327,15 +327,26 @@ public class CommandOperator extends AsyncWebHandlerBase {
                         }
                     case 4:
                         if (args[1].equals("连接")) {
+                            if (!Newboy.INSTANCE.getConfig().isAdmin(g, senderID))
+                                return new PlainText("权限不足喵");
+                                
                             long room_id = Long.valueOf(args[2]);
                             long server_id = Long.valueOf(args[3]);
                             if (testRoomIDWithServerID(room_id, server_id)) {
-                                if (Newboy.INSTANCE.getConfig().addRoomIDConnection(room_id, server_id))
-                                    return new PlainText("连接成功");
-                                else
-                                    return new PlainText("建立过此连接");
+                                boolean connectionAdded = Newboy.INSTANCE.getConfig().addRoomIDConnection(room_id, server_id);
+                                boolean subscriptionAdded = Newboy.INSTANCE.getConfig().addPocket48RoomSubscribe(room_id, group);
+                                
+                                if (connectionAdded && subscriptionAdded) {
+                                    return new PlainText("✅ 连接成功并已添加到关注列表\n🔒 加密房间现在可以正常接收消息");
+                                } else if (!connectionAdded && subscriptionAdded) {
+                                    return new PlainText("✅ 连接已存在，已添加到关注列表\n🔒 加密房间现在可以正常接收消息");
+                                } else if (connectionAdded && !subscriptionAdded) {
+                                    return new PlainText("✅ 连接成功，但房间已在关注列表中\n🔒 加密房间现在可以正常接收消息");
+                                } else {
+                                    return new PlainText("✅ 连接已存在，房间已在关注列表中\n🔒 加密房间现在可以正常接收消息");
+                                }
                             } else
-                                return new PlainText("您输入的ServerId并不包含此RoomId");
+                                return new PlainText("❌ 您输入的ServerId并不包含此RoomId\n💡 请检查ServerId和RoomId是否正确");
                         }
                     default:
                         return getCategorizedHelp(-1);
@@ -538,7 +549,17 @@ public class CommandOperator extends AsyncWebHandlerBase {
         //权限检测
         switch (args[0]) {
             case "/微店":
-            case "/weidian":
+            case "/weidian": {
+                try {
+                    long groupId = Long.valueOf(args[1]);
+                    Message test = testPermission(groupId, event);
+                    if (test != null)
+                        return test;
+                } catch (Exception e) {
+                    return getCategorizedHelp(event.getSender().getId());
+                }
+                break;
+            }
             // 进群欢迎功能已移除
             /*
             case "/欢迎": {
@@ -551,6 +572,7 @@ public class CommandOperator extends AsyncWebHandlerBase {
                     return getCategorizedHelp(event.getSender().getId());
                 }
             }
+            */
         }
 
         switch (args[0]) {
@@ -959,13 +981,21 @@ public class CommandOperator extends AsyncWebHandlerBase {
         help.append("群聊命令：\n");
         help.append("  /口袋 搜索 <关键词> - 搜索成员/队伍\n");
         help.append("  /口袋 查询 <用户ID> - 查询用户信息\n");
+        help.append("  /口袋 查询2 <服务器ID> - 查询服务器房间信息\n");
         help.append("  /口袋 关注 <房间ID> - 关注房间\n");
         help.append("  /口袋 取消关注 <房间ID> - 取消关注\n");
         help.append("  /口袋 关注列表 - 查看关注列表\n");
+        help.append("  /口袋 连接 <房间ID> <服务器ID> - 连接加密房间\n");
+        help.append("隐藏命令：\n");
+        help.append("  /口袋 查直播 - 查看当前直播列表\n");
+        help.append("  /口袋 查录播 - 查看当前录播列表\n");
+        help.append("  /口袋 余额 - 查看账户余额（管理员）\n");
         help.append("私聊命令：\n");
         help.append("  /口袋 关注 <房间ID> <群号> - 为指定群添加关注\n");
         help.append("  /口袋 取消关注 <房间ID> <群号> - 为指定群取消关注\n");
-        help.append("  /口袋 关注列表 - 查看所有群的关注情况\n\n");
+        help.append("  /口袋 关注列表 - 查看所有群的关注情况\n");
+        help.append("  /口袋 搜索 <关键词> - 搜索成员/队伍\n");
+        help.append("  /口袋 查询 <用户ID> - 查询用户详细信息\n\n");
         
         help.append("🐦 微博功能\n");
         help.append("群聊命令：\n");
@@ -990,28 +1020,46 @@ public class CommandOperator extends AsyncWebHandlerBase {
         help.append("🛍️ 微店功能\n");
         help.append("私聊命令：\n");
         help.append("  /微店 <群号> cookie <Cookie> - 设置微店Cookie\n");
-        help.append("  /微店 <群号> 全部 - 查看商品列表\n");
-        help.append("  /微店 <群号> 自动发货 - 切换自动发货\n");
-        help.append("  /微店 <群号> 群播报 - 切换群播报\n");
+        help.append("  /微店 <群号> 全部 - 查看商品列表和状态\n");
+        help.append("  /微店 <群号> 关闭 - 关闭微店播报\n");
+        help.append("  /微店 <群号> 自动发货 - 切换自动发货状态\n");
+        help.append("  /微店 <群号> 群播报 - 切换群播报状态\n");
+        help.append("  /微店 <群号> 全部发货 - 手动发货所有订单\n");
+        help.append("  /微店 <群号> # <商品ID> - 切换商品特殊链状态\n");
+        help.append("  /微店 <群号> 屏蔽 <商品ID> - 切换商品屏蔽状态\n");
         help.append("  /微店 <群号> 查 <商品ID> - 查看商品详情\n\n");
         
         help.append("👥 在线状态监控\n");
         help.append("群聊命令：\n");
         help.append("  /newboy monitor - 查看监控帮助\n");
+        help.append("  /在线 <成员名> - 查询成员在线状态\n");
+        help.append("  /online <成员名> - 查询成员在线状态（英文）\n");
         help.append("私聊命令：\n");
-        help.append("  /监控添加 <成员名> - 添加监控\n");
-        help.append("  /监控移除 <成员名> - 移除监控\n");
-        help.append("  /监控列表 - 查看监控列表\n");
-        help.append("  /在线 <成员名> - 查询在线状态\n\n");
+        help.append("  /监控添加 <成员名> - 添加个人监控\n");
+        help.append("  /监控移除 <成员名> - 移除个人监控\n");
+        help.append("  /监控列表 - 查看个人监控列表\n");
+        help.append("  /在线 <成员名> - 查询在线状态\n");
+        help.append("  /monitor_add <成员名> - 添加监控（英文）\n");
+        help.append("  /monitor_remove <成员名> - 移除监控（英文）\n");
+        help.append("  /monitor_list - 查看监控列表（英文）\n\n");
         
         help.append("🔧 管理功能\n");
         help.append("私聊命令（管理员）：\n");
-        // 进群欢迎功能已移除
-        help.append("  /清理 - 清理失效群配置\n\n");
+        help.append("  /清理 - 清理失效群配置（超级管理员）\n");
+        help.append("  /帮助 或 /help - 显示帮助信息\n");
+        help.append("  /? - 显示帮助信息\n\n");
+        
+        help.append("🌐 命令别名\n");
+        help.append("支持的英文命令：\n");
+        help.append("  /pocket - 等同于 /口袋\n");
+        help.append("  /weibo - 等同于 /微博\n");
+        help.append("  /supertopic - 等同于 /超话\n");
+        help.append("  /weidian - 等同于 /微店\n\n");
         
         help.append("💡 提示：\n");
         help.append("• 私聊命令可以无感添加配置，不打扰群组\n");
         help.append("• 管理员可以通过私聊为任意群配置功能\n");
+        help.append("• 支持中英文命令，方便不同用户使用\n");
         help.append("• 使用 /帮助 随时查看此帮助信息");
         
         return new PlainText(help.toString());

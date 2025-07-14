@@ -76,8 +76,9 @@ public class Pocket48Message {
             return JSONUtil.parseObj(JSONUtil.parseObj(getBody()).getObj("expressImgInfo")).getStr("emotionRemote");
         }
         if (getType() == Pocket48MessageType.IMAGE || getType() == Pocket48MessageType.AUDIO
-                || getType() == Pocket48MessageType.VIDEO)
+                || getType() == Pocket48MessageType.VIDEO) {
             return JSONUtil.parseObj(getBody()).getStr("url");
+        }
 
         return null;
     }
@@ -85,15 +86,17 @@ public class Pocket48Message {
     //网易资源有ext IMAGE,AUDIO,VIDEO
     public String getExt() {
         if (getType() == Pocket48MessageType.IMAGE || getType() == Pocket48MessageType.AUDIO
-                || getType() == Pocket48MessageType.VIDEO)
-            JSONUtil.parseObj(getBody()).getStr("ext");
+                || getType() == Pocket48MessageType.VIDEO) {
+            return JSONUtil.parseObj(getBody()).getStr("ext");
+        }
         return null;
     }
 
     public long getDuration() {
         if (getType() == Pocket48MessageType.AUDIO
-                || getType() == Pocket48MessageType.VIDEO)
-            JSONUtil.parseObj(getBody()).getStr("dur");
+                || getType() == Pocket48MessageType.VIDEO) {
+            return JSONUtil.parseObj(getBody()).getLong("dur");
+        }
         return 0;
     }
 

@@ -301,14 +301,28 @@ public class AsyncWebHandlerBase {
     }
     
     /**
-     * Hutool HttpRequest兼容性方法 - 用于旧代码迁移
-     * @deprecated 建议使用新的异步方法
+     * 带自定义Headers的异步POST请求
      */
-    @Deprecated
-    protected cn.hutool.http.HttpRequest setHeader(cn.hutool.http.HttpRequest request) {
-        // 为了兼容性，直接返回原请求对象
-        // 子类可以重写此方法来设置特定的请求头
-        return request;
+    protected CompletableFuture<String> postAsync(String url, Headers headers, String body) {
+        RequestBody requestBody = RequestBody.create(body, MediaType.parse("application/json; charset=utf-8"));
+        Request request = buildRequest(url)
+                .post(requestBody)
+                .headers(headers)
+                .build();
+        
+        return executeRequestAsync(request, url, "POST");
+    }
+
+    /**
+     * 带自定义Headers的异步GET请求
+     */
+    protected CompletableFuture<String> getAsync(String url, Headers headers) {
+        Request request = buildRequest(url)
+                .get()
+                .headers(headers)
+                .build();
+        
+        return executeRequestAsync(request, url, "GET");
     }
     
     /**

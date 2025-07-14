@@ -20,6 +20,5 @@ public enum Pocket48MessageType {
     AGENT_QCHAT_TEXT,//代理聊天文本
     AGENT_QCHAT_GIFT_REPLY,//代理聊天礼物回复
     FAIPAI_TEXT,//翻牌文本
-    LIVE_PUSH,//直播推送
     UNKNOWN//未知类型，用于兼容新增的消息类型
 }

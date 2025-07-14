@@ -1,15 +1,16 @@
 package net.luffy.handler;
 
 import cn.hutool.core.date.DateUtil;
-import cn.hutool.http.HttpRequest;
 import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import net.luffy.model.*;
+import okhttp3.Headers;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 public class WeidianHandler extends AsyncWebHandlerBase {
 
@@ -19,23 +20,54 @@ public class WeidianHandler extends AsyncWebHandlerBase {
     //无需cookie
     private static final String APISkuInfo = "https://thor.weidian.com/detail/getItemSkuInfo/1.0?param=%7B%22itemId%22%3A%22%d%22%7D";
 
-    //setDefaultHeader
-    @Override
-    protected HttpRequest setHeader(HttpRequest request) {
-        return request.header("Host", "thor.weidian.com").header("Connection", "keep-alive").header("sec-ch-ua", "\"Google Chrome\";v=\"107\", \"Chromium\";v=\"107\", \"Not=A?Brand\";v=\"24\"").header("Accept", "application/json, */*").header("sec-ch-ua-mobile", "?0").header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36").header("Sec-Fetch-Site", "same-site").header("Sec-Fetch-Mode", "cors").header("Sec-Fetch-Dest", "empty").header("Accept-Encoding", "gzip, deflate, br").header("Accept-Language", "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7,zh-TW;q=0.6");
+    private Headers getDefaultHeaders() {
+        return new Headers.Builder()
+                .add("Host", "thor.weidian.com")
+                .add("Connection", "keep-alive")
+                .add("sec-ch-ua", "\"Google Chrome\";v=\"107\", \"Chromium\";v=\"107\", \"Not=A?Brand\";v=\"24\"")
+                .add("Accept", "application/json, */*")
+                .add("sec-ch-ua-mobile", "?0")
+                .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36")
+                .add("Sec-Fetch-Site", "same-site")
+                .add("Sec-Fetch-Mode", "cors")
+                .add("Sec-Fetch-Dest", "empty")
+                .add("Accept-Encoding", "gzip, deflate, br")
+                .add("Accept-Language", "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7,zh-TW;q=0.6")
+                .build();
     }
 
-    protected HttpRequest setHeader(HttpRequest request, WeidianCookie cookie) {
-        return setHeader(request).header("Cookie", cookie.cookie);
+    private Headers getHeaders(WeidianCookie cookie) {
+        return getDefaultHeaders().newBuilder()
+                .add("Cookie", cookie.cookie)
+                .build();
     }
 
+    private CompletableFuture<String> postAsync(String url, String body, WeidianCookie cookie) {
+        Headers headers = getHeaders(cookie).newBuilder()
+                .add("Referer", "https://d.weidian.com/")
+                .build();
+        return postAsync(url, headers, body);
+    }
+
+    private CompletableFuture<String> getAsync(String url, WeidianCookie cookie) {
+        return getAsync(url, getHeaders(cookie));
+    }
+
+    // 同步方法保持向后兼容
     protected String post(String url, String body, WeidianCookie cookie) {
-        return setHeader(HttpRequest.post(url).header("Referer", "https://d.weidian.com/"), cookie)
-                .body(body).execute().body();
+        try {
+            return postAsync(url, body, cookie).get();
+        } catch (Exception e) {
+            throw new RuntimeException("POST请求失败: " + e.getMessage(), e);
+        }
     }
 
     protected String get(String url, WeidianCookie cookie) {
-        return setHeader(HttpRequest.get(url), cookie).execute().body();
+        try {
+            return getAsync(url, cookie).get();
+        } catch (Exception e) {
+            throw new RuntimeException("GET请求失败: " + e.getMessage(), e);
+        }
     }
 
     private JSONArray getOriOrderList(WeidianCookie cookie) {
@@ -150,7 +182,7 @@ public class WeidianHandler extends AsyncWebHandlerBase {
     }
 
     public boolean deliver(String orderId, WeidianCookie cookie) throws RuntimeException {
-        String s = post(APIDeliver, "param={\"from\":\"pc\",\"orderId\":\"" + orderId + "\",\"expressNo\":\"\",\"expressType\":0,\"expressCustom\":\"\",\"fullDeliver\":true}&wdtoken=" + cookie.cookie, cookie);
+        String s = post(APIDeliver, "param={\"from\":\"pc\",\"orderId\":\"" + orderId + "\",\"expressNo\":\"\",\"expressType\":0,\"expressCustom\":\"\",\"fullDeliver\":true}&wdtoken=" + cookie.wdtoken, cookie);
         JSONObject object = JSONUtil.parseObj(s);
         if (object.getJSONObject("status").getInt("code") == 0) {
             JSONObject result = object.getJSONObject("result");
@@ -231,25 +263,28 @@ public class WeidianHandler extends AsyncWebHandlerBase {
     }
 
     public WeidianItem getItemWithSkus(long itemId) {
-        String s = get(String.format(APISkuInfo, itemId));
-        JSONObject object = JSONUtil.parseObj(s);
-        if (object.getJSONObject("status").getInt("code") == 0) {
-            JSONObject result = object.getJSONObject("result");
-            String name = result.getStr("itemTitle");
-            String pic = result.getStr("itemMainPic");
-            WeidianItem item = new WeidianItem(itemId, name, pic);
+        try {
+            String s = getAsync(String.format(APISkuInfo, itemId)).get();
+            JSONObject object = JSONUtil.parseObj(s);
+            if (object.getJSONObject("status").getInt("code") == 0) {
+                JSONObject result = object.getJSONObject("result");
+                String name = result.getStr("itemTitle");
+                String pic = result.getStr("itemMainPic");
+                WeidianItem item = new WeidianItem(itemId, name, pic);
 
-            JSONArray skus = result.getJSONArray("skuInfos");
-            for (Object sku_ : skus.toArray(new Object[0])) {
-                JSONObject sku = JSONUtil.parseObj(sku_);
-                item.addSkus(
-                        sku.getLong("id"),
-                        sku.getStr("title"),
-                        sku.getStr("img")
-                );
+                JSONArray skus = result.getJSONArray("skuInfos");
+                for (Object sku_ : skus.toArray(new Object[0])) {
+                    JSONObject sku = JSONUtil.parseObj(sku_);
+                    item.addSkus(
+                            sku.getLong("id"),
+                            sku.getStr("title"),
+                            sku.getStr("img")
+                    );
+                }
+                return item;
             }
-            return item;
-
+        } catch (Exception e) {
+            logInfo("获取商品SKU信息失败: " + e.getMessage());
         }
         return null;
     }
