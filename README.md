@@ -2,8 +2,8 @@
 
 > 基于Mirai框架的QQ机器人插件，支持口袋48、微博、微店等多平台内容监控和推送
 
-[![Mirai](https://img.shields.io/badge/Mirai-2.15.0-blue)](https://github.com/mamoe/mirai)
-[![Kotlin](https://img.shields.io/badge/Kotlin-1.8+-purple)](https://kotlinlang.org/)
+[![Mirai](https://img.shields.io/badge/Mirai-2.16.0-blue)](https://github.com/mamoe/mirai)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.0+-purple)](https://kotlinlang.org/)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
 ## ✨ 主要功能
