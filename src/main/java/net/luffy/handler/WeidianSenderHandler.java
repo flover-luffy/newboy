@@ -33,9 +33,10 @@ public class WeidianSenderHandler {
 
         Image image = null;
         if (!item.pic.equals("")) {
-            try {
-                image = group.uploadImage(ExternalResource.create(getRes(item.pic)));
+            try (ExternalResource imageResource = ExternalResource.create(getRes(item.pic))) {
+                image = group.uploadImage(imageResource);
             } catch (Exception e) {
+                // 忽略图片上传失败
             }
         }
 

@@ -16,6 +16,11 @@ import net.luffy.util.ConfigOperator;
 import net.luffy.util.Properties;
 import net.luffy.util.PropertiesCommon;
 import net.luffy.util.sender.*;
+import net.luffy.util.UnifiedSchedulerManager;
+import net.luffy.util.PerformanceMonitor;
+import net.luffy.util.AdaptiveThreadPoolManager;
+import net.luffy.util.CpuLoadBalancer;
+import net.luffy.util.EventBusManager;
 import net.mamoe.mirai.Bot;
 import net.mamoe.mirai.console.command.CommandManager;
 import net.mamoe.mirai.console.permission.AbstractPermitteeId;
@@ -56,6 +61,20 @@ public final class Newboy extends JavaPlugin {
 
     @Override
     public void onEnable() {
+        getLogger().info("正在启动插件...");
+        
+        // 初始化统一调度器
+        UnifiedSchedulerManager.getInstance();
+        
+        // 初始化CPU优化组件
+        AdaptiveThreadPoolManager.getInstance();
+        CpuLoadBalancer.getInstance();
+        EventBusManager.getInstance();
+        
+        // 预热JSON解析器，提高首次解析性能
+        net.luffy.util.HighPerformanceJsonParser.warmUp();
+        getLogger().info("JSON解析器预热完成");
+        
         initProperties();
         loadConfig();
         registerPermission();
@@ -90,6 +109,13 @@ public final class Newboy extends JavaPlugin {
         }
         boolean finalWeibo_has_login = weibo_has_login;
         listenBroadcast(pocket48_has_login, finalWeibo_has_login);
+
+        // 启动定期性能报告（发送给第一个管理员）
+        if (properties.admins != null && properties.admins.length > 0) {
+            String firstAdmin = properties.admins[0];
+            PerformanceMonitor.getInstance().enablePeriodicReporting(firstAdmin, 1440); // 24小时间隔
+            getLogger().info("已启用定期性能报告，将发送给管理员: " + firstAdmin);
+        }
 
         getLogger().info("New boy!");
 
@@ -144,6 +170,15 @@ public final class Newboy extends JavaPlugin {
     
     public Scheduler getCronScheduler() {
         return scheduler;
+    }
+    
+    /**
+     * 获取Bot实例（用于发送消息）
+     * @return Bot实例，如果没有可用的Bot则返回null
+     */
+    public static Bot getBot() {
+        List<Bot> bots = Bot.getInstances();
+        return bots.isEmpty() ? null : bots.get(0);
     }
     
     /**
@@ -214,12 +249,27 @@ public final class Newboy extends JavaPlugin {
             // 停止所有定时任务
             stopAllScheduledTasks();
             
+            // 停止定期性能报告
+            PerformanceMonitor.getInstance().disablePeriodicReporting();
+            
             // 清理资源
             if (onlineStatusMonitor != null) {
                 onlineStatusMonitor.cleanup();
             }
             
-            getLogger().info("插件已安全关闭");
+            // 关闭CPU优化组件
+            EventBusManager.getInstance().shutdown();
+            CpuLoadBalancer.getInstance().shutdown();
+            AdaptiveThreadPoolManager.getInstance().shutdown();
+            
+            // 清理JSON解析器缓存
+            net.luffy.util.HighPerformanceJsonParser.clearCache();
+            getLogger().info("JSON解析器缓存已清理");
+            
+            // 关闭统一调度器（最后关闭）
+            UnifiedSchedulerManager.getInstance().shutdown();
+            
+            getLogger().info("插件已安全关闭，所有资源已释放");
         } catch (Exception e) {
             getLogger().error("插件关闭时发生错误", e);
         }

@@ -40,21 +40,9 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
             }
             
             // 缓存未命中，从网络获取
-            Request request = buildPocket48Request(url).get().build();
-            Response response = httpClient.newCall(request).execute();
-            
-            if (!response.isSuccessful()) {
-                response.close();
-                throw new RuntimeException("口袋48资源请求失败: " + response.code() + " " + url);
-            }
-            
-            ResponseBody body = response.body();
-            if (body == null) {
-                response.close();
-                throw new RuntimeException("口袋48资源响应体为空: " + url);
-            }
-            
-            return body.byteStream();
+            // 为了避免资源泄漏，我们下载到临时文件然后返回文件流
+            File tempFile = downloadToTempFileInternal(url, ".tmp");
+            return new FileInputStream(tempFile);
         } catch (IOException e) {
             throw new RuntimeException("获取口袋48资源流失败: " + e.getMessage(), e);
         }

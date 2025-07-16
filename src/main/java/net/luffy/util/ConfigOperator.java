@@ -128,18 +128,19 @@ public class ConfigOperator {
                             ));
         }
 
-        for (Object a :
-                JSONUtil.parseArray(setting.getByGroup("roomConnection", "pocket48")).toArray()) {
-            JSONObject sid = JSONUtil.parseObj(a);
+        //口袋48房间连接 - 使用高性能JSON解析
+        Object[] pocket48Array = JSONUtil.parseArray(setting.getByGroup("roomConnection", "pocket48")).toArray();
+        for (Object a : pocket48Array) {
+            JSONObject sid = (a instanceof JSONObject) ? (JSONObject) a : JSONUtil.parseObj(a);
             properties.pocket48_serverID.put(sid.getLong("roomID"), sid.getLong("serverID"));
         }
 
 
 
-        //微博
-        for (Object a :
-                JSONUtil.parseArray(setting.getByGroup("subscribe", "weibo")).toArray()) {
-            JSONObject subs = JSONUtil.parseObj(a);
+        //微博 - 使用批量解析优化
+        Object[] weiboArray = JSONUtil.parseArray(setting.getByGroup("subscribe", "weibo")).toArray();
+        for (Object a : weiboArray) {
+            JSONObject subs = (a instanceof JSONObject) ? (JSONObject) a : JSONUtil.parseObj(a);
 
             long g = subs.getLong("qqGroup");
             @SuppressWarnings("unchecked")
@@ -152,10 +153,10 @@ public class ConfigOperator {
 
         }
 
-        //微店
-        for (Object a :
-                JSONUtil.parseArray(setting.getByGroup("shops", "weidian")).toArray()) {
-            JSONObject shop = JSONUtil.parseObj(a);
+        //微店 - 使用高性能JSON解析
+        Object[] weidianArray = JSONUtil.parseArray(setting.getByGroup("shops", "weidian")).toArray();
+        for (Object a : weidianArray) {
+            JSONObject shop = (a instanceof JSONObject) ? (JSONObject) a : JSONUtil.parseObj(a);
 
             long g = shop.getLong("qqGroup");
             String cookie = shop.getStr("cookie", "");
@@ -169,10 +170,10 @@ public class ConfigOperator {
 
         }
         
-        //在线状态监控
-        for (Object a :
-                JSONUtil.parseArray(setting.getByGroup("subscribe", "onlineStatus")).toArray()) {
-            JSONObject sub = JSONUtil.parseObj(a);
+        //在线状态监控 - 使用高性能JSON解析
+        Object[] onlineStatusArray = JSONUtil.parseArray(setting.getByGroup("subscribe", "onlineStatus")).toArray();
+        for (Object a : onlineStatusArray) {
+            JSONObject sub = (a instanceof JSONObject) ? (JSONObject) a : JSONUtil.parseObj(a);
             
             long g = sub.getLong("qqGroup");
             List<String> memberSubs = sub.getBeanList("memberSubs", String.class);

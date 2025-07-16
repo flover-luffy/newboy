@@ -595,30 +595,9 @@ public class CommandOperator extends AsyncWebHandlerBase {
                 Xox48Handler.OnlineStatusResult result = Newboy.INSTANCE.getHandlerXox48().queryMemberOnlineStatus(memberName);
                 return new PlainText(result.formatResult());
             }
-            case "/监控添加":
-            case "/monitor_add": {
-                if (args.length < 2 || args[1] == null || args[1].trim().isEmpty()) {
-                    return new PlainText("❌ 请输入成员名称\n💡 使用方法：/监控添加 成员名称");
-                }
-                
-                String memberName = args[1].trim();
-                String result = OnlineStatusMonitor.INSTANCE.addMonitor(event.getSender().getId(), memberName);
-                return new PlainText(result);
-            }
-            case "/监控移除":
-            case "/monitor_remove": {
-                if (args.length < 2 || args[1] == null || args[1].trim().isEmpty()) {
-                    return new PlainText("❌ 请输入成员名称\n💡 使用方法：/监控移除 成员名称");
-                }
-                
-                String memberName = args[1].trim();
-                String result = OnlineStatusMonitor.INSTANCE.removeMonitor(event.getSender().getId(), memberName);
-                return new PlainText(result);
-            }
-            case "/监控列表":
-            case "/monitor_list": {
-                String result = OnlineStatusMonitor.INSTANCE.getMonitorList(event.getSender().getId());
-                return new PlainText(result);
+            case "/监控":
+            case "/monitor": {
+                return handlePrivateMonitorCommand(args, event);
             }
             case "/口袋":
             case "/pocket": {
@@ -632,6 +611,7 @@ public class CommandOperator extends AsyncWebHandlerBase {
             case "/supertopic": {
                 return handlePrivateSuperTopicCommand(args, event);
             }
+
             case "/微店":
             case "/weidian": {
                 long groupId;
@@ -862,12 +842,16 @@ public class CommandOperator extends AsyncWebHandlerBase {
                                                         // 无论群聊还是私聊都嵌入图片
                                                         if (event.getSubject() instanceof Group) {
                                                             Group group = (Group) event.getSubject();
-                                                            Image image = group.uploadImage(net.mamoe.mirai.utils.ExternalResource.create(imageStream));
-                                                            itemMessage = itemMessage.plus(image);
+                                                            try (ExternalResource imageResource = ExternalResource.create(imageStream)) {
+                                                                Image image = group.uploadImage(imageResource);
+                                                                itemMessage = itemMessage.plus(image);
+                                                            }
                                                         } else {
                                                             // 私聊中也嵌入图片
-                                                            Image image = event.getSubject().uploadImage(net.mamoe.mirai.utils.ExternalResource.create(imageStream));
-                                                            itemMessage = itemMessage.plus(image);
+                                                            try (ExternalResource imageResource = ExternalResource.create(imageStream)) {
+                                                                Image image = event.getSubject().uploadImage(imageResource);
+                                                                itemMessage = itemMessage.plus(image);
+                                                            }
                                                         }
                                                     } else {
                                                         itemMessage = itemMessage.plus(new PlainText("[商品图片无法获取]\n"));
@@ -1194,13 +1178,13 @@ public class CommandOperator extends AsyncWebHandlerBase {
         help.append("  /在线 <成员名> - 查询成员在线状态\n");
         help.append("  /online <成员名> - 查询成员在线状态（英文）\n");
         help.append("私聊命令：\n");
-        help.append("  /监控添加 <成员名> - 添加个人监控\n");
-        help.append("  /监控移除 <成员名> - 移除个人监控\n");
-        help.append("  /监控列表 - 查看个人监控列表\n");
+        help.append("  /监控 添加 <成员名> <群号> - 为指定群组添加在线状态监控\n");
+        help.append("  /监控 移除 <成员名> <群号> - 为指定群组移除在线状态监控\n");
+        help.append("  /监控 列表 - 查看所有群组的在线状态订阅\n");
         help.append("  /在线 <成员名> - 查询在线状态\n");
-        help.append("  /monitor_add <成员名> - 添加监控（英文）\n");
-        help.append("  /monitor_remove <成员名> - 移除监控（英文）\n");
-        help.append("  /monitor_list - 查看监控列表（英文）\n\n");
+        help.append("  /monitor 添加 <成员名> <群号> - 添加监控（英文）\n");
+        help.append("  /monitor 移除 <成员名> <群号> - 移除监控（英文）\n");
+        help.append("  /monitor 列表 - 查看监控列表（英文）\n\n");
         
         help.append("🔧 管理功能\n");
         help.append("私聊命令（管理员）：\n");
@@ -1559,6 +1543,114 @@ public class CommandOperator extends AsyncWebHandlerBase {
                 return new PlainText(String.format("✅ 成功为群 %d 移除超话订阅\n🔥 超话ID：%s", groupId, topicId));
             } else {
                 return new PlainText(String.format("❌ 群 %d 未订阅超话 %s", groupId, topicId));
+            }
+        } catch (NumberFormatException e) {
+            return new PlainText("❌ 群号格式错误，必须是数字");
+        }
+    }
+
+    // 处理私聊监控命令（合并原有监控功能和在线监控功能）
+    private Message handlePrivateMonitorCommand(String[] args, UserMessageEvent event) {
+        if (args.length < 2) {
+            StringBuilder help = new StringBuilder();
+            help.append("📱 监控管理私聊命令\n");
+            help.append("━━━━━━━━━━━━━━━━━━━━\n");
+            help.append("📋 /监控 列表 - 查看所有群组的在线状态订阅\n");
+            help.append("➕ /监控 添加 <成员名> <群号> - 为指定群组添加在线状态订阅\n");
+            help.append("➖ /监控 移除 <成员名> <群号> - 为指定群组移除在线状态订阅\n");
+            help.append("\n💡 示例：\n");
+            help.append("  /监控 添加 张三 123456789\n");
+            help.append("  /监控 移除 张三 123456789");
+            return new PlainText(help.toString());
+        }
+
+        String action = args[1];
+        switch (action) {
+            case "列表":
+                return getPrivateOnlineMonitorList(event.getSender().getId());
+            case "添加":
+                if (args.length < 4) {
+                    return new PlainText("❌ 参数不足，格式：/监控 添加 <成员名> <群号>");
+                }
+                return addPrivateOnlineMonitor(args[2], args[3], event);
+            case "移除":
+                if (args.length < 4) {
+                    return new PlainText("❌ 参数不足，格式：/监控 移除 <成员名> <群号>");
+                }
+                return removePrivateOnlineMonitor(args[2], args[3], event);
+            default:
+                return new PlainText("❌ 未知操作，请使用 /监控 查看帮助");
+        }
+    }
+
+    // 获取私聊在线状态监控列表
+    private Message getPrivateOnlineMonitorList(long userId) {
+        StringBuilder result = new StringBuilder();
+        result.append("👁️ 在线状态监控列表\n");
+        result.append("━━━━━━━━━━━━━━━━━━━━\n");
+        
+        Properties properties = Newboy.INSTANCE.getProperties();
+        boolean hasSubscription = false;
+        
+        for (long groupId : properties.onlineStatus_subscribe.keySet()) {
+            if (!properties.onlineStatus_subscribe.get(groupId).isEmpty()) {
+                hasSubscription = true;
+                result.append("\n🏠 群组：").append(groupId).append("\n");
+                
+                int count = 1;
+                for (String memberName : properties.onlineStatus_subscribe.get(groupId)) {
+                    result.append("  ").append(count).append(". 成员: ").append(memberName).append("\n");
+                    count++;
+                }
+            }
+        }
+        
+        if (!hasSubscription) {
+            result.append("\n❌ 暂无订阅\n");
+            result.append("💡 使用 /监控 添加 <成员名> <群号> 添加订阅");
+        }
+        
+        return new PlainText(result.toString());
+    }
+
+    // 添加私聊在线状态监控
+    private Message addPrivateOnlineMonitor(String memberName, String groupIdStr, UserMessageEvent event) {
+        try {
+            long groupId = Long.parseLong(groupIdStr);
+            
+            // 权限检查
+            Message permissionTest = testPermission(groupId, event);
+            if (permissionTest != null) {
+                return permissionTest;
+            }
+            
+            boolean success = Newboy.INSTANCE.getConfig().addOnlineStatusSubscribe(memberName, groupId);
+            if (success) {
+                return new PlainText(String.format("✅ 成功为群 %d 添加在线状态监控\n👤 成员：%s", groupId, memberName));
+            } else {
+                return new PlainText(String.format("❌ 群 %d 已监控成员 %s", groupId, memberName));
+            }
+        } catch (NumberFormatException e) {
+            return new PlainText("❌ 群号格式错误，必须是数字");
+        }
+    }
+
+    // 移除私聊在线状态监控
+    private Message removePrivateOnlineMonitor(String memberName, String groupIdStr, UserMessageEvent event) {
+        try {
+            long groupId = Long.parseLong(groupIdStr);
+            
+            // 权限检查
+            Message permissionTest = testPermission(groupId, event);
+            if (permissionTest != null) {
+                return permissionTest;
+            }
+            
+            boolean success = Newboy.INSTANCE.getConfig().rmOnlineStatusSubscribe(memberName, groupId);
+            if (success) {
+                return new PlainText(String.format("✅ 成功为群 %d 移除在线状态监控\n👤 成员：%s", groupId, memberName));
+            } else {
+                return new PlainText(String.format("❌ 群 %d 未监控成员 %s", groupId, memberName));
             }
         } catch (NumberFormatException e) {
             return new PlainText("❌ 群号格式错误，必须是数字");

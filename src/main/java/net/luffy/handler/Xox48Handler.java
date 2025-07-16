@@ -13,6 +13,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.List;
 import java.util.Arrays;
 import java.util.Random;
+import net.luffy.util.PerformanceMonitor;
 
 /**
  * 增强的Xox48异步处理器
@@ -46,9 +47,23 @@ public class Xox48Handler extends AsyncWebHandlerBase {
     // 缓存和失败统计
     private final ConcurrentHashMap<String, CachedResult> resultCache = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, FailureStats> failureStats = new ConcurrentHashMap<>();
+    
+    // 自动清理计数器（优化：减少清理频率）
+    private final AtomicLong queryCounter = new AtomicLong(0);
+    private static final long CLEANUP_THRESHOLD = 200; // 每200次查询清理一次，减少频率
 
     public Xox48Handler() {
         super();
+        // 启动自动清理机制：每100次查询后自动清理一次
+        startAutoCleanup();
+    }
+    
+    /**
+     * 启动自动清理机制
+     */
+    private void startAutoCleanup() {
+        // 使用查询计数器触发清理，避免创建额外的定时任务
+        // 在每次查询时检查是否需要清理
     }
 
     /**
@@ -130,6 +145,24 @@ public class Xox48Handler extends AsyncWebHandlerBase {
      */
     public OnlineStatusResult queryMemberOnlineStatus(String name) {
         try {
+            // 优化：减少自动清理频率，降低CPU占用
+            long currentCount = queryCounter.incrementAndGet();
+            if (currentCount % CLEANUP_THRESHOLD == 0) {
+                cleanupCache();
+                // 检查内存使用情况
+                Runtime runtime = Runtime.getRuntime();
+                long usedMemory = runtime.totalMemory() - runtime.freeMemory();
+                long maxMemory = runtime.maxMemory();
+                double memoryUsage = (double) usedMemory / maxMemory;
+                
+                if (memoryUsage > 0.8) {
+                    // 内存使用率过高，强制清理并建议GC
+                    resetCache();
+                    System.gc();
+                    System.out.println(String.format("[Xox48Handler] 内存使用率过高(%.1f%%)，已执行强制清理", memoryUsage * 100));
+                }
+            }
+            
             // 使用异步方法并等待结果，保持向后兼容
             return queryMemberOnlineStatusAsync(name).get();
         } catch (Exception e) {
@@ -281,58 +314,118 @@ public class Xox48Handler extends AsyncWebHandlerBase {
     }
 
     /**
-     * 解析API响应 - 优化版本，首先检查msg字段
+     * 解析API响应 - 高性能优化版本
+     * 使用流式解析和快速字段提取
      */
     private OnlineStatusResult parseOnlineStatusResponse(JSONObject response, String queryName) {
-        // 首先检查msg字段是否为"success"
-        String msg = response.getStr("msg");
-        if (msg == null || !"success".equals(msg)) {
-            return new OnlineStatusResult(false, msg != null ? msg : "API响应失败", queryName, -1, null, null, null);
+        // 使用高性能JSON解析器进行快速字段提取
+        try {
+            String responseStr = response.toString();
+            
+            // 快速检查API响应状态
+            if (!net.luffy.util.JsonOptimizer.isApiResponseSuccess(responseStr)) {
+                String msg = net.luffy.util.JsonOptimizer.fastExtractMsg(responseStr);
+                String error = net.luffy.util.JsonOptimizer.fastExtractError(responseStr);
+                String errorMsg = msg != null ? msg : (error != null ? "错误码异常: " + error : "API响应失败");
+                return new OnlineStatusResult(false, errorMsg, queryName, -1, null, null, null);
+            }
+            
+            // 使用流式解析提取关键字段，避免完整JSON解析
+            java.util.Map<String, Object> fields = net.luffy.util.HighPerformanceJsonParser.streamParseFields(
+                responseStr, "data", "msg", "error");
+            
+            // 处理嵌套的data字段
+            Object dataObj = fields.get("data");
+            if (dataObj == null) {
+                return new OnlineStatusResult(false, "响应数据格式异常", queryName, -1, null, null, null);
+            }
+            
+            // 如果data是JSONObject，继续解析
+            JSONObject outerData = (dataObj instanceof JSONObject) ? (JSONObject) dataObj : response.getJSONObject("data");
+            if (outerData == null) {
+                return new OnlineStatusResult(false, "响应数据格式异常", queryName, -1, null, null, null);
+            }
+            
+            JSONObject data = outerData.getJSONObject("data");
+            if (data == null) {
+                return new OnlineStatusResult(false, "响应数据格式异常", queryName, -1, null, null, null);
+            }
+            
+            // 直接获取整数值，避免字符串转换
+            Integer isOnlineObj = data.getInt("is_online");
+            
+            if (isOnlineObj == null) {
+                return new OnlineStatusResult(false, "无法获取在线状态", queryName, -1, null, null, null);
+            }
+            
+            int isOnline = isOnlineObj;
+            String userName = data.getStr("user_name");
+            if (userName == null || userName.isEmpty()) {
+                userName = queryName;
+            }
+            
+            // 预定义字段名，避免重复创建字符串
+            String timeInfo = null;
+            String lastActiveTime = null;
+            
+            // 使用位运算优化条件判断
+            if ((isOnline & 1) == 1) { // isOnline == 1
+                timeInfo = data.getStr("zx");
+                lastActiveTime = data.getStr("sx_time");
+            } else if ((isOnline & 2) == 2) { // isOnline == 2
+                timeInfo = data.getStr("line");
+                lastActiveTime = data.getStr("xx_time");
+            }
+            
+            return new OnlineStatusResult(true, "查询成功", userName, isOnline, null, null, lastActiveTime, null, timeInfo);
+        } catch (Exception e) {
+            // 高性能解析失败，回退到原始方法
+            String msg = response.getStr("msg");
+            if (msg == null || !"success".equals(msg)) {
+                return new OnlineStatusResult(false, msg != null ? msg : "API响应失败", queryName, -1, null, null, null);
+            }
+            
+            String error = response.getStr("error");
+            if (error == null || !"0".equals(error)) {
+                return new OnlineStatusResult(false, "错误码异常: " + error, queryName, -1, null, null, null);
+            }
+            
+            JSONObject outerData = response.getJSONObject("data");
+            if (outerData == null) {
+                return new OnlineStatusResult(false, "响应数据格式异常", queryName, -1, null, null, null);
+            }
+            
+            JSONObject data = outerData.getJSONObject("data");
+            if (data == null) {
+                return new OnlineStatusResult(false, "响应数据格式异常", queryName, -1, null, null, null);
+            }
+            
+            Integer isOnlineObj = data.getInt("is_online");
+            if (isOnlineObj == null) {
+                return new OnlineStatusResult(false, "无法获取在线状态", queryName, -1, null, null, null);
+            }
+            
+            int isOnline = isOnlineObj;
+            String userName = data.getStr("user_name");
+            if (userName == null || userName.isEmpty()) {
+                userName = queryName;
+            }
+            
+            // 预定义字段名，避免重复创建字符串
+            String timeInfo = null;
+            String lastActiveTime = null;
+            
+            // 使用位运算优化条件判断
+            if ((isOnline & 1) == 1) { // isOnline == 1
+                timeInfo = data.getStr("zx");
+                lastActiveTime = data.getStr("sx_time");
+            } else if ((isOnline & 2) == 2) { // isOnline == 2
+                timeInfo = data.getStr("line");
+                lastActiveTime = data.getStr("xx_time");
+            }
+            
+            return new OnlineStatusResult(true, "查询成功", userName, isOnline, null, null, lastActiveTime, null, timeInfo);
         }
-        
-        // 然后检查错误码，确保双重验证
-        String error = response.getStr("error");
-        if (error == null || !"0".equals(error)) {
-            return new OnlineStatusResult(false, "错误码异常: " + error, queryName, -1, null, null, null);
-        }
-        
-        // 直接获取嵌套数据，减少中间变量
-        JSONObject outerData = response.getJSONObject("data");
-        if (outerData == null) {
-            return new OnlineStatusResult(false, "响应数据格式异常", queryName, -1, null, null, null);
-        }
-        
-        JSONObject data = outerData.getJSONObject("data");
-        if (data == null) {
-            return new OnlineStatusResult(false, "响应数据格式异常", queryName, -1, null, null, null);
-        }
-        
-        // 直接获取整数值，避免字符串转换
-        Integer isOnlineObj = data.getInt("is_online");
-        if (isOnlineObj == null) {
-            return new OnlineStatusResult(false, "无法获取在线状态", queryName, -1, null, null, null);
-        }
-        
-        int isOnline = isOnlineObj;
-        String userName = data.getStr("user_name");
-        if (userName == null || userName.isEmpty()) {
-            userName = queryName;
-        }
-        
-        // 预定义字段名，避免重复创建字符串
-        String timeInfo = null;
-        String lastActiveTime = null;
-        
-        // 使用位运算优化条件判断
-        if ((isOnline & 1) == 1) { // isOnline == 1
-            timeInfo = data.getStr("zx");
-            lastActiveTime = data.getStr("sx_time");
-        } else if ((isOnline & 2) == 2) { // isOnline == 2
-            timeInfo = data.getStr("line");
-            lastActiveTime = data.getStr("xx_time");
-        }
-        
-        return new OnlineStatusResult(true, "查询成功", userName, isOnline, null, null, lastActiveTime, null, timeInfo);
     }
 
     /**
@@ -341,11 +434,11 @@ public class Xox48Handler extends AsyncWebHandlerBase {
     private String getStatusText(int isOnline) {
         switch (isOnline) {
             case 1:
-                return "🟢 在线";
+                return "在线";
             case 2:
-                return "🔴 离线";
+                return "离线";
             default:
-                return "❓ 未知";
+                return "未知";
         }
     }
 

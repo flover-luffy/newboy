@@ -10,11 +10,16 @@ import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryMXBean;
 import java.lang.management.OperatingSystemMXBean;
 import java.lang.management.RuntimeMXBean;
+import java.lang.management.ThreadMXBean;
+import net.luffy.util.CpuLoadBalancer;
 import java.text.DecimalFormat;
 import java.io.File;
 import java.util.Map;
 import java.util.List;
 import java.lang.management.MemoryUsage;
+import net.luffy.util.PerformanceMonitor;
+import net.luffy.util.EnhancedPerformanceMonitor;
+import net.luffy.util.AsyncOnlineStatusMonitor;
 import net.luffy.util.Properties;
 import net.luffy.model.WeidianCookie;
 import net.luffy.model.Pocket48Subscribe;
@@ -111,6 +116,12 @@ public class CustomPrefixCommand {
             case "subscribe":
             case "订阅":
                 return getSubscribeInfo();
+            case "performance":
+            case "性能":
+                return getDetailedPerformanceReport();
+            case "monitor":
+            case "监控":
+                return getMonitoringReport();
             case "help":
             case "帮助":
                 return getHelpMessage();
@@ -132,7 +143,6 @@ public class CustomPrefixCommand {
         systemInfo.append("📦 插件信息:\n");
         systemInfo.append(String.format("  插件版本: %s\n", Newboy.VERSION));
         systemInfo.append(String.format("  插件ID: %s\n", Newboy.ID));
-        systemInfo.append(String.format("  Mirai Console: %s\n", net.mamoe.mirai.console.MiraiConsole.INSTANCE.getVersion()));
         
         // 服务状态
         systemInfo.append("\n🔧 服务状态:\n");
@@ -159,6 +169,46 @@ public class CustomPrefixCommand {
         boolean scheduler = instance.getCronScheduler() != null;
         systemInfo.append(String.format("  定时任务调度器: %s\n", scheduler ? "✅ 运行中" : "❌ 未运行"));
         
+        // 功能运行状态
+        systemInfo.append("\n⚙️ 功能运行状态:\n");
+        
+        // 异步消息处理器状态
+        try {
+            systemInfo.append("  📨 异步消息处理器:\n");
+            systemInfo.append("    - 媒体处理线程池: 运行中\n");
+            systemInfo.append("    - 消息处理线程池: 运行中\n");
+        } catch (Exception e) {
+            systemInfo.append("  📨 异步消息处理器: ❌ 异常\n");
+        }
+        
+        // CPU负载均衡器状态
+        try {
+            CpuLoadBalancer loadBalancer = CpuLoadBalancer.getInstance();
+            systemInfo.append(String.format("  ⚖️ CPU负载均衡器: %s\n", loadBalancer.getCurrentLoadLevel()));
+        } catch (Exception e) {
+            systemInfo.append("  ⚖️ CPU负载均衡器: ❌ 异常\n");
+        }
+        
+        // 事件总线状态
+        try {
+            systemInfo.append("  🚌 事件总线: ✅ 运行中\n");
+        } catch (Exception e) {
+            systemInfo.append("  🚌 事件总线: ❌ 异常\n");
+        }
+        
+        // 线程池状态
+        systemInfo.append("\n🧵 线程池状态:\n");
+        try {
+            ThreadMXBean threadBean = ManagementFactory.getThreadMXBean();
+            int totalThreads = threadBean.getThreadCount();
+            int daemonThreads = threadBean.getDaemonThreadCount();
+            systemInfo.append(String.format("  总线程数: %d\n", totalThreads));
+            systemInfo.append(String.format("  守护线程数: %d\n", daemonThreads));
+            systemInfo.append(String.format("  用户线程数: %d\n", totalThreads - daemonThreads));
+        } catch (Exception e) {
+            systemInfo.append("  ❌ 无法获取线程信息\n");
+        }
+        
         // 订阅统计
         systemInfo.append("\n📊 订阅统计:\n");
         if (instance.getProperties() != null) {
@@ -183,111 +233,58 @@ public class CustomPrefixCommand {
             systemInfo.append(String.format("  在线状态订阅群数: %d\n", onlineGroups));
         }
         
-        // 系统信息
-        systemInfo.append("\n🔧 系统环境:\n");
-        
-        // 操作系统详细信息
-        OperatingSystemMXBean osBean = ManagementFactory.getOperatingSystemMXBean();
-        systemInfo.append(String.format("  操作系统: %s\n", System.getProperty("os.name")));
-        systemInfo.append(String.format("  系统版本: %s\n", System.getProperty("os.version")));
-        systemInfo.append(String.format("  系统架构: %s\n", System.getProperty("os.arch")));
-        
-        // 处理器信息
-        systemInfo.append(String.format("  处理器核心: %d 个\n", Runtime.getRuntime().availableProcessors()));
+        // 性能监控信息
+        systemInfo.append("\n📊 性能监控:\n");
         try {
-            // 尝试获取系统负载
-            double systemLoad = osBean.getSystemLoadAverage();
-            if (systemLoad >= 0) {
-                systemInfo.append(String.format("  系统负载: %.2f\n", systemLoad));
+            PerformanceMonitor monitor = PerformanceMonitor.getInstance();
+            
+            // CPU使用率
+            double cpuUsage = monitor.getCpuUsagePercentage();
+            if (cpuUsage >= 0) {
+                systemInfo.append(String.format("  CPU使用率: %.1f%%", cpuUsage));
+                if (cpuUsage > 80) {
+                    systemInfo.append(" ⚠️ 高负载");
+                } else if (cpuUsage > 60) {
+                    systemInfo.append(" ⚠️ 中等负载");
+                }
+                systemInfo.append("\n");
+            } else {
+                systemInfo.append("  CPU使用率: 无法获取\n");
             }
+            
+            // 内存使用率
+            double memoryUsage = monitor.getMemoryUsagePercentage();
+            systemInfo.append(String.format("  内存使用率: %.1f%%", memoryUsage));
+            if (memoryUsage > 90) {
+                systemInfo.append(" ⚠️ 严重警告");
+            } else if (memoryUsage > 80) {
+                systemInfo.append(" ⚠️ 警告");
+            }
+            systemInfo.append("\n");
+            
+            // 查询统计
+            long totalQueries = monitor.getTotalQueries();
+            double avgQPS = monitor.getAverageQPS();
+            systemInfo.append(String.format("  查询总数: %d\n", totalQueries));
+            systemInfo.append(String.format("  平均QPS: %.2f\n", avgQPS));
+            
         } catch (Exception e) {
-            // 忽略异常，某些系统可能不支持
+            systemInfo.append("  ❌ 无法获取性能监控数据\n");
         }
         
-        // Java运行时信息
-        RuntimeMXBean runtimeBean = ManagementFactory.getRuntimeMXBean();
-        systemInfo.append(String.format("  Java版本: %s\n", System.getProperty("java.version")));
-        systemInfo.append(String.format("  Java厂商: %s\n", System.getProperty("java.vendor")));
-        systemInfo.append(String.format("  JVM名称: %s\n", System.getProperty("java.vm.name")));
-        systemInfo.append(String.format("  JVM版本: %s\n", System.getProperty("java.vm.version")));
-        
-        // 运行时间
-        long uptimeMs = runtimeBean.getUptime();
-        long uptimeSeconds = uptimeMs / 1000;
-        long hours = uptimeSeconds / 3600;
-        long minutes = (uptimeSeconds % 3600) / 60;
-        long seconds = uptimeSeconds % 60;
-        systemInfo.append(String.format("  JVM运行时间: %d小时%d分钟%d秒\n", hours, minutes, seconds));
-        
-        // 内存信息
+        // 简化的内存信息
         systemInfo.append("\n💾 内存信息:\n");
-        
-        // JVM内存
         Runtime runtime = Runtime.getRuntime();
-        MemoryMXBean memoryBean = ManagementFactory.getMemoryMXBean();
-        
         long totalMemory = runtime.totalMemory();
         long freeMemory = runtime.freeMemory();
         long usedMemory = totalMemory - freeMemory;
         long maxMemory = runtime.maxMemory();
         
         DecimalFormat df = new DecimalFormat("#.##");
-        
-        systemInfo.append(String.format("  JVM已用内存: %s MB / %s MB (%.1f%%)\n", 
+        systemInfo.append(String.format("  JVM内存: %s MB / %s MB (%.1f%%)\n", 
             df.format(usedMemory / 1024.0 / 1024.0), 
-            df.format(totalMemory / 1024.0 / 1024.0),
-            (double) usedMemory / totalMemory * 100));
-        systemInfo.append(String.format("  JVM最大内存: %s MB\n", df.format(maxMemory / 1024.0 / 1024.0)));
-        
-        // 堆内存详情
-        MemoryUsage heapMemory = memoryBean.getHeapMemoryUsage();
-        systemInfo.append(String.format("  堆内存已用: %s MB / %s MB\n", 
-            df.format(heapMemory.getUsed() / 1024.0 / 1024.0),
-            df.format(heapMemory.getCommitted() / 1024.0 / 1024.0)));
-        
-        // 非堆内存详情
-        MemoryUsage nonHeapMemory = memoryBean.getNonHeapMemoryUsage();
-        systemInfo.append(String.format("  非堆内存已用: %s MB / %s MB\n", 
-            df.format(nonHeapMemory.getUsed() / 1024.0 / 1024.0),
-            df.format(nonHeapMemory.getCommitted() / 1024.0 / 1024.0)));
-        
-        // 尝试获取物理内存信息（仅在支持的系统上）
-        try {
-            if (osBean instanceof com.sun.management.OperatingSystemMXBean) {
-                com.sun.management.OperatingSystemMXBean sunOsBean = (com.sun.management.OperatingSystemMXBean) osBean;
-                long totalPhysicalMemory = sunOsBean.getTotalPhysicalMemorySize();
-                long freePhysicalMemory = sunOsBean.getFreePhysicalMemorySize();
-                long usedPhysicalMemory = totalPhysicalMemory - freePhysicalMemory;
-                
-                systemInfo.append(String.format("  物理内存: %s GB / %s GB (%.1f%%)\n", 
-                    df.format(usedPhysicalMemory / 1024.0 / 1024.0 / 1024.0),
-                    df.format(totalPhysicalMemory / 1024.0 / 1024.0 / 1024.0),
-                    (double) usedPhysicalMemory / totalPhysicalMemory * 100));
-            }
-        } catch (Exception e) {
-            // 忽略异常，某些系统可能不支持
-        }
-        
-        // 磁盘信息
-        systemInfo.append("\n💿 磁盘信息:\n");
-        try {
-            File[] roots = File.listRoots();
-            for (File root : roots) {
-                long totalSpace = root.getTotalSpace();
-                long freeSpace = root.getFreeSpace();
-                long usedSpace = totalSpace - freeSpace;
-                
-                if (totalSpace > 0) {
-                    systemInfo.append(String.format("  %s: %s GB / %s GB (%.1f%%)\n", 
-                        root.getPath(),
-                        df.format(usedSpace / 1024.0 / 1024.0 / 1024.0),
-                        df.format(totalSpace / 1024.0 / 1024.0 / 1024.0),
-                        (double) usedSpace / totalSpace * 100));
-                }
-            }
-        } catch (Exception e) {
-            systemInfo.append("  无法获取磁盘信息\n");
-        }
+            df.format(maxMemory / 1024.0 / 1024.0),
+            (double) usedMemory / maxMemory * 100));
         
         systemInfo.append("━━━━━━━━━━━━━━━━━━━━");
         
@@ -440,6 +437,73 @@ public class CustomPrefixCommand {
     }
     
     /**
+     * 获取详细性能报告
+     * @return 详细性能报告消息
+     */
+    private static Message getDetailedPerformanceReport() {
+        StringBuilder report = new StringBuilder();
+        
+        try {
+            // 增强性能监控报告
+            EnhancedPerformanceMonitor enhancedMonitor = EnhancedPerformanceMonitor.getInstance();
+            report.append(enhancedMonitor.getPerformanceReport());
+            
+            // 添加分隔符
+            report.append("\n\n");
+            
+            // 基础性能监控报告
+            PerformanceMonitor basicMonitor = PerformanceMonitor.getInstance();
+            report.append(basicMonitor.getPerformanceReport());
+            
+        } catch (Exception e) {
+            report.append("❌ 获取详细性能报告失败: ").append(e.getMessage());
+        }
+        
+        return new PlainText(report.toString());
+    }
+    
+    /**
+     * 获取监控报告
+     * @return 监控报告消息
+     */
+    private static Message getMonitoringReport() {
+        StringBuilder report = new StringBuilder();
+        report.append("🔍 系统监控报告\n");
+        report.append("━━━━━━━━━━━━━━━━━━━━\n");
+        
+        try {
+            // 在线状态监控报告
+            Newboy instance = Newboy.INSTANCE;
+            if (instance.getOnlineStatusMonitor() != null) {
+                AsyncOnlineStatusMonitor asyncMonitor = AsyncOnlineStatusMonitor.INSTANCE;
+                report.append("\n🟢 在线状态监控:\n");
+                report.append(asyncMonitor.getBatchQueryReport());
+            } else {
+                report.append("\n🟢 在线状态监控: ❌ 未启用\n");
+            }
+            
+            // 系统快速状态
+            report.append("\n\n📊 系统快速状态:\n");
+            PerformanceMonitor monitor = PerformanceMonitor.getInstance();
+            report.append(monitor.getQuickStatus());
+            
+            // 内存状态检查
+            report.append("\n\n💾 内存状态:\n");
+            report.append(monitor.checkMemoryStatus());
+            
+            // CPU状态检查
+            report.append("\n\n🖥️ CPU状态:\n");
+            report.append(monitor.checkCpuStatus());
+            
+        } catch (Exception e) {
+            report.append("\n❌ 获取监控报告失败: ").append(e.getMessage());
+        }
+        
+        report.append("\n━━━━━━━━━━━━━━━━━━━━");
+        return new PlainText(report.toString());
+    }
+    
+    /**
      * 获取帮助信息
      * @return 帮助信息消息
      */
@@ -451,14 +515,18 @@ public class CustomPrefixCommand {
                 "  !newboy info|信息 - 查看插件状态和系统信息\n" +
                 "  !newboy config|配置 - 查看插件配置信息\n" +
                 "  !newboy subscribe|订阅 - 查看详细订阅情况\n" +
+                "  !newboy performance|性能 - 查看详细性能报告\n" +
+                "  !newboy monitor|监控 - 查看系统监控报告\n" +
                 "  !newboy help|帮助 - 显示此帮助信息\n" +
                 "  #nb info - 简短别名形式\n" +
-                "  #nb config - 简短别名形式\n" +
-                "  #nb subscribe - 简短别名形式\n\n" +
+                "  #nb performance - 详细性能数据\n" +
+                "  #nb monitor - 监控状态报告\n\n" +
                 "💡 说明:\n" +
                 "  使用 ! 或 # 前缀避免与QQ的/命令冲突\n" +
                 "  支持 newboy 和 nb 两种命令名\n" +
                 "  所有命令支持中英文别名\n" +
+                "  performance命令提供最详细的性能指标\n" +
+                "  monitor命令提供实时监控状态\n" +
                 "━━━━━━━━━━━━━━━━━━━━";
         
         return new PlainText(helpText);

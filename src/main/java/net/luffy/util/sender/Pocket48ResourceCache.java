@@ -8,6 +8,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import net.luffy.util.UnifiedSchedulerManager;
 
 /**
  * 口袋48资源缓存管理器
@@ -25,12 +26,12 @@ public class Pocket48ResourceCache {
     private final ConcurrentHashMap<String, Long> fileAccessTime;
     
     // 缓存配置
-    private static final long CACHE_EXPIRE_TIME = 24 * 60 * 60 * 1000; // 24小时过期
-    private static final long CLEANUP_INTERVAL = 60 * 60 * 1000; // 1小时清理一次
+    private static final long CACHE_EXPIRE_TIME = 4 * 60 * 60 * 1000; // 4小时过期
+    private static final long CLEANUP_INTERVAL = 2 * 60 * 60 * 1000; // 2小时清理一次
     private static final long MAX_CACHE_SIZE = 500 * 1024 * 1024; // 最大缓存500MB
     
     // 定时清理任务
-    private final ScheduledExecutorService cleanupExecutor;
+    private String cleanupTaskId;
     
     private Pocket48ResourceCache() {
         // 初始化缓存目录
@@ -44,15 +45,13 @@ public class Pocket48ResourceCache {
         this.urlToFileMap = new ConcurrentHashMap<>();
         this.fileAccessTime = new ConcurrentHashMap<>();
         
-        // 启动定时清理任务
-        this.cleanupExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "Pocket48-Cache-Cleanup");
-            t.setDaemon(true);
-            return t;
-        });
-        
-        cleanupExecutor.scheduleAtFixedRate(this::cleanupExpiredFiles, 
-            CLEANUP_INTERVAL, CLEANUP_INTERVAL, TimeUnit.MILLISECONDS);
+        // 使用统一调度器启动清理任务
+        UnifiedSchedulerManager scheduler = UnifiedSchedulerManager.getInstance();
+        this.cleanupTaskId = scheduler.scheduleCleanupTask(
+            this::cleanupExpiredFiles, 
+            CLEANUP_INTERVAL, 
+            CLEANUP_INTERVAL
+        );
     }
     
     public static Pocket48ResourceCache getInstance() {
@@ -320,14 +319,8 @@ public class Pocket48ResourceCache {
      * 关闭缓存管理器
      */
     public void shutdown() {
-        cleanupExecutor.shutdown();
-        try {
-            if (!cleanupExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
-                cleanupExecutor.shutdownNow();
-            }
-        } catch (InterruptedException e) {
-            cleanupExecutor.shutdownNow();
-            Thread.currentThread().interrupt();
+        if (cleanupTaskId != null) {
+            UnifiedSchedulerManager.getInstance().cancelTask(cleanupTaskId);
         }
     }
 }

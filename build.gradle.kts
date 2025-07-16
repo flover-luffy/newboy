@@ -26,6 +26,11 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-jdk8:1.7.3")
     
+    // 高性能JSON解析库 (可选，用于性能敏感场景)
+    implementation("com.fasterxml.jackson.core:jackson-core:2.16.1")
+    implementation("com.fasterxml.jackson.core:jackson-databind:2.16.1")
+    implementation("com.fasterxml.jackson.core:jackson-annotations:2.16.1")
+    
     // 测试依赖
     testImplementation("org.junit.jupiter:junit-jupiter-api:5.10.0")
     testImplementation("org.junit.jupiter:junit-jupiter-engine:5.10.0")
@@ -42,8 +47,4 @@ tasks.withType<ProcessResources> {
 
 tasks.test {
     useJUnitPlatform()
-}
-
-mirai {
-    // 确保插件正确构建到 build/mirai 目录
 }

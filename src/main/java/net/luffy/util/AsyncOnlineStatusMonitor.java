@@ -3,6 +3,7 @@ package net.luffy.util;
 import net.luffy.Newboy;
 import net.luffy.handler.AsyncWebHandler;
 import net.luffy.handler.AsyncWebHandler.BatchMemberStatusResult;
+import net.luffy.util.UnifiedSchedulerManager;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -24,7 +25,8 @@ public class AsyncOnlineStatusMonitor {
     
     private final AsyncWebHandler asyncWebHandler;
     private final MonitorConfig config;
-    private final ScheduledExecutorService scheduler;
+    private String batchQueryTaskId;
+    private String cacheCleanupTaskId;
     
     // 批量查询统计
     private final AtomicInteger batchQueryCount = new AtomicInteger(0);
@@ -42,11 +44,9 @@ public class AsyncOnlineStatusMonitor {
     private AsyncOnlineStatusMonitor() {
         this.asyncWebHandler = new AsyncWebHandler();
         this.config = MonitorConfig.getInstance();
-        this.scheduler = Executors.newScheduledThreadPool(2);
         
-        // 启动定期批量查询任务
+        // 使用统一调度器启动任务
         startBatchQueryScheduler();
-        // 启动缓存清理任务
         startCacheCleanupScheduler();
     }
     
@@ -83,7 +83,7 @@ public class AsyncOnlineStatusMonitor {
         
         // 如果队列达到批量大小或等待时间过长，立即执行批量查询
         if (pendingQueries.size() >= config.getBatchQuerySize()) {
-            scheduler.execute(this::executeBatchQuery);
+            UnifiedSchedulerManager.getInstance().executeTask(this::executeBatchQuery);
         }
         
         return future;
@@ -186,18 +186,22 @@ public class AsyncOnlineStatusMonitor {
      * 启动批量查询调度器
      */
     private void startBatchQueryScheduler() {
-        scheduler.scheduleWithFixedDelay(() -> {
+        UnifiedSchedulerManager scheduler = UnifiedSchedulerManager.getInstance();
+        this.batchQueryTaskId = scheduler.scheduleBatchTask(() -> {
             if (!pendingQueries.isEmpty()) {
                 executeBatchQuery();
             }
-        }, config.getBatchQueryInterval(), config.getBatchQueryInterval(), TimeUnit.MILLISECONDS);
+        }, config.getBatchQueryInterval(), config.getBatchQueryInterval());
     }
     
     /**
      * 启动缓存清理调度器
      */
     private void startCacheCleanupScheduler() {
-        scheduler.scheduleWithFixedDelay(() -> {
+        UnifiedSchedulerManager scheduler = UnifiedSchedulerManager.getInstance();
+        // 优化：延长清理间隔，减少CPU占用
+        long cleanupInterval = Math.max(config.getCacheCleanupInterval(), 5 * 60 * 1000); // 最少5分钟
+        this.cacheCleanupTaskId = scheduler.scheduleCleanupTask(() -> {
             long currentTime = System.currentTimeMillis();
             int cleanedCount = 0;
             
@@ -214,7 +218,7 @@ public class AsyncOnlineStatusMonitor {
             // if (config.isVerboseLogging() && cleanedCount > 0) {
             //     Newboy.INSTANCE.getLogger().info(String.format("异步缓存清理完成: 清理了 %d 个过期条目", cleanedCount));
             // }
-        }, config.getCacheCleanupInterval(), config.getCacheCleanupInterval(), TimeUnit.MILLISECONDS);
+        }, cleanupInterval, cleanupInterval);
     }
     
     /**
@@ -299,24 +303,21 @@ public class AsyncOnlineStatusMonitor {
             return CompletableFuture.completedFuture(null);
         }
         
-        return CompletableFuture.runAsync(this::executeBatchQuery, scheduler);
+        return CompletableFuture.runAsync(this::executeBatchQuery, UnifiedSchedulerManager.getInstance().getExecutor());
     }
     
     /**
      * 关闭异步监控器
      */
     public void shutdown() {
-        scheduler.shutdown();
-        asyncWebHandler.shutdown();
-        
-        try {
-            if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
-                scheduler.shutdownNow();
-            }
-        } catch (InterruptedException e) {
-            scheduler.shutdownNow();
-            Thread.currentThread().interrupt();
+        UnifiedSchedulerManager scheduler = UnifiedSchedulerManager.getInstance();
+        if (batchQueryTaskId != null) {
+            scheduler.cancelTask(batchQueryTaskId);
         }
+        if (cacheCleanupTaskId != null) {
+            scheduler.cancelTask(cacheCleanupTaskId);
+        }
+        asyncWebHandler.shutdown();
     }
     
     /**

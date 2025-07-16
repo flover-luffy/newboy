@@ -124,7 +124,8 @@ public class SyncWebHandler {
      * @param message 日志消息
      */
     protected void logInfo(String message) {
-        System.out.println("[INFO] " + message);
+        // 使用Mirai日志系统而非控制台输出
+        Newboy.INSTANCE.getLogger().info(message);
     }
 
     /**
@@ -133,9 +134,11 @@ public class SyncWebHandler {
      * @param throwable 异常
      */
     protected void logError(String message, Throwable throwable) {
-        System.err.println("[ERROR] " + message);
+        // 使用Mirai日志系统而非控制台输出
         if (throwable != null) {
-            throwable.printStackTrace();
+            Newboy.INSTANCE.getLogger().error(message, throwable);
+        } else {
+            Newboy.INSTANCE.getLogger().error(message);
         }
     }
 

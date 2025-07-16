@@ -4,6 +4,7 @@ import cn.hutool.core.date.DateUtil;
 import net.luffy.Newboy;
 import net.luffy.handler.Pocket48Handler;
 import net.luffy.util.sender.Pocket48ResourceHandler;
+import net.luffy.util.PerformanceMonitor;
 import net.luffy.model.*;
 import net.mamoe.mirai.Bot;
 import net.mamoe.mirai.contact.Group;
@@ -20,6 +21,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -32,6 +34,7 @@ public class Pocket48Sender extends Sender {
     private final HashMap<Long, Pocket48SenderCache> cache;
     private final Pocket48ResourceHandler resourceHandler;
     private final Pocket48AsyncMessageProcessor asyncProcessor;
+    private final Pocket48ResourceOptimizer resourceOptimizer;
 
     public Pocket48Sender(Bot bot, long group, HashMap<Long, Long> endTime, HashMap<Long, List<Long>> voiceStatus, HashMap<Long, Pocket48SenderCache> cache) {
         super(bot, group);
@@ -40,6 +43,7 @@ public class Pocket48Sender extends Sender {
         this.cache = cache;
         this.resourceHandler = new Pocket48ResourceHandler();
         this.asyncProcessor = new Pocket48AsyncMessageProcessor(this);
+        this.resourceOptimizer = new Pocket48ResourceOptimizer(resourceHandler);
     }
 
     @Override
@@ -164,12 +168,17 @@ public class Pocket48Sender extends Sender {
                 try {
                     System.out.println("[音频处理] 开始处理音频: " + audioUrl);
                     
-                    // 下载音频文件到本地
+                    // 智能获取音频文件（优先使用缓存）
                     String audioExt = message.getExt() != null && !message.getExt().isEmpty() ? "." + message.getExt() : ".amr";
-                    audioFile = resourceHandler.downloadToTempFile(audioUrl, audioExt);
+                    audioFile = resourceOptimizer.getResourceSmart(audioUrl);
+                    
+                    // 如果缓存未命中，使用传统下载方式
+                    if (audioFile == null) {
+                        audioFile = resourceHandler.downloadToTempFile(audioUrl, audioExt);
+                    }
                     
                     if (audioFile == null || !audioFile.exists()) {
-                        throw new RuntimeException("音频文件下载失败");
+                        throw new RuntimeException("音频文件获取失败");
                     }
                     
                     System.out.println("[音频处理] 音频下载完成: " + audioFile.getAbsolutePath());
@@ -298,12 +307,17 @@ public class Pocket48Sender extends Sender {
                 try {
                     System.out.println("[视频处理] 开始处理视频: " + videoUrl);
                     
-                    // 下载视频到本地文件
+                    // 智能获取视频文件（优先使用缓存）
                     String videoExt = message.getExt() != null && !message.getExt().isEmpty() ? "." + message.getExt() : ".mp4";
-                    videoFile = resourceHandler.downloadToTempFile(videoUrl, videoExt);
+                    videoFile = resourceOptimizer.getResourceSmart(videoUrl);
+                    
+                    // 如果缓存未命中，使用传统下载方式
+                    if (videoFile == null) {
+                        videoFile = resourceHandler.downloadToTempFile(videoUrl, videoExt);
+                    }
                     
                     if (videoFile == null || !videoFile.exists()) {
-                        throw new RuntimeException("视频文件下载失败");
+                        throw new RuntimeException("视频文件获取失败");
                     }
                     
                     System.out.println("[视频处理] 视频下载完成: " + videoFile.getAbsolutePath());
@@ -329,30 +343,28 @@ public class Pocket48Sender extends Sender {
                     
                     // 上传视频
                     try (ExternalResource videoResource = ExternalResource.create(videoFile)) {
-                        ExternalResource thumbnailResource = null;
                         
                         if (thumbnailFile != null && thumbnailFile.exists()) {
-                            thumbnailResource = ExternalResource.create(thumbnailFile);
+                            try (ExternalResource thumbnailResource = ExternalResource.create(thumbnailFile)) {
+                                ShortVideo video = group.uploadShortVideo(thumbnailResource, videoResource,
+                                    message.getOwnerName() + "房间视频(" + DateUtil.format(new Date(message.getTime()), "yyyy-MM-dd HH-mm-ss") + ")." + message.getExt());
+                                System.out.println("[视频处理] 视频上传成功");
+                                
+                                String videoContent = "【" + n + "】: 发送了一个视频\n查看链接: " + videoUrl + "\n频道：" + r + "\n时间: " + timeStr;
+                                return new Pocket48SenderMessage(false, null, new Message[]{new PlainText(videoContent), video});
+                            }
                         } else {
                             // 如果缩略图生成失败，使用默认图片
-                            try (InputStream defaultThumb = getRes(message.getRoom().getBgImg())) {
-                                if (defaultThumb != null) {
-                                    thumbnailResource = ExternalResource.create(defaultThumb);
-                                }
+                            try (InputStream defaultThumb = getRes(message.getRoom().getBgImg());
+                                 ExternalResource thumbnailResource = ExternalResource.create(defaultThumb)) {
+                                
+                                ShortVideo video = group.uploadShortVideo(thumbnailResource, videoResource,
+                                    message.getOwnerName() + "房间视频(" + DateUtil.format(new Date(message.getTime()), "yyyy-MM-dd HH-mm-ss") + ")." + message.getExt());
+                                System.out.println("[视频处理] 视频上传成功");
+                                
+                                String videoContent = "【" + n + "】: 发送了一个视频\n查看链接: " + videoUrl + "\n频道：" + r + "\n时间: " + timeStr;
+                                return new Pocket48SenderMessage(false, null, new Message[]{new PlainText(videoContent), video});
                             }
-                        }
-                        
-                        if (thumbnailResource == null) {
-                            throw new RuntimeException("无法获取视频缩略图");
-                        }
-                        
-                        try (ExternalResource finalThumbnailResource = thumbnailResource) {
-                            ShortVideo video = group.uploadShortVideo(finalThumbnailResource, videoResource,
-                                message.getOwnerName() + "房间视频(" + DateUtil.format(new Date(message.getTime()), "yyyy-MM-dd HH-mm-ss") + ")." + message.getExt());
-                            System.out.println("[视频处理] 视频上传成功");
-                            
-                            String videoContent = "【" + n + "】: 发送了一个视频\n查看链接: " + videoUrl + "\n频道：" + r + "\n时间: " + timeStr;
-                            return new Pocket48SenderMessage(false, null, new Message[]{new PlainText(videoContent), video});
                         }
                     }
                 } catch (Exception e) {
@@ -417,12 +429,17 @@ public class Pocket48Sender extends Sender {
                 try {
                     System.out.println("[翻牌音频处理] 开始处理翻牌音频: " + flipcardAudioUrl);
                     
-                    // 下载音频文件到本地
+                    // 智能获取翻牌音频文件（优先使用缓存）
                     String audioExt = message.getAnswer().getExt() != null && !message.getAnswer().getExt().isEmpty() ? "." + message.getAnswer().getExt() : ".amr";
-                    audioFile = resourceHandler.downloadToTempFile(flipcardAudioUrl, audioExt);
+                    audioFile = resourceOptimizer.getResourceSmart(flipcardAudioUrl);
+                    
+                    // 如果缓存未命中，使用传统下载方式
+                    if (audioFile == null) {
+                        audioFile = resourceHandler.downloadToTempFile(flipcardAudioUrl, audioExt);
+                    }
                     
                     if (audioFile == null || !audioFile.exists()) {
-                        throw new RuntimeException("翻牌音频文件下载失败");
+                        throw new RuntimeException("翻牌音频文件获取失败");
                     }
                     
                     System.out.println("[翻牌音频处理] 音频下载完成: " + audioFile.getAbsolutePath());
@@ -660,60 +677,13 @@ public class Pocket48Sender extends Sender {
     
     /**
      * 从JSON格式的body中解析表情名称
+     * 使用优化的JSON解析器提高性能
      * @param jsonBody JSON格式的消息体
      * @return 表情名称
      */
     private String parseJsonEmotionName(String jsonBody) {
-        try {
-            // 解析name字段
-            if (jsonBody.contains("\"name\"")) {
-                String[] parts = jsonBody.split("\"name\":");
-                if (parts.length > 1) {
-                    String namePart = parts[1].trim();
-                    if (namePart.startsWith("\"")) {
-                        int endIndex = namePart.indexOf("\"", 1);
-                        if (endIndex > 0) {
-                            String emotionName = namePart.substring(1, endIndex);
-                            return "[" + emotionName + "]";
-                        }
-                    }
-                }
-            }
-            
-            // 解析title字段作为备选
-            if (jsonBody.contains("\"title\"")) {
-                String[] parts = jsonBody.split("\"title\":");
-                if (parts.length > 1) {
-                    String titlePart = parts[1].trim();
-                    if (titlePart.startsWith("\"")) {
-                        int endIndex = titlePart.indexOf("\"", 1);
-                        if (endIndex > 0) {
-                            String emotionTitle = titlePart.substring(1, endIndex);
-                            return "[" + emotionTitle + "]";
-                        }
-                    }
-                }
-            }
-            
-            // 解析text字段作为最后备选
-            if (jsonBody.contains("\"text\"")) {
-                String[] parts = jsonBody.split("\"text\":");
-                if (parts.length > 1) {
-                    String textPart = parts[1].trim();
-                    if (textPart.startsWith("\"")) {
-                        int endIndex = textPart.indexOf("\"", 1);
-                        if (endIndex > 0) {
-                            String emotionText = textPart.substring(1, endIndex);
-                            return "[" + emotionText + "]";
-                        }
-                    }
-                }
-            }
-            
-        } catch (Exception e) {
-            // JSON解析失败
-        }
-        return "[表情]";
+        // 使用优化的表情名称解析方法
+        return net.luffy.util.JsonOptimizer.parseEmotionNameOptimized(jsonBody);
     }
     
     /**
@@ -763,11 +733,145 @@ public class Pocket48Sender extends Sender {
     }
 
     /**
+     * 发送消息列表（优化版）
+     * @param messages 消息列表
+     * @param group 目标群组
+     */
+    public void sendMessages(List<Pocket48Message> messages, Group group) {
+        if (messages == null || messages.isEmpty()) {
+            return;
+        }
+        
+        long startTime = System.currentTimeMillis();
+        
+        // 预处理：按消息类型分组优化
+        List<Pocket48Message> optimizedMessages = preprocessMessages(messages);
+        
+        // 启动资源预加载（异步）
+        List<CompletableFuture<Void>> preloadFutures = 
+            resourceOptimizer.preloadMessageResources(optimizedMessages);
+        
+        // 使用异步处理器并行处理消息
+        List<CompletableFuture<Pocket48SenderMessage>> futures = 
+            asyncProcessor.processMessagesAsync(optimizedMessages.toArray(new Pocket48Message[0]), group);
+        
+        // 等待处理完成并发送
+        asyncProcessor.waitAndSendMessages(futures, group, 30);
+        
+        long endTime = System.currentTimeMillis();
+        // 移除控制台输出，改为内部记录
+        PerformanceMonitor.getInstance().recordQuery(endTime - startTime);
+        
+        // 智能缓存清理：使用性能监控器进行动态清理
+        if (messages.size() > 30) {
+            PerformanceMonitor monitor = PerformanceMonitor.getInstance();
+            monitor.recordQuery(endTime - startTime);
+            
+            // 优化：减少清理频率，只在必要时清理
+            if (monitor.shouldForceCleanup()) {
+                // 内存使用率过高，强制清理
+                resourceOptimizer.cleanupExpiredCache(5);
+                System.gc();
+                System.out.println(String.format("[Pocket48Sender] %s，已执行强制清理", monitor.checkMemoryStatus()));
+            } else if (monitor.shouldCleanup() && monitor.getTotalQueries() % 50 == 0) {
+                // 内存使用率较高且每50次查询才清理一次
+                resourceOptimizer.cleanupExpiredCache(30);
+            } else if (monitor.getTotalQueries() % 100 == 0) {
+                // 正常情况，每100次查询清理一次过期缓存
+                resourceOptimizer.cleanupExpiredCache(60);
+            }
+        }
+    }
+    
+    /**
+     * 预处理消息列表，优化发送顺序和合并相似消息
+     * @param messages 原始消息列表
+     * @return 优化后的消息列表
+     */
+    private List<Pocket48Message> preprocessMessages(List<Pocket48Message> messages) {
+        // 按消息类型分组
+        Map<String, List<Pocket48Message>> grouped = new HashMap<>();
+        for (Pocket48Message msg : messages) {
+            String type = msg.getType() != null ? msg.getType().toString() : "UNKNOWN";
+            grouped.computeIfAbsent(type, k -> new ArrayList<>()).add(msg);
+        }
+        
+        List<Pocket48Message> result = new ArrayList<>();
+        
+        // 优先处理文本类消息（响应更快）
+        addMessagesInOrder(result, grouped, "TEXT");
+        addMessagesInOrder(result, grouped, "GIFT_TEXT");
+        addMessagesInOrder(result, grouped, "FLIPCARD");
+        addMessagesInOrder(result, grouped, "PASSWORD_REDPACKAGE");
+        addMessagesInOrder(result, grouped, "VOTE");
+        addMessagesInOrder(result, grouped, "REPLY");
+        addMessagesInOrder(result, grouped, "GIFTREPLY");
+        
+        // 然后处理媒体类消息
+        addMessagesInOrder(result, grouped, "IMAGE");
+        addMessagesInOrder(result, grouped, "EXPRESSIMAGE");
+        addMessagesInOrder(result, grouped, "AUDIO");
+        addMessagesInOrder(result, grouped, "FLIPCARD_AUDIO");
+        addMessagesInOrder(result, grouped, "VIDEO");
+        addMessagesInOrder(result, grouped, "FLIPCARD_VIDEO");
+        addMessagesInOrder(result, grouped, "LIVEPUSH");
+        
+        // 添加其他类型的消息
+        for (Map.Entry<String, List<Pocket48Message>> entry : grouped.entrySet()) {
+            if (!isProcessedType(entry.getKey())) {
+                result.addAll(entry.getValue());
+            }
+        }
+        
+        return result;
+    }
+    
+    /**
+     * 按顺序添加指定类型的消息
+     * @param result 结果列表
+     * @param grouped 分组的消息
+     * @param type 消息类型
+     */
+    private void addMessagesInOrder(List<Pocket48Message> result, 
+                                   Map<String, List<Pocket48Message>> grouped, 
+                                   String type) {
+        List<Pocket48Message> typeMessages = grouped.get(type);
+        if (typeMessages != null && !typeMessages.isEmpty()) {
+            result.addAll(typeMessages);
+        }
+    }
+    
+    /**
+     * 检查消息类型是否已被处理
+     * @param type 消息类型
+     * @return 是否已处理
+     */
+    private boolean isProcessedType(String type) {
+        return "TEXT".equals(type) ||
+               "GIFT_TEXT".equals(type) ||
+               "FLIPCARD".equals(type) ||
+               "PASSWORD_REDPACKAGE".equals(type) ||
+               "VOTE".equals(type) ||
+               "REPLY".equals(type) ||
+               "GIFTREPLY".equals(type) ||
+               "IMAGE".equals(type) ||
+               "EXPRESSIMAGE".equals(type) ||
+               "AUDIO".equals(type) ||
+               "FLIPCARD_AUDIO".equals(type) ||
+               "VIDEO".equals(type) ||
+               "FLIPCARD_VIDEO".equals(type) ||
+               "LIVEPUSH".equals(type);
+    }
+
+    /**
      * 关闭发送器，释放资源
      */
     public void shutdown() {
         if (asyncProcessor != null) {
             asyncProcessor.shutdown();
+        }
+        if (resourceOptimizer != null) {
+            resourceOptimizer.shutdown();
         }
     }
 
