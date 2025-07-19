@@ -164,32 +164,68 @@ public class Pocket48AsyncMessageProcessor {
      */
     public void waitAndSendMessages(List<CompletableFuture<Pocket48SenderMessage>> futures, 
                                    Group group, int timeoutSeconds) {
+        waitAndSendMessagesWithSmartTimeout(futures, group, timeoutSeconds, timeoutSeconds);
+    }
+    
+    /**
+     * 智能超时处理：为不同类型消息设置不同超时时间
+     * @param futures 处理结果的Future列表
+     * @param group 目标群组
+     * @param textTimeoutSeconds 文本消息超时时间（秒）
+     * @param mediaTimeoutSeconds 媒体消息超时时间（秒）
+     */
+    public void waitAndSendMessagesWithSmartTimeout(List<CompletableFuture<Pocket48SenderMessage>> futures, 
+                                                   Group group, int textTimeoutSeconds, int mediaTimeoutSeconds) {
         
-        // 等待所有消息处理完成
-        CompletableFuture<List<Pocket48SenderMessage>> allCompleted = 
-            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
-                .thenApply(v -> futures.stream()
-                    .map(future -> {
-                        try {
-                            return future.get(timeoutSeconds, TimeUnit.SECONDS);
-                        } catch (TimeoutException e) {
-                            // 静默处理超时，取消任务
-                            future.cancel(true);
-                            return null;
-                        } catch (Exception e) {
-                            // 静默处理处理错误
-                            return null;
-                        }
-                    })
-                    .filter(result -> result != null)
-                    .collect(Collectors.toList()));
+        // 分离文本和媒体消息的Future
+        List<CompletableFuture<Pocket48SenderMessage>> textFutures = new ArrayList<>();
+        List<CompletableFuture<Pocket48SenderMessage>> mediaFutures = new ArrayList<>();
         
-        try {
-            List<Pocket48SenderMessage> results = allCompleted.get(timeoutSeconds + 5, TimeUnit.SECONDS);
-            sendMessagesInBatch(results, group);
-        } catch (Exception e) {
-            // 静默处理批量发送错误，降级到逐个发送
-            sendMessagesIndividually(futures, group, timeoutSeconds);
+        // 由于无法直接判断Future对应的消息类型，我们采用分阶段处理策略
+        // 第一阶段：快速处理文本消息（较短超时）
+        List<Pocket48SenderMessage> quickResults = new ArrayList<>();
+        List<CompletableFuture<Pocket48SenderMessage>> remainingFutures = new ArrayList<>();
+        
+        for (CompletableFuture<Pocket48SenderMessage> future : futures) {
+            try {
+                // 尝试快速获取结果（文本消息通常处理很快）
+                Pocket48SenderMessage result = future.get(textTimeoutSeconds, TimeUnit.SECONDS);
+                if (result != null) {
+                    quickResults.add(result);
+                }
+            } catch (TimeoutException e) {
+                // 超时的任务可能是媒体消息，加入待处理列表
+                remainingFutures.add(future);
+            } catch (Exception e) {
+                // 处理错误，取消任务
+                future.cancel(true);
+            }
+        }
+        
+        // 第二阶段：处理剩余的媒体消息（较长超时）
+        List<Pocket48SenderMessage> mediaResults = new ArrayList<>();
+        for (CompletableFuture<Pocket48SenderMessage> future : remainingFutures) {
+            try {
+                Pocket48SenderMessage result = future.get(mediaTimeoutSeconds, TimeUnit.SECONDS);
+                if (result != null) {
+                    mediaResults.add(result);
+                }
+            } catch (TimeoutException e) {
+                // 媒体消息也超时，取消任务
+                future.cancel(true);
+            } catch (Exception e) {
+                // 处理错误
+                future.cancel(true);
+            }
+        }
+        
+        // 合并结果并发送
+        List<Pocket48SenderMessage> allResults = new ArrayList<>();
+        allResults.addAll(quickResults);
+        allResults.addAll(mediaResults);
+        
+        if (!allResults.isEmpty()) {
+            sendMessagesInBatch(allResults, group);
         }
     }
     

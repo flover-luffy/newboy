@@ -44,6 +44,8 @@ public class MessageDelayConfig {
     private final int groupHighPriorityDelay;
     private final int groupLowPriorityDelay;
     private final int processingTimeout;
+    private final int textProcessingTimeout;  // 文本消息处理超时
+    private final int mediaProcessingTimeout; // 媒体消息处理超时
     private final int batchTimeoutBuffer;
     private final int highLoadMultiplier;
     private final int criticalLoadMultiplier;
@@ -73,6 +75,11 @@ public class MessageDelayConfig {
         groupHighPriorityDelay = properties.message_delay_group_high_priority;
         groupLowPriorityDelay = properties.message_delay_group_low_priority;
         processingTimeout = properties.message_delay_processing_timeout;
+        
+        // 智能超时配置：文本消息快速处理，媒体消息允许更长时间
+        textProcessingTimeout = Math.max(3, processingTimeout / 3);  // 文本消息超时为总超时的1/3，最少3秒
+        mediaProcessingTimeout = Math.max(processingTimeout, 30);    // 媒体消息超时至少30秒
+        
         highLoadMultiplier = (int) properties.message_delay_high_load_multiplier;
         criticalLoadMultiplier = (int) properties.message_delay_critical_load_multiplier;
         
@@ -123,6 +130,8 @@ public class MessageDelayConfig {
     public int getGroupHighPriorityDelay() { return groupHighPriorityDelay; }
     public int getGroupLowPriorityDelay() { return groupLowPriorityDelay; }
     public int getProcessingTimeout() { return processingTimeout; }
+    public int getTextProcessingTimeout() { return textProcessingTimeout; }
+    public int getMediaProcessingTimeout() { return mediaProcessingTimeout; }
     public int getBatchTimeoutBuffer() { return batchTimeoutBuffer; }
     public int getHighLoadMultiplier() { return highLoadMultiplier; }
     public int getCriticalLoadMultiplier() { return criticalLoadMultiplier; }
@@ -146,7 +155,8 @@ public class MessageDelayConfig {
         summary.append(String.format("🎯 延迟模式: %s\n", delayMode.getValue()));
         summary.append(String.format("📝 文本消息延迟: %d ms\n", textDelay));
         summary.append(String.format("🎬 媒体消息延迟: %d ms\n", mediaDelay));
-        summary.append(String.format("⏱️ 处理超时: %d 秒\n", processingTimeout));
+        summary.append(String.format("⏱️ 文本处理超时: %d 秒\n", textProcessingTimeout));
+        summary.append(String.format("🎬 媒体处理超时: %d 秒\n", mediaProcessingTimeout));
         summary.append(String.format("🔧 动态调整: %s\n", dynamicDelayEnabled ? "启用" : "禁用"));
         summary.append(String.format("📊 延迟监控: %s\n", monitoringEnabled ? "启用" : "禁用"));
         summary.append("━━━━━━━━━━━━━━━━━━━━");

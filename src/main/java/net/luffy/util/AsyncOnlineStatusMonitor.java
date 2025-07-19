@@ -71,8 +71,8 @@ public class AsyncOnlineStatusMonitor {
         startBatchQueryScheduler();
         startCacheCleanupScheduler();
         
-        // 启动定时监控任务
-        startScheduledMonitor();
+        // 延迟启动定时监控任务，等待Newboy完全初始化
+        // startScheduledMonitor(); // 移动到initializeMonitoring()方法中
     }
     
     /**
@@ -274,6 +274,14 @@ public class AsyncOnlineStatusMonitor {
     }
     
     /**
+     * 初始化监控系统
+     * 在Newboy完全初始化后调用此方法来启动监控
+     */
+    public void initializeMonitoring() {
+        startScheduledMonitor();
+    }
+    
+    /**
      * 启动定时监控任务
      */
     private void startScheduledMonitor() {
@@ -442,7 +450,7 @@ public class AsyncOnlineStatusMonitor {
             k -> new SubscriptionConfig(groupId, new HashSet<>()));
         
         if (config.hasMember(trimmed)) {
-            return "⚠️ 成员 " + trimmed + " 已在群组 " + groupId + " 的监控列表中";
+            return "⚠️ 重复订阅提醒：成员 " + trimmed + " 已在本群的监控列表中，无需重复添加";
         }
         
         config.addMember(trimmed);
@@ -451,7 +459,21 @@ public class AsyncOnlineStatusMonitor {
         
         // 自动保存配置
         ConfigOperator.getInstance().saveAsyncMonitorSubscribeConfig();
-        return "✅ 已添加成员 " + trimmed + " 到群组 " + groupId + " 的监控列表";
+        
+        // 查询当前状态
+        String currentStatus = getCurrentMemberStatus(trimmed);
+        String statusIcon = "🟢";
+        String statusText = "在线";
+        
+        if ("离线".equals(currentStatus)) {
+            statusIcon = "🔴";
+            statusText = "离线";
+        } else if (!"在线".equals(currentStatus)) {
+            statusIcon = "❓";
+            statusText = "未知";
+        }
+        
+        return "✅ 本群已添加对 " + trimmed + " 的监控\n📊 当前状态：" + statusIcon + " " + statusText;
     }
     
     /**
@@ -497,6 +519,23 @@ public class AsyncOnlineStatusMonitor {
         // 自动保存配置
         ConfigOperator.getInstance().saveAsyncMonitorSubscribeConfig();
         return "✅ 已从群组 " + groupId + " 的监控列表中移除成员 " + trimmed;
+    }
+    
+    /**
+     * 获取成员当前状态
+     */
+    private String getCurrentMemberStatus(String memberName) {
+        // 首先检查缓存
+        AsyncMemberStatus cached = memberStatusCache.get(memberName);
+        if (cached != null && !cached.isExpired()) {
+            return cached.getStatus();
+        }
+        
+        // 缓存过期或不存在，异步查询状态
+        queryMemberStatusAsync(memberName);
+        
+        // 返回默认状态
+        return "未知";
     }
     
     /**

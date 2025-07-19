@@ -211,15 +211,57 @@ public class AsyncWebHandler {
      */
     private BatchMemberStatusResult parseMemberStatusResponse(String memberName, String response) {
         try {
-            // 这里需要根据实际API响应格式进行解析
-            // 假设响应格式为JSON: {"status": "online", "lastSeen": "2024-01-01 12:00:00"}
-            if (response.contains("\"status\":\"") && response.contains("online")) {
-                return new BatchMemberStatusResult(memberName, true, "在线", response);
-            } else {
-                return new BatchMemberStatusResult(memberName, true, "离线", response);
+            // 使用Hutool的JSONUtil解析响应
+            cn.hutool.json.JSONObject jsonResponse = cn.hutool.json.JSONUtil.parseObj(response);
+            
+            // 检查API响应状态
+            String msg = jsonResponse.getStr("msg");
+            if (msg == null || !"success".equals(msg)) {
+                return new BatchMemberStatusResult(memberName, false, 
+                    msg != null ? msg : "API响应失败", response);
             }
+            
+            String error = jsonResponse.getStr("error");
+            if (error == null || !"0".equals(error)) {
+                return new BatchMemberStatusResult(memberName, false, 
+                    "错误码异常: " + error, response);
+            }
+            
+            // 解析嵌套的data结构
+            cn.hutool.json.JSONObject outerData = jsonResponse.getJSONObject("data");
+            if (outerData == null) {
+                return new BatchMemberStatusResult(memberName, false, 
+                    "响应数据格式异常", response);
+            }
+            
+            cn.hutool.json.JSONObject data = outerData.getJSONObject("data");
+            if (data == null) {
+                return new BatchMemberStatusResult(memberName, false, 
+                    "响应数据格式异常", response);
+            }
+            
+            // 获取在线状态
+            Integer isOnlineObj = data.getInt("is_online");
+            if (isOnlineObj == null) {
+                return new BatchMemberStatusResult(memberName, false, 
+                    "无法获取在线状态", response);
+            }
+            
+            int isOnline = isOnlineObj;
+            String status;
+            if (isOnline == 1) {
+                status = "在线";
+            } else if (isOnline == 2) {
+                status = "离线";
+            } else {
+                status = "未知";
+            }
+            
+            return new BatchMemberStatusResult(memberName, true, status, response);
+            
         } catch (Exception e) {
-            return new BatchMemberStatusResult(memberName, false, "解析失败: " + e.getMessage(), response);
+            return new BatchMemberStatusResult(memberName, false, 
+                "解析失败: " + e.getMessage(), response);
         }
     }
     

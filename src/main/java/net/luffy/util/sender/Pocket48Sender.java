@@ -115,8 +115,9 @@ public class Pocket48Sender extends Sender {
                     List<CompletableFuture<Pocket48SenderMessage>> futures = 
                         asyncProcessor.processMessagesAsync(reversedMessages, group);
                     
-                    // 等待处理完成并按顺序发送 - 使用配置化的超时时间
-                    asyncProcessor.waitAndSendMessages(futures, group, delayConfig.getProcessingTimeout());
+                    // 等待处理完成并按顺序发送 - 使用智能超时：文本消息快速处理，媒体消息允许更长时间
+                    asyncProcessor.waitAndSendMessagesWithSmartTimeout(futures, group, 
+                        delayConfig.getTextProcessingTimeout(), delayConfig.getMediaProcessingTimeout());
                 }
             }
         } catch (Exception e) {
@@ -758,8 +759,9 @@ public class Pocket48Sender extends Sender {
         List<CompletableFuture<Pocket48SenderMessage>> futures = 
             asyncProcessor.processMessagesAsync(optimizedMessages.toArray(new Pocket48Message[0]), group);
         
-        // 等待处理完成并发送 - 优化超时时间
-        asyncProcessor.waitAndSendMessages(futures, group, 15); // 从30秒减少到15秒超时
+        // 等待处理完成并发送 - 使用智能超时处理
+        asyncProcessor.waitAndSendMessagesWithSmartTimeout(futures, group, 
+            delayConfig.getTextProcessingTimeout(), delayConfig.getMediaProcessingTimeout());
         
         long endTime = System.currentTimeMillis();
         // 移除控制台输出，改为内部记录

@@ -151,66 +151,128 @@ public class ConfigOperator {
             Newboy.INSTANCE.getLogger().warning("口袋48未配置登录信息，请在config.setting中配置token或账号密码");
         }
 
-        for (Object a :
-                JSONUtil.parseArray(setting.getByGroup("subscribe", "pocket48")).toArray()) {
-            JSONObject sub = JSONUtil.parseObj(a);
-            @SuppressWarnings("unchecked")
-            List<Long> rooms = (List<Long>) sub.getBeanList("roomSubs", Long.class);
-            @SuppressWarnings("unchecked")
-            List<Long> stars = (List<Long>) sub.getBeanList("starSubs", Long.class);
-
-            properties.pocket48_subscribe
-                    .put(sub.getLong("qqGroup"),
-                            new Pocket48Subscribe(
-                                    sub.getBool("showAtOne", true),
-                                    rooms == null ? new ArrayList<>() : rooms,
-                                    stars == null ? new ArrayList<>() : stars
-                            ));
-        }
-
-        //口袋48房间连接 - 使用高性能JSON解析
-        Object[] pocket48Array = JSONUtil.parseArray(setting.getByGroup("roomConnection", "pocket48")).toArray();
-        for (Object a : pocket48Array) {
-            JSONObject sid = (a instanceof JSONObject) ? (JSONObject) a : JSONUtil.parseObj(a);
-            properties.pocket48_serverID.put(sid.getLong("roomID"), sid.getLong("serverID"));
-        }
-
-
-
-        //微博 - 使用批量解析优化
-        Object[] weiboArray = JSONUtil.parseArray(setting.getByGroup("subscribe", "weibo")).toArray();
-        for (Object a : weiboArray) {
-            JSONObject subs = (a instanceof JSONObject) ? (JSONObject) a : JSONUtil.parseObj(a);
-
-            long g = subs.getLong("qqGroup");
-            @SuppressWarnings("unchecked")
-            List<Long> userSubs = (List<Long>) subs.getBeanList("userSubs", Long.class);
-            properties.weibo_user_subscribe.put(g, userSubs == null ? new ArrayList<>() : userSubs);
-
-            @SuppressWarnings("unchecked")
-            List<String> sTopicSubs = (List<String>) subs.getBeanList("superTopicSubs", String.class);
-            properties.weibo_superTopic_subscribe.put(g, sTopicSubs == null ? new ArrayList<>() : sTopicSubs);
-
-        }
-
-        //微店 - 使用高性能JSON解析
-        Object[] weidianArray = JSONUtil.parseArray(setting.getByGroup("shops", "weidian")).toArray();
-        for (Object a : weidianArray) {
-            JSONObject shop = (a instanceof JSONObject) ? (JSONObject) a : JSONUtil.parseObj(a);
-
-            long g = shop.getLong("qqGroup");
-            String cookie = shop.getStr("cookie", "");
-            boolean autoDeliver = shop.getBool("autoDeliver", false);
-            boolean doBroadCast = shop.getBool("doBroadCast", true);
-            List<Long> highlight = shop.getBeanList("highlight", Long.class);
-            List<Long> shielded = shop.getBeanList("shielded", Long.class);
-            properties.weidian_cookie.put(g, WeidianCookie.construct(cookie, autoDeliver, doBroadCast,
-                    highlight == null ? new ArrayList<>() : highlight,
-                    shielded == null ? new ArrayList<>() : shielded));
-
+        // 口袋48订阅配置 - 添加JSON格式验证
+        String pocket48SubscribeJson = setting.getByGroup("subscribe", "pocket48");
+        Newboy.INSTANCE.getLogger().info("读取到的口袋48订阅配置: " + pocket48SubscribeJson);
+        
+        if (pocket48SubscribeJson == null || pocket48SubscribeJson.trim().isEmpty() || 
+            !pocket48SubscribeJson.trim().startsWith("[") || !pocket48SubscribeJson.trim().endsWith("]")) {
+            Newboy.INSTANCE.getLogger().warning("口袋48订阅配置格式无效，重置为空数组: " + pocket48SubscribeJson);
+            pocket48SubscribeJson = "[]";
+            setting.setByGroup("subscribe", "pocket48", pocket48SubscribeJson);
+            safeStoreConfig("修复口袋48订阅配置格式");
         }
         
-        // 在线状态监控配置已迁移到异步监控系统，不再从此处加载
+        try {
+            for (Object a : JSONUtil.parseArray(pocket48SubscribeJson).toArray()) {
+                JSONObject sub = JSONUtil.parseObj(a);
+                @SuppressWarnings("unchecked")
+                List<Long> rooms = (List<Long>) sub.getBeanList("roomSubs", Long.class);
+                @SuppressWarnings("unchecked")
+                List<Long> stars = (List<Long>) sub.getBeanList("starSubs", Long.class);
+
+                properties.pocket48_subscribe
+                        .put(sub.getLong("qqGroup"),
+                                new Pocket48Subscribe(
+                                        sub.getBool("showAtOne", true),
+                                        rooms == null ? new ArrayList<>() : rooms,
+                                        stars == null ? new ArrayList<>() : stars
+                                ));
+            }
+        } catch (Exception e) {
+            Newboy.INSTANCE.getLogger().error("解析口袋48订阅配置时发生错误: " + e.getMessage());
+            Newboy.INSTANCE.getLogger().info("重置口袋48订阅配置为空数组");
+            setting.setByGroup("subscribe", "pocket48", "[]");
+            safeStoreConfig("修复口袋48订阅配置错误");
+        }
+
+        //口袋48房间连接 - 添加JSON格式验证
+        String pocket48RoomJson = setting.getByGroup("roomConnection", "pocket48");
+        if (pocket48RoomJson == null || pocket48RoomJson.trim().isEmpty() || 
+            !pocket48RoomJson.trim().startsWith("[") || !pocket48RoomJson.trim().endsWith("]")) {
+            Newboy.INSTANCE.getLogger().warning("口袋48房间连接配置格式无效，重置为空数组: " + pocket48RoomJson);
+            pocket48RoomJson = "[]";
+            setting.setByGroup("roomConnection", "pocket48", pocket48RoomJson);
+            safeStoreConfig("修复口袋48房间连接配置格式");
+        }
+        
+        try {
+            Object[] pocket48Array = JSONUtil.parseArray(pocket48RoomJson).toArray();
+            for (Object a : pocket48Array) {
+                JSONObject sid = (a instanceof JSONObject) ? (JSONObject) a : JSONUtil.parseObj(a);
+                properties.pocket48_serverID.put(sid.getLong("roomID"), sid.getLong("serverID"));
+            }
+        } catch (Exception e) {
+            Newboy.INSTANCE.getLogger().error("解析口袋48房间连接配置时发生错误: " + e.getMessage());
+            setting.setByGroup("roomConnection", "pocket48", "[]");
+            safeStoreConfig("修复口袋48房间连接配置错误");
+        }
+
+
+
+        //微博 - 添加JSON格式验证
+        String weiboJson = setting.getByGroup("subscribe", "weibo");
+        if (weiboJson == null || weiboJson.trim().isEmpty() || 
+            !weiboJson.trim().startsWith("[") || !weiboJson.trim().endsWith("]")) {
+            Newboy.INSTANCE.getLogger().warning("微博订阅配置格式无效，重置为空数组: " + weiboJson);
+            weiboJson = "[]";
+            setting.setByGroup("subscribe", "weibo", weiboJson);
+            safeStoreConfig("修复微博订阅配置格式");
+        }
+        
+        try {
+            Object[] weiboArray = JSONUtil.parseArray(weiboJson).toArray();
+            for (Object a : weiboArray) {
+                JSONObject subs = (a instanceof JSONObject) ? (JSONObject) a : JSONUtil.parseObj(a);
+
+                long g = subs.getLong("qqGroup");
+                @SuppressWarnings("unchecked")
+                List<Long> userSubs = (List<Long>) subs.getBeanList("userSubs", Long.class);
+                properties.weibo_user_subscribe.put(g, userSubs == null ? new ArrayList<>() : userSubs);
+
+                @SuppressWarnings("unchecked")
+                List<String> sTopicSubs = (List<String>) subs.getBeanList("superTopicSubs", String.class);
+                properties.weibo_superTopic_subscribe.put(g, sTopicSubs == null ? new ArrayList<>() : sTopicSubs);
+            }
+        } catch (Exception e) {
+            Newboy.INSTANCE.getLogger().error("解析微博订阅配置时发生错误: " + e.getMessage());
+            setting.setByGroup("subscribe", "weibo", "[]");
+            safeStoreConfig("修复微博订阅配置错误");
+        }
+
+        //微店 - 添加JSON格式验证
+        String weidianJson = setting.getByGroup("shops", "weidian");
+        if (weidianJson == null || weidianJson.trim().isEmpty() || 
+            !weidianJson.trim().startsWith("[") || !weidianJson.trim().endsWith("]")) {
+            Newboy.INSTANCE.getLogger().warning("微店配置格式无效，重置为空数组: " + weidianJson);
+            weidianJson = "[]";
+            setting.setByGroup("shops", "weidian", weidianJson);
+            safeStoreConfig("修复微店配置格式");
+        }
+        
+        try {
+            Object[] weidianArray = JSONUtil.parseArray(weidianJson).toArray();
+            for (Object a : weidianArray) {
+                JSONObject shop = (a instanceof JSONObject) ? (JSONObject) a : JSONUtil.parseObj(a);
+
+                long g = shop.getLong("qqGroup");
+                String cookie = shop.getStr("cookie", "");
+                boolean autoDeliver = shop.getBool("autoDeliver", false);
+                boolean doBroadCast = shop.getBool("doBroadCast", true);
+                List<Long> highlight = shop.getBeanList("highlight", Long.class);
+                List<Long> shielded = shop.getBeanList("shielded", Long.class);
+                properties.weidian_cookie.put(g, WeidianCookie.construct(cookie, autoDeliver, doBroadCast,
+                        highlight == null ? new ArrayList<>() : highlight,
+                        shielded == null ? new ArrayList<>() : shielded));
+            }
+        } catch (Exception e) {
+            Newboy.INSTANCE.getLogger().error("解析微店配置时发生错误: " + e.getMessage());
+            setting.setByGroup("shops", "weidian", "[]");
+            safeStoreConfig("修复微店配置错误");
+        }
+        
+        // 加载异步监控订阅配置
+        loadAsyncMonitorSubscribeConfig();
     }
 
     //修改配置并更新缓存的方法
@@ -614,24 +676,42 @@ public class ConfigOperator {
         try {
             AsyncOnlineStatusMonitor monitor = AsyncOnlineStatusMonitor.INSTANCE;
             
-            // 解析新格式的JSON配置: [{"qqGroup":253610309,"memberSubs":["胡丹"]}]
-            if (subscribeJson != null && !subscribeJson.trim().equals("[]")) {
-                String content = subscribeJson.trim();
-                if (content.startsWith("[") && content.endsWith("]")) {
-                    content = content.substring(1, content.length() - 1); // 移除外层方括号
+            // 调试日志：输出读取到的JSON字符串
+            Newboy.INSTANCE.getLogger().info("读取到的异步监控配置JSON: " + subscribeJson);
+            
+            // 验证JSON格式
+            if (subscribeJson == null || subscribeJson.trim().isEmpty()) {
+                subscribeJson = "[]";
+            }
+            
+            // 检查是否是有效的JSON数组格式
+            String trimmed = subscribeJson.trim();
+            if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) {
+                Newboy.INSTANCE.getLogger().warning("异步监控配置格式错误，重置为空数组: " + subscribeJson);
+                subscribeJson = "[]";
+                // 修复配置文件
+                setting.setByGroup("subscribe", "async_monitor", "[]");
+                safeStoreConfig("异步监控配置修复");
+            }
+            
+            // 使用Hutool的JSONUtil解析JSON配置: [{"qqGroup":253610309,"memberSubs":["胡丹"]}]
+            if (!subscribeJson.trim().equals("[]")) {
+                Object[] configArray = JSONUtil.parseArray(subscribeJson).toArray();
+                
+                for (Object configObj : configArray) {
+                    JSONObject config = (configObj instanceof JSONObject) ? (JSONObject) configObj : JSONUtil.parseObj(configObj);
                     
-                    if (!content.trim().isEmpty()) {
-                        // 简单解析JSON对象数组
-                        String[] configs = content.split("\\},\\{");
-                        for (String configStr : configs) {
-                            configStr = configStr.trim();
-                            if (!configStr.startsWith("{")) configStr = "{" + configStr;
-                            if (!configStr.endsWith("}")) configStr = configStr + "}";
-                            
-                            // 解析单个配置对象
-                            parseSubscriptionConfig(configStr, monitor);
-                        }
+                    long qqGroup = config.getLong("qqGroup");
+                    @SuppressWarnings("unchecked")
+                    List<String> memberSubsList = (List<String>) config.getBeanList("memberSubs", String.class);
+                    
+                    Set<String> memberSet = new HashSet<>();
+                    if (memberSubsList != null) {
+                        memberSet.addAll(memberSubsList);
                     }
+                    
+                    // 添加到监控器
+                    monitor.addSubscriptionConfig(new SubscriptionConfig(qqGroup, memberSet));
                 }
             }
             
@@ -641,45 +721,6 @@ public class ConfigOperator {
             
         } catch (Exception e) {
             Newboy.INSTANCE.getLogger().error("加载异步监控订阅配置失败: " + e.getMessage(), e);
-        }
-    }
-    
-    /**
-     * 解析单个订阅配置
-     */
-    private void parseSubscriptionConfig(String configStr, AsyncOnlineStatusMonitor monitor) {
-        try {
-            // 提取qqGroup
-            int qqGroupStart = configStr.indexOf("\"qqGroup\":") + 10;
-            int qqGroupEnd = configStr.indexOf(",", qqGroupStart);
-            if (qqGroupEnd == -1) qqGroupEnd = configStr.indexOf("}", qqGroupStart);
-            
-            long qqGroup = Long.parseLong(configStr.substring(qqGroupStart, qqGroupEnd).trim());
-            
-            // 提取memberSubs数组
-            int memberSubsStart = configStr.indexOf("\"memberSubs\":[") + 13;
-            int memberSubsEnd = configStr.lastIndexOf("]");
-            
-            if (memberSubsStart < memberSubsEnd) {
-                String membersStr = configStr.substring(memberSubsStart, memberSubsEnd);
-                Set<String> memberSet = new HashSet<>();
-                
-                if (!membersStr.trim().isEmpty()) {
-                    String[] memberArray = membersStr.split(",");
-                    for (String member : memberArray) {
-                        String cleanMember = member.trim().replaceAll("^\"|\"$", "");
-                        if (!cleanMember.isEmpty()) {
-                            memberSet.add(cleanMember);
-                        }
-                    }
-                }
-                
-                // 添加到监控器
-                monitor.addSubscriptionConfig(new SubscriptionConfig(qqGroup, memberSet));
-            }
-            
-        } catch (Exception e) {
-            Newboy.INSTANCE.getLogger().error("解析订阅配置失败: " + configStr + ", 错误: " + e.getMessage());
         }
     }
     

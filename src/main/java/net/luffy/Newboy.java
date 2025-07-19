@@ -277,6 +277,14 @@ public final class Newboy extends JavaPlugin {
     private void loadConfig() {
         configOperator.load(properties);
         // 传统在线状态监控器配置初始化已移除，AsyncOnlineStatusMonitor会自动处理
+        
+        // 在配置加载完成后初始化异步监控系统
+        try {
+            AsyncOnlineStatusMonitor.INSTANCE.initializeMonitoring();
+            getLogger().info("异步监控系统初始化完成");
+        } catch (Exception e) {
+            getLogger().warning("异步监控系统初始化失败: " + e.getMessage());
+        }
     }
 
     public void registerPermission() {
