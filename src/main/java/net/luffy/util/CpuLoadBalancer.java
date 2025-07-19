@@ -8,6 +8,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import net.luffy.Newboy;
+import net.luffy.util.MessageDelayConfig;
 
 /**
  * CPU负载均衡器
@@ -150,22 +151,34 @@ public class CpuLoadBalancer {
     private void adjustProcessingStrategy(LoadLevel newLevel, LoadLevel oldLevel) {
         String adjustmentInfo = "";
         
+        // 尝试获取配置化的延迟倍数，如果获取失败则使用默认值
+        int configuredHighMultiplier = 1;
+        int configuredCriticalMultiplier = 2;
+        
+        try {
+            MessageDelayConfig delayConfig = MessageDelayConfig.getInstance();
+            configuredHighMultiplier = delayConfig.getHighLoadMultiplier();
+            configuredCriticalMultiplier = delayConfig.getCriticalLoadMultiplier();
+        } catch (Exception e) {
+            // 如果配置获取失败，使用默认值
+        }
+        
         switch (newLevel) {
             case CRITICAL:
-                messageDelayMultiplier = 3;
+                messageDelayMultiplier = configuredCriticalMultiplier;
                 batchSizeMultiplier = 1;
                 enableResourceCleanup = true;
-                adjustmentInfo = "进入临界负载模式：大幅增加延迟，启用资源清理";
+                adjustmentInfo = "进入临界负载模式：适度增加延迟，启用资源清理";
                 
                 // 触发紧急资源清理
                 triggerEmergencyCleanup();
                 break;
                 
             case HIGH:
-                messageDelayMultiplier = 2;
+                messageDelayMultiplier = configuredHighMultiplier;
                 batchSizeMultiplier = 1;
                 enableResourceCleanup = true;
-                adjustmentInfo = "进入高负载模式：增加延迟，启用资源清理";
+                adjustmentInfo = "进入高负载模式：根据配置调整延迟，启用资源清理";
                 break;
                 
             case NORMAL:

@@ -17,8 +17,8 @@ public class SyncWebHandler {
     public final Properties properties;
     private String cronScheduleID;
     
-    // 默认超时时间
-    private static final int DEFAULT_TIMEOUT = 30000; // 30秒
+    // 默认超时时间 - 优化为3秒，确保快速响应
+    private static final int DEFAULT_TIMEOUT = 3000; // 3秒
 
     public SyncWebHandler() {
         this.properties = Newboy.INSTANCE.getProperties();

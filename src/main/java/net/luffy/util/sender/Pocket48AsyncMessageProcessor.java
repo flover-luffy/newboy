@@ -6,6 +6,7 @@ import net.luffy.model.Pocket48SenderMessage;
 import net.luffy.util.AdaptiveThreadPoolManager;
 import net.luffy.util.CpuLoadBalancer;
 import net.luffy.util.EventBusManager;
+import net.luffy.util.MessageDelayConfig;
 import net.mamoe.mirai.contact.Group;
 import net.mamoe.mirai.message.data.Message;
 
@@ -27,6 +28,7 @@ public class Pocket48AsyncMessageProcessor {
     private final Pocket48Sender sender;
     private final AdaptiveThreadPoolManager adaptivePoolManager;
     private final CpuLoadBalancer loadBalancer;
+    private final MessageDelayConfig delayConfig;
     
     // 媒体处理线程池：用于处理音频、视频、图片等资源密集型任务
     private static final int CPU_CORES;
@@ -48,6 +50,7 @@ public class Pocket48AsyncMessageProcessor {
         this.sender = sender;
         this.adaptivePoolManager = AdaptiveThreadPoolManager.getInstance();
         this.loadBalancer = CpuLoadBalancer.getInstance();
+        this.delayConfig = MessageDelayConfig.getInstance();
         
         // 验证线程池参数
         if (MEDIA_THREAD_POOL_SIZE <= 0) {
@@ -205,9 +208,9 @@ public class Pocket48AsyncMessageProcessor {
         List<Pocket48SenderMessage> highPriority = grouped.get(true);
         List<Pocket48SenderMessage> lowPriority = grouped.get(false);
         
-        // 根据CPU负载动态调整延迟
-        int highPriorityDelay = loadBalancer.getDynamicDelay(40);
-        int lowPriorityDelay = loadBalancer.getDynamicDelay(60);
+        // 使用配置化的延迟时间
+        int highPriorityDelay = loadBalancer.getDynamicDelay(delayConfig.getGroupHighPriorityDelay());
+        int lowPriorityDelay = loadBalancer.getDynamicDelay(delayConfig.getGroupLowPriorityDelay());
         
         // 先发送高优先级消息（文本类）
         sendMessageGroup(highPriority, group, highPriorityDelay);
@@ -312,9 +315,10 @@ public class Pocket48AsyncMessageProcessor {
             Message[] unjointMessages = senderMessage.getUnjointMessage();
             for (int i = 0; i < unjointMessages.length; i++) {
                 group.sendMessage(unjointMessages[i]);
-                // 优化延迟：动态调整延迟时间，提高处理效率
+                // 使用配置化的消息间延迟时间
                 if (i < unjointMessages.length - 1) {
-                    int baseDelay = isMediaMessage(unjointMessages[i]) ? 70 : 35;
+                    int baseDelay = isMediaMessage(unjointMessages[i]) ? 
+                        delayConfig.getMediaDelay() : delayConfig.getTextDelay();
                     int dynamicDelay = loadBalancer.getDynamicDelay(baseDelay);
                     Thread.sleep(dynamicDelay);
                 }

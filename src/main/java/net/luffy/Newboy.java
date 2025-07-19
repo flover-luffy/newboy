@@ -7,7 +7,8 @@ import net.luffy.handler.WeiboHandler;
 import net.luffy.handler.WeidianHandler;
 import net.luffy.handler.WeidianSenderHandler;
 import net.luffy.handler.Xox48Handler;
-import net.luffy.util.OnlineStatusMonitor;
+// import net.luffy.util.OnlineStatusMonitor; // 传统监控器已移除
+import net.luffy.util.AsyncOnlineStatusMonitor;
 import net.luffy.model.EndTime;
 import net.luffy.model.Pocket48SenderCache;
 import net.luffy.model.WeidianCookie;
@@ -40,14 +41,14 @@ public final class Newboy extends JavaPlugin {
     public static final String VERSION = "1.0.0";
 
     public static final Newboy INSTANCE = new Newboy();
-    private final ConfigOperator configOperator = new ConfigOperator();
+    private final ConfigOperator configOperator = ConfigOperator.getInstance();
     private final Properties properties = new Properties();
     public Pocket48Handler handlerPocket48;
     public WeiboHandler handlerWeibo;
     public WeidianHandler handlerWeidian;
     public WeidianSenderHandler handlerWeidianSender;
     public Xox48Handler handlerXox48;
-    private OnlineStatusMonitor onlineStatusMonitor;
+    // 传统在线状态监控器已移除，使用AsyncOnlineStatusMonitor替代
     private Scheduler scheduler;
 
     private Newboy() {
@@ -131,7 +132,7 @@ public final class Newboy extends JavaPlugin {
         handlerWeidian = new WeidianHandler();
         handlerWeidianSender = new WeidianSenderHandler();
         handlerXox48 = new Xox48Handler();
-        onlineStatusMonitor = new OnlineStatusMonitor();
+        // 传统在线状态监控器初始化已移除
     }
 
 
@@ -164,8 +165,9 @@ public final class Newboy extends JavaPlugin {
         return handlerXox48;
     }
     
-    public OnlineStatusMonitor getOnlineStatusMonitor() {
-        return onlineStatusMonitor;
+    // 传统在线状态监控器已移除，使用AsyncOnlineStatusMonitor替代
+    public AsyncOnlineStatusMonitor getAsyncOnlineStatusMonitor() {
+        return AsyncOnlineStatusMonitor.INSTANCE;
     }
     
     public Scheduler getCronScheduler() {
@@ -210,7 +212,7 @@ public final class Newboy extends JavaPlugin {
         handlerWeidian = new WeidianHandler();
         handlerWeidianSender = new WeidianSenderHandler();
         handlerXox48 = new Xox48Handler();
-        onlineStatusMonitor = new OnlineStatusMonitor();
+        // 传统在线状态监控器已移除，使用AsyncOnlineStatusMonitor替代
     }
     
     /**
@@ -252,10 +254,7 @@ public final class Newboy extends JavaPlugin {
             // 停止定期性能报告
             PerformanceMonitor.getInstance().disablePeriodicReporting();
             
-            // 清理资源
-            if (onlineStatusMonitor != null) {
-                onlineStatusMonitor.cleanup();
-            }
+            // 传统在线状态监控器清理已移除
             
             // 关闭CPU优化组件
             EventBusManager.getInstance().shutdown();
@@ -277,10 +276,7 @@ public final class Newboy extends JavaPlugin {
 
     private void loadConfig() {
         configOperator.load(properties);
-        // 配置加载完成后，初始化在线状态监控配置
-        if (onlineStatusMonitor != null) {
-            onlineStatusMonitor.initFromConfig();
-        }
+        // 传统在线状态监控器配置初始化已移除，AsyncOnlineStatusMonitor会自动处理
     }
 
     public void registerPermission() {
@@ -412,25 +408,7 @@ public final class Newboy extends JavaPlugin {
             }
         }));
         
-        // 在线状态监控
-        if (properties.onlineStatus_enable) {
-            onlineStatusMonitor.setCronScheduleID(scheduler.schedule(properties.onlineStatus_pattern, new Runnable() {
-                @Override
-                public void run() {
-                    for (Bot b : Bot.getInstances()) {
-                        for (long group : properties.onlineStatus_subscribe.keySet()) {
-                            if (b.getGroup(group) == null)
-                                continue;
-                                
-                            List<String> memberNames = properties.onlineStatus_subscribe.get(group);
-                            if (memberNames != null && !memberNames.isEmpty()) {
-                                onlineStatusMonitor.checkStatusChanges();
-                            }
-                        }
-                    }
-                }
-            }));
-        }
+        // 传统在线状态监控调度已移除，AsyncOnlineStatusMonitor会自动启动
 
         // ------------------------------------------------
         if (properties.enable) {

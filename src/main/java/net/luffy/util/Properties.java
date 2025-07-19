@@ -38,9 +38,19 @@ public class Properties {
     public String weidian_pattern_item;
     public HashMap<Long, WeidianCookie> weidian_cookie = new HashMap<>();
 
-    //在线状态监控
-    public String onlineStatus_pattern;
-    public boolean onlineStatus_enable;
-    public HashMap<Long, List<String>> onlineStatus_subscribe = new HashMap<>(); // 群组订阅的成员名称列表
+    //在线状态监控配置已迁移到异步监控系统
+    
+    // 异步监控配置
+    public String async_monitor_schedule_pattern;
+    
+    // 消息延迟优化配置 - 更激进的平衡模式参数
+    public String message_delay_optimization_mode;
+    public int message_delay_text;
+    public int message_delay_media;
+    public int message_delay_group_high_priority;
+    public int message_delay_group_low_priority;
+    public int message_delay_processing_timeout;
+    public double message_delay_high_load_multiplier;
+    public double message_delay_critical_load_multiplier;
 
 }

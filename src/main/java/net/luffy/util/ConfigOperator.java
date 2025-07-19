@@ -7,6 +7,7 @@ import cn.hutool.setting.Setting;
 import net.luffy.Newboy;
 import net.luffy.model.Pocket48Subscribe;
 import net.luffy.model.WeidianCookie;
+import net.luffy.util.SubscriptionConfig;
 import net.mamoe.mirai.contact.Group;
 import net.mamoe.mirai.contact.MemberPermission;
 import net.mamoe.mirai.contact.NormalMember;
@@ -14,12 +15,29 @@ import net.mamoe.mirai.contact.NormalMember;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public class ConfigOperator {
 
+    private static ConfigOperator instance;
     private Setting setting;
     private Properties properties;
+    
+    /**
+     * 获取ConfigOperator单例实例
+     */
+    public static ConfigOperator getInstance() {
+        if (instance == null) {
+            synchronized (ConfigOperator.class) {
+                if (instance == null) {
+                    instance = new ConfigOperator();
+                }
+            }
+        }
+        return instance;
+    }
 
     public void load(Properties properties) {
         this.properties = properties;
@@ -35,10 +53,10 @@ public class ConfigOperator {
             tempSetting.setByGroup("basic", "admins", "123456789");
             tempSetting.setByGroup("basic", "secureGroup", "");
             
-            // 设置定时任务默认配置
-            tempSetting.setByGroup("schedule", "pocket48", "* * * * *");
+            // 设置定时任务默认配置 - 优化为5秒间隔，减少系统负载
+            tempSetting.setByGroup("schedule", "pocket48", "*/5 * * * * *");
             tempSetting.setByGroup("schedule", "weibo", "*/5 * * * *");
-            tempSetting.setByGroup("schedule", "onlineStatus", "*/2 * * * *");
+            // onlineStatus定时任务已迁移到异步监控系统
             tempSetting.setByGroup("schedule_order", "weidian", "*/2 * * * *");
             tempSetting.setByGroup("schedule_item", "weidian", "*/5 * * * *");
             
@@ -47,13 +65,25 @@ public class ConfigOperator {
             tempSetting.setByGroup("pocket48", "password", "");
             tempSetting.setByGroup("pocket48", "token", "");
             
-            // 设置在线状态监控默认配置
-            tempSetting.setByGroup("onlineStatus", "enable", "true");
+            tempSetting.setByGroup("subscribe", "async_monitor", "[]");
+            
+            // 设置异步监控配置默认值
+            tempSetting.setByGroup("async_monitor", "schedule_pattern", "*/30 * * * * *");
+            
+            // 设置消息延迟优化配置默认值
+            tempSetting.setByGroup("message_delay", "optimization_mode", "BALANCED");
+            tempSetting.setByGroup("message_delay", "text", "12");
+            tempSetting.setByGroup("message_delay", "media", "25");
+            tempSetting.setByGroup("message_delay", "group_high_priority", "15");
+            tempSetting.setByGroup("message_delay", "group_low_priority", "25");
+            tempSetting.setByGroup("message_delay", "processing_timeout", "15");
+            tempSetting.setByGroup("message_delay", "high_load_multiplier", "1.0");
+            tempSetting.setByGroup("message_delay", "critical_load_multiplier", "2.0");
             
             // 设置订阅配置默认值
             tempSetting.setByGroup("subscribe", "pocket48", "[]");
             tempSetting.setByGroup("subscribe", "weibo", "[]");
-            tempSetting.setByGroup("subscribe", "onlineStatus", "[]");
+            // onlineStatus订阅已迁移到异步监控系统
             
             // 设置商店配置默认值
             tempSetting.setByGroup("shops", "weidian", "[]");
@@ -92,10 +122,20 @@ public class ConfigOperator {
         properties.weibo_pattern = setting.getStr("schedule", "weibo", "*/5 * * * *");
         properties.weidian_pattern_order = setting.getStr("schedule_order", "weidian", "*/2 * * * *");
         properties.weidian_pattern_item = setting.getStr("schedule_item", "weidian", "*/5 * * * *");
-        properties.onlineStatus_pattern = setting.getStr("schedule", "onlineStatus", "*/2 * * * *");
+        // 在线状态监控配置已迁移到异步监控系统
         
-        //在线状态监控
-        properties.onlineStatus_enable = setting.getBool("onlineStatus", "enable", true);
+        // 异步监控配置
+        properties.async_monitor_schedule_pattern = setting.getStr("async_monitor", "schedule_pattern", "*/30 * * * * *");
+        
+        // 消息延迟优化配置
+        properties.message_delay_optimization_mode = setting.getStr("message_delay", "optimization_mode", "BALANCED");
+        properties.message_delay_text = setting.getInt("message_delay", "text", 12);
+        properties.message_delay_media = setting.getInt("message_delay", "media", 25);
+        properties.message_delay_group_high_priority = setting.getInt("message_delay", "group_high_priority", 15);
+        properties.message_delay_group_low_priority = setting.getInt("message_delay", "group_low_priority", 25);
+        properties.message_delay_processing_timeout = setting.getInt("message_delay", "processing_timeout", 15);
+        properties.message_delay_high_load_multiplier = setting.getDouble("message_delay", "high_load_multiplier", 1.0);
+        properties.message_delay_critical_load_multiplier = setting.getDouble("message_delay", "critical_load_multiplier", 2.0);
 
         //口袋48
         properties.pocket48_account = setting.getStr("pocket48", "account", "");
@@ -170,15 +210,7 @@ public class ConfigOperator {
 
         }
         
-        //在线状态监控 - 使用高性能JSON解析
-        Object[] onlineStatusArray = JSONUtil.parseArray(setting.getByGroup("subscribe", "onlineStatus")).toArray();
-        for (Object a : onlineStatusArray) {
-            JSONObject sub = (a instanceof JSONObject) ? (JSONObject) a : JSONUtil.parseObj(a);
-            
-            long g = sub.getLong("qqGroup");
-            List<String> memberSubs = sub.getBeanList("memberSubs", String.class);
-            properties.onlineStatus_subscribe.put(g, memberSubs == null ? new ArrayList<>() : memberSubs);
-        }
+        // 在线状态监控配置已迁移到异步监控系统，不再从此处加载
     }
 
     //修改配置并更新缓存的方法
@@ -454,93 +486,204 @@ public class ConfigOperator {
         return false;
     }
     
-    // ========== 在线状态监控配置管理方法 ==========
+    // ========== 异步监控配置管理方法 ==========
     
-    public boolean addOnlineStatusSubscribe(String memberName, long group) {
-        if (!properties.onlineStatus_subscribe.containsKey(group)) {
-            properties.onlineStatus_subscribe.put(group, new ArrayList<>());
+    /**
+     * 更新异步监控调度配置
+     */
+    public String updateAsyncMonitorSchedule(String cronExpression) {
+        if (cronExpression == null || cronExpression.trim().isEmpty()) {
+            return "❌ 无效的cron表达式格式";
         }
         
-        if (properties.onlineStatus_subscribe.get(group).contains(memberName))
-            return false;
-            
-        properties.onlineStatus_subscribe.get(group).add(memberName);
-        saveOnlineStatusConfig();
-        return true;
+        String oldPattern = properties.async_monitor_schedule_pattern;
+        setting.setByGroup("async_monitor", "schedule_pattern", cronExpression);
+        safeStoreConfig("异步监控调度配置");
+        properties.async_monitor_schedule_pattern = cronExpression;
+        
+        return String.format("✅ 异步监控调度已更新\n" +
+                "旧配置: %s\n" +
+                "新配置: %s", 
+                oldPattern, cronExpression);
     }
     
-    public boolean rmOnlineStatusSubscribe(String memberName, long group) {
-        if (!properties.onlineStatus_subscribe.containsKey(group) || 
-            !properties.onlineStatus_subscribe.get(group).contains(memberName))
-            return false;
-            
-        properties.onlineStatus_subscribe.get(group).remove(memberName);
-        saveOnlineStatusConfig();
-        return true;
+    /**
+     * 切换异步监控状态
+     */
+    public String switchAsyncMonitor() {
+        boolean current = setting.getBool("async_monitor", "enable", true);
+        setting.setByGroup("async_monitor", "enable", String.valueOf(!current));
+        safeStoreConfig("异步监控配置");
+        
+        return !current ? "✅ 异步监控已启用" : "❌ 异步监控已禁用";
     }
     
-    public int switchOnlineStatusMonitor() {
-        properties.onlineStatus_enable = !properties.onlineStatus_enable;
-        setting.setByGroup("onlineStatus", "enable", String.valueOf(properties.onlineStatus_enable));
-        safeStoreConfig("在线状态监控开关配置");
-        return properties.onlineStatus_enable ? 1 : 0;
+    /**
+     * 获取异步监控配置信息
+     */
+    public String getAsyncMonitorConfig() {
+        String pattern = properties.async_monitor_schedule_pattern;
+        
+        return String.format("📊 异步监控配置信息\n" +
+                "━━━━━━━━━━━━━━━━━━━━\n" +
+                "调度表达式: %s\n" +
+                "其他配置项已迁移到monitor-config.properties",
+                pattern);
     }
 
     /**
-     * 设置在线状态监控间隔
-     * @param pattern Cron表达式
-     * @return 是否设置成功
+     * 保存异步监控订阅配置
      */
-    public boolean setOnlineStatusInterval(String pattern) {
-        if (pattern == null || pattern.trim().isEmpty()) {
-            return false;
-        }
-        properties.onlineStatus_pattern = pattern.trim();
-        setting.setByGroup("schedule", "onlineStatus", pattern.trim());
-        safeStoreConfig("在线状态监控间隔配置");
-        return true;
-    }
-
-    /**
-     * 获取在线状态监控间隔
-     * @return Cron表达式
-     */
-    public String getOnlineStatusInterval() {
-        return properties.onlineStatus_pattern;
-    }
-
-    public void saveOnlineStatusConfig() {
-        String a = "[";
-        for (long group : properties.onlineStatus_subscribe.keySet()) {
-            JSONObject object = new JSONObject();
-            object.set("qqGroup", group);
-            object.set("memberSubs", properties.onlineStatus_subscribe.get(group));
-            a += object + ",";
-        }
-        setting.setByGroup("subscribe", "onlineStatus", (a.length() > 1 ? a.substring(0, a.length() - 1) : a) + "]");
-        
-        // 只保存特定配置项，避免覆盖整个配置文件
-        try {
-            // 创建临时Setting对象来保存单个配置项
-            File configFile = properties.configData;
-            if (configFile.exists()) {
-                // 读取现有配置
-                Setting tempSetting = new Setting(configFile, StandardCharsets.UTF_8, false);
-                // 只更新在线状态监控配置
-                tempSetting.setByGroup("subscribe", "onlineStatus", (a.length() > 1 ? a.substring(0, a.length() - 1) : a) + "]");
-                // 保存配置
-                tempSetting.store();
-                Newboy.INSTANCE.getLogger().info("在线状态监控配置已保存");
+    public void saveAsyncMonitorSubscribeConfig() {
+        // 检查setting是否已初始化，如果未初始化则尝试重新初始化
+        if (setting == null) {
+            Newboy.INSTANCE.getLogger().warning("ConfigOperator的setting为null，尝试重新初始化...");
+            
+            // 尝试重新获取Properties实例并初始化
+            if (properties != null && properties.configData != null) {
+                try {
+                    this.setting = new Setting(properties.configData, StandardCharsets.UTF_8, false);
+                    Newboy.INSTANCE.getLogger().info("ConfigOperator重新初始化成功");
+                } catch (Exception e) {
+                    Newboy.INSTANCE.getLogger().error("ConfigOperator重新初始化失败: " + e.getMessage(), e);
+                    return;
+                }
             } else {
-                // 如果配置文件不存在，使用原有逻辑
-                safeStoreConfig("在线状态监控配置（新建文件）");
+                Newboy.INSTANCE.getLogger().error("ConfigOperator未正确初始化，properties或configData为null，无法保存异步监控订阅配置");
+                return;
             }
-        } catch (Exception e) {
-             Newboy.INSTANCE.getLogger().warning("保存在线状态监控配置失败: " + e.getMessage());
-             // 降级到原有保存方式
-             safeStoreConfig("在线状态监控配置（降级保存）");
-         }
+        }
+        
+        AsyncOnlineStatusMonitor monitor = AsyncOnlineStatusMonitor.INSTANCE;
+        List<SubscriptionConfig> subscriptions = monitor.getSubscriptionConfigs();
+        
+        // 将订阅配置列表转换为JSON格式: [{"qqGroup":253610309,"memberSubs":["胡丹"]}]
+        StringBuilder subscribeJson = new StringBuilder("[");
+        if (!subscriptions.isEmpty()) {
+            for (int i = 0; i < subscriptions.size(); i++) {
+                SubscriptionConfig config = subscriptions.get(i);
+                subscribeJson.append("{\"qqGroup\":").append(config.getQqGroup()).append(",\"memberSubs\":[");
+                
+                Set<String> members = config.getMemberSubs();
+                if (!members.isEmpty()) {
+                    int memberIndex = 0;
+                    for (String member : members) {
+                        if (memberIndex > 0) subscribeJson.append(",");
+                        subscribeJson.append("\"").append(member).append("\"");
+                        memberIndex++;
+                    }
+                }
+                subscribeJson.append("]}");
+                
+                if (i < subscriptions.size() - 1) {
+                    subscribeJson.append(",");
+                }
+            }
+        }
+        subscribeJson.append("]");
+        
+        setting.setByGroup("subscribe", "async_monitor", subscribeJson.toString());
+        safeStoreConfig("异步监控订阅配置");
     }
+    
+    /**
+     * 加载异步监控订阅配置
+     */
+    public void loadAsyncMonitorSubscribeConfig() {
+        // 检查setting是否已初始化
+        if (setting == null) {
+            Newboy.INSTANCE.getLogger().warning("ConfigOperator的setting为null，尝试重新初始化...");
+            
+            // 尝试重新获取Properties实例并初始化
+            if (properties != null && properties.configData != null) {
+                try {
+                    this.setting = new Setting(properties.configData, StandardCharsets.UTF_8, false);
+                    Newboy.INSTANCE.getLogger().info("ConfigOperator重新初始化成功");
+                } catch (Exception e) {
+                    Newboy.INSTANCE.getLogger().error("ConfigOperator重新初始化失败: " + e.getMessage(), e);
+                    return;
+                }
+            } else {
+                Newboy.INSTANCE.getLogger().error("ConfigOperator未正确初始化，properties或configData为null，无法加载异步监控订阅配置");
+                return;
+            }
+        }
+        
+        String subscribeJson = setting.getStr("subscribe", "async_monitor", "[]");
+        
+        try {
+            AsyncOnlineStatusMonitor monitor = AsyncOnlineStatusMonitor.INSTANCE;
+            
+            // 解析新格式的JSON配置: [{"qqGroup":253610309,"memberSubs":["胡丹"]}]
+            if (subscribeJson != null && !subscribeJson.trim().equals("[]")) {
+                String content = subscribeJson.trim();
+                if (content.startsWith("[") && content.endsWith("]")) {
+                    content = content.substring(1, content.length() - 1); // 移除外层方括号
+                    
+                    if (!content.trim().isEmpty()) {
+                        // 简单解析JSON对象数组
+                        String[] configs = content.split("\\},\\{");
+                        for (String configStr : configs) {
+                            configStr = configStr.trim();
+                            if (!configStr.startsWith("{")) configStr = "{" + configStr;
+                            if (!configStr.endsWith("}")) configStr = configStr + "}";
+                            
+                            // 解析单个配置对象
+                            parseSubscriptionConfig(configStr, monitor);
+                        }
+                    }
+                }
+            }
+            
+            int totalMembers = monitor.getAllSubscribedMembers().size();
+            int totalGroups = monitor.getSubscriptionConfigs().size();
+            Newboy.INSTANCE.getLogger().info("异步监控订阅配置加载完成，共加载 " + totalGroups + " 个群组，" + totalMembers + " 个订阅成员");
+            
+        } catch (Exception e) {
+            Newboy.INSTANCE.getLogger().error("加载异步监控订阅配置失败: " + e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * 解析单个订阅配置
+     */
+    private void parseSubscriptionConfig(String configStr, AsyncOnlineStatusMonitor monitor) {
+        try {
+            // 提取qqGroup
+            int qqGroupStart = configStr.indexOf("\"qqGroup\":") + 10;
+            int qqGroupEnd = configStr.indexOf(",", qqGroupStart);
+            if (qqGroupEnd == -1) qqGroupEnd = configStr.indexOf("}", qqGroupStart);
+            
+            long qqGroup = Long.parseLong(configStr.substring(qqGroupStart, qqGroupEnd).trim());
+            
+            // 提取memberSubs数组
+            int memberSubsStart = configStr.indexOf("\"memberSubs\":[") + 13;
+            int memberSubsEnd = configStr.lastIndexOf("]");
+            
+            if (memberSubsStart < memberSubsEnd) {
+                String membersStr = configStr.substring(memberSubsStart, memberSubsEnd);
+                Set<String> memberSet = new HashSet<>();
+                
+                if (!membersStr.trim().isEmpty()) {
+                    String[] memberArray = membersStr.split(",");
+                    for (String member : memberArray) {
+                        String cleanMember = member.trim().replaceAll("^\"|\"$", "");
+                        if (!cleanMember.isEmpty()) {
+                            memberSet.add(cleanMember);
+                        }
+                    }
+                }
+                
+                // 添加到监控器
+                monitor.addSubscriptionConfig(new SubscriptionConfig(qqGroup, memberSet));
+            }
+            
+        } catch (Exception e) {
+            Newboy.INSTANCE.getLogger().error("解析订阅配置失败: " + configStr + ", 错误: " + e.getMessage());
+        }
+    }
+    
+    // 旧的在线状态监控方法已移除，请使用异步监控系统
     
     /**
      * 安全保存配置，避免覆盖整个配置文件

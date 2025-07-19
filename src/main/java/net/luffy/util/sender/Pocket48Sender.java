@@ -5,6 +5,7 @@ import net.luffy.Newboy;
 import net.luffy.handler.Pocket48Handler;
 import net.luffy.util.sender.Pocket48ResourceHandler;
 import net.luffy.util.PerformanceMonitor;
+import net.luffy.util.MessageDelayConfig;
 import net.luffy.model.*;
 import net.mamoe.mirai.Bot;
 import net.mamoe.mirai.contact.Group;
@@ -35,6 +36,7 @@ public class Pocket48Sender extends Sender {
     private final Pocket48ResourceHandler resourceHandler;
     private final Pocket48AsyncMessageProcessor asyncProcessor;
     private final Pocket48ResourceOptimizer resourceOptimizer;
+    private final MessageDelayConfig delayConfig;
 
     public Pocket48Sender(Bot bot, long group, HashMap<Long, Long> endTime, HashMap<Long, List<Long>> voiceStatus, HashMap<Long, Pocket48SenderCache> cache) {
         super(bot, group);
@@ -44,6 +46,7 @@ public class Pocket48Sender extends Sender {
         this.resourceHandler = new Pocket48ResourceHandler();
         this.asyncProcessor = new Pocket48AsyncMessageProcessor(this);
         this.resourceOptimizer = new Pocket48ResourceOptimizer(resourceHandler);
+        this.delayConfig = MessageDelayConfig.getInstance();
     }
 
     @Override
@@ -112,8 +115,8 @@ public class Pocket48Sender extends Sender {
                     List<CompletableFuture<Pocket48SenderMessage>> futures = 
                         asyncProcessor.processMessagesAsync(reversedMessages, group);
                     
-                    // 等待处理完成并按顺序发送
-                    asyncProcessor.waitAndSendMessages(futures, group, 30); // 30秒超时
+                    // 等待处理完成并按顺序发送 - 使用配置化的超时时间
+                    asyncProcessor.waitAndSendMessages(futures, group, delayConfig.getProcessingTimeout());
                 }
             }
         } catch (Exception e) {
@@ -755,8 +758,8 @@ public class Pocket48Sender extends Sender {
         List<CompletableFuture<Pocket48SenderMessage>> futures = 
             asyncProcessor.processMessagesAsync(optimizedMessages.toArray(new Pocket48Message[0]), group);
         
-        // 等待处理完成并发送
-        asyncProcessor.waitAndSendMessages(futures, group, 30);
+        // 等待处理完成并发送 - 优化超时时间
+        asyncProcessor.waitAndSendMessages(futures, group, 15); // 从30秒减少到15秒超时
         
         long endTime = System.currentTimeMillis();
         // 移除控制台输出，改为内部记录

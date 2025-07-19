@@ -7,11 +7,10 @@ import java.io.InputStream;
 import java.util.Properties;
 
 /**
- * 监控系统配置管理类
- * 负责加载和管理监控系统的各种配置参数
+ * 监控配置管理类
+ * 负责加载和管理monitor-config.properties中的配置项
  */
 public class MonitorConfig {
-    
     private static MonitorConfig instance;
     private final Properties properties;
     
@@ -56,36 +55,42 @@ public class MonitorConfig {
     private final int asyncThreadPoolSize;
     
     // 批量查询配置
-    private final long batchQueryInterval;
+    private long batchQueryInterval;
     private final long batchQueryTimeout;
     private final int batchQueryMaxConcurrent;
+    
+    // 可变配置字段（用于运行时更新）
+    private int dynamicBatchQuerySize;
+    private long dynamicCacheExpireTime;
+    
+    // 消息延迟优化配置已迁移到config.setting中
     
     private MonitorConfig() {
         properties = new Properties();
         loadConfiguration();
         
-        // 初始化网络配置
-        connectTimeout = getIntProperty("monitor.network.connect.timeout", 10000);
-        readTimeout = getIntProperty("monitor.network.read.timeout", 30000);
+        // 初始化网络配置 - 优化为3秒内响应
+        connectTimeout = getIntProperty("monitor.network.connect.timeout", 2000);
+        readTimeout = getIntProperty("monitor.network.read.timeout", 3000);
         maxRetries = getIntProperty("monitor.network.max.retries", 3);
         retryBaseDelay = getLongProperty("monitor.network.retry.base.delay", 1000L);
         retryMaxDelay = getLongProperty("monitor.network.retry.max.delay", 10000L);
         
-        // 初始化健康检查配置
+        // 初始化健康检查配置 - 优化为实时监控
         maxConsecutiveFailures = getIntProperty("monitor.health.max.consecutive.failures", 3);
-        healthCheckInterval = getLongProperty("monitor.health.check.interval", 300000L);
+        healthCheckInterval = getLongProperty("monitor.health.check.interval", 120000L);
         failureRateThreshold = getDoubleProperty("monitor.health.failure.rate.threshold", 0.5);
         failureCooldownBase = getIntProperty("monitor.health.failure.cooldown.base", 5);
         failureCooldownMax = getIntProperty("monitor.health.failure.cooldown.max", 60);
-        failureCooldown = getLongProperty("monitor.health.failure.cooldown", 300000L);
+        failureCooldown = getLongProperty("monitor.health.failure.cooldown", 120000L);
         
-        // 初始化缓存配置
-        cacheExpireTime = getLongProperty("monitor.cache.expire.time", 30000L);
-        cacheCleanupInterval = getLongProperty("monitor.cache.cleanup.interval", 300000L);
+        // 初始化缓存配置 - 优化为实时性
+        cacheExpireTime = getLongProperty("monitor.cache.expire.time", 15000L);
+        cacheCleanupInterval = getLongProperty("monitor.cache.cleanup.interval", 600000L);
         healthStatsRetention = getLongProperty("monitor.health.stats.retention", 86400000L);
         
-        // 初始化监控配置
-        statusCheckInterval = getLongProperty("monitor.status.check.interval", 60000L);
+        // 初始化监控配置 - 设置为5秒实时检查
+        statusCheckInterval = getLongProperty("monitor.status.check.interval", 5000L);
         verboseLogging = getBooleanProperty("monitor.logging.verbose", true);
         performanceEnabled = getBooleanProperty("monitor.performance.enabled", true);
         healthWarningEnabled = getBooleanProperty("monitor.health.warning.enabled", true);
@@ -95,25 +100,31 @@ public class MonitorConfig {
         systemHealthWarning = getBooleanProperty("monitor.notification.system.health.warning", true);
         healthWarningInterval = getLongProperty("monitor.notification.health.warning.interval", 1800000L);
         
-        // 初始化高级配置
+        // 初始化高级配置 - 优化自适应间隔以配合实时监控
         adaptiveIntervalEnabled = getBooleanProperty("monitor.adaptive.interval.enabled", true);
-        adaptiveIntervalMin = getLongProperty("monitor.adaptive.interval.min", 30000L);
-        adaptiveIntervalMax = getLongProperty("monitor.adaptive.interval.max", 300000L);
+        adaptiveIntervalMin = getLongProperty("monitor.adaptive.interval.min", 10000L);
+        adaptiveIntervalMax = getLongProperty("monitor.adaptive.interval.max", 120000L);
         batchQueryEnabled = getBooleanProperty("monitor.batch.query.enabled", true);
         batchQuerySize = getIntProperty("monitor.batch.query.size", 5);
         asyncProcessingEnabled = getBooleanProperty("monitor.async.processing.enabled", true);
         asyncThreadPoolSize = getIntProperty("monitor.async.thread.pool.size", 3);
         
-        // 初始化批量查询配置
-        batchQueryInterval = getLongProperty("monitor.batch.query.interval", 5000L);
-        batchQueryTimeout = getLongProperty("monitor.batch.query.timeout", 30000L);
+        // 初始化批量查询配置 - 优化响应速度
+        batchQueryInterval = getLongProperty("monitor.batch.query.interval", 1000L);
+        batchQueryTimeout = getLongProperty("monitor.batch.query.timeout", 3000L);
         batchQueryMaxConcurrent = getIntProperty("monitor.batch.query.max.concurrent", 3);
+        
+        // 初始化动态配置字段
+        dynamicBatchQuerySize = batchQuerySize;
+        dynamicCacheExpireTime = cacheExpireTime;
+        
+        // 消息延迟优化配置已迁移到config.setting中
         
         logConfigurationSummary();
     }
     
     /**
-     * 获取配置实例（单例模式）
+     * 获取单例实例
      */
     public static MonitorConfig getInstance() {
         if (instance == null) {
@@ -133,12 +144,12 @@ public class MonitorConfig {
         try (InputStream input = getClass().getClassLoader().getResourceAsStream("monitor-config.properties")) {
             if (input != null) {
                 properties.load(input);
-                Newboy.INSTANCE.getLogger().info("监控配置文件加载成功");
+                Newboy.INSTANCE.getLogger().info("监控配置文件加载成功: monitor-config.properties");
             } else {
-                Newboy.INSTANCE.getLogger().warning("监控配置文件未找到，使用默认配置");
+                Newboy.INSTANCE.getLogger().warning("未找到monitor-config.properties文件，使用默认配置");
             }
         } catch (IOException e) {
-            Newboy.INSTANCE.getLogger().warning("加载监控配置文件失败: " + e.getMessage());
+            Newboy.INSTANCE.getLogger().error("加载监控配置文件失败: " + e.getMessage(), e);
         }
     }
     
@@ -156,41 +167,50 @@ public class MonitorConfig {
     
     // 配置获取辅助方法
     private int getIntProperty(String key, int defaultValue) {
-        try {
-            return Integer.parseInt(properties.getProperty(key, String.valueOf(defaultValue)));
-        } catch (NumberFormatException e) {
-            Newboy.INSTANCE.getLogger().warning(
-                String.format("配置项 %s 格式错误，使用默认值: %d", key, defaultValue));
-            return defaultValue;
+        String value = properties.getProperty(key);
+        if (value != null) {
+            try {
+                return Integer.parseInt(value.trim());
+            } catch (NumberFormatException e) {
+                Newboy.INSTANCE.getLogger().warning("配置项 " + key + " 格式错误，使用默认值: " + defaultValue);
+            }
         }
+        return defaultValue;
     }
     
     private long getLongProperty(String key, long defaultValue) {
-        try {
-            return Long.parseLong(properties.getProperty(key, String.valueOf(defaultValue)));
-        } catch (NumberFormatException e) {
-            Newboy.INSTANCE.getLogger().warning(
-                String.format("配置项 %s 格式错误，使用默认值: %d", key, defaultValue));
-            return defaultValue;
+        String value = properties.getProperty(key);
+        if (value != null) {
+            try {
+                return Long.parseLong(value.trim());
+            } catch (NumberFormatException e) {
+                Newboy.INSTANCE.getLogger().warning("配置项 " + key + " 格式错误，使用默认值: " + defaultValue);
+            }
         }
+        return defaultValue;
     }
     
     private double getDoubleProperty(String key, double defaultValue) {
-        try {
-            return Double.parseDouble(properties.getProperty(key, String.valueOf(defaultValue)));
-        } catch (NumberFormatException e) {
-            Newboy.INSTANCE.getLogger().warning(
-                String.format("配置项 %s 格式错误，使用默认值: %.2f", key, defaultValue));
-            return defaultValue;
+        String value = properties.getProperty(key);
+        if (value != null) {
+            try {
+                return Double.parseDouble(value.trim());
+            } catch (NumberFormatException e) {
+                Newboy.INSTANCE.getLogger().warning("配置项 " + key + " 格式错误，使用默认值: " + defaultValue);
+            }
         }
+        return defaultValue;
     }
     
     private boolean getBooleanProperty(String key, boolean defaultValue) {
-        String value = properties.getProperty(key, String.valueOf(defaultValue));
-        return Boolean.parseBoolean(value);
+        String value = properties.getProperty(key);
+        if (value != null) {
+            return Boolean.parseBoolean(value.trim());
+        }
+        return defaultValue;
     }
     
-    // Getter 方法
+    // Getter方法
     public int getConnectTimeout() { return connectTimeout; }
     public int getReadTimeout() { return readTimeout; }
     public int getMaxRetries() { return maxRetries; }
@@ -204,7 +224,6 @@ public class MonitorConfig {
     public int getFailureCooldownMax() { return failureCooldownMax; }
     public long getFailureCooldown() { return failureCooldown; }
     
-    public long getCacheExpireTime() { return cacheExpireTime; }
     public long getCacheCleanupInterval() { return cacheCleanupInterval; }
     public long getHealthStatsRetention() { return healthStatsRetention; }
     
@@ -221,7 +240,6 @@ public class MonitorConfig {
     public long getAdaptiveIntervalMin() { return adaptiveIntervalMin; }
     public long getAdaptiveIntervalMax() { return adaptiveIntervalMax; }
     public boolean isBatchQueryEnabled() { return batchQueryEnabled; }
-    public int getBatchQuerySize() { return batchQuerySize; }
     public boolean isAsyncProcessingEnabled() { return asyncProcessingEnabled; }
     public int getAsyncThreadPoolSize() { return asyncThreadPoolSize; }
     
@@ -229,25 +247,24 @@ public class MonitorConfig {
     public long getBatchQueryTimeout() { return batchQueryTimeout; }
     public int getBatchQueryMaxConcurrent() { return batchQueryMaxConcurrent; }
     
-    // 热重载功能已移除 - 该功能无法正常工作
+    // 动态配置的getter方法
+    public int getBatchQuerySize() { return dynamicBatchQuerySize; }
+    public long getCacheExpireTime() { return dynamicCacheExpireTime; }
     
-    /**
-     * 获取配置摘要
-     */
-    public String getConfigSummary() {
-        StringBuilder summary = new StringBuilder();
-        summary.append("⚙️ 监控系统配置摘要\n");
-        summary.append("━━━━━━━━━━━━━━━━━━━━\n");
-        summary.append(String.format("🌐 网络超时: %d/%d ms\n", connectTimeout, readTimeout));
-        summary.append(String.format("🔄 重试配置: %d次, %d-%dms\n", maxRetries, retryBaseDelay, retryMaxDelay));
-        summary.append(String.format("🏥 健康检查: %d分钟间隔\n", healthCheckInterval / 60000));
-        summary.append(String.format("💾 缓存时间: %d秒\n", cacheExpireTime / 1000));
-        summary.append(String.format("📊 状态检查: %d秒间隔\n", statusCheckInterval / 1000));
-        summary.append(String.format("🔧 高级功能: 自适应(%s), 批量(%s), 异步(%s)\n", 
-            adaptiveIntervalEnabled ? "开" : "关",
-            batchQueryEnabled ? "开" : "关",
-            asyncProcessingEnabled ? "开" : "关"));
-        summary.append("━━━━━━━━━━━━━━━━━━━━");
-        return summary.toString();
+    // 动态配置的setter方法
+    public void setBatchQueryInterval(long batchQueryInterval) {
+        this.batchQueryInterval = batchQueryInterval;
     }
+    
+    public void setBatchQuerySize(int batchQuerySize) {
+        this.dynamicBatchQuerySize = batchQuerySize;
+    }
+    
+    public void setCacheExpireTime(long cacheExpireTime) {
+        this.dynamicCacheExpireTime = cacheExpireTime;
+    }
+    
+    // 消息延迟优化配置 Getter 方法已移除 - 配置已迁移到config.setting中
+    
+    // 热重载功能已移除 - 该功能无法正常工作
 }

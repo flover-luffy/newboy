@@ -9,7 +9,7 @@ import net.luffy.handler.Pocket48Handler;
 import net.luffy.handler.WeidianHandler;
 import net.luffy.handler.WeidianSenderHandler;
 import net.luffy.handler.Xox48Handler;
-import net.luffy.util.OnlineStatusMonitor;
+import net.luffy.util.AsyncOnlineStatusMonitor;
 import net.luffy.model.Pocket48RoomInfo;
 import net.luffy.model.WeidianBuyer;
 import net.luffy.model.WeidianCookie;
@@ -499,7 +499,7 @@ public class CommandOperator extends AsyncWebHandlerBase {
                 }
                 
                 String memberName = args[1].trim();
-                String result = OnlineStatusMonitor.INSTANCE.addMonitor(group, memberName);
+                String result = AsyncOnlineStatusMonitor.INSTANCE.addSubscribedMember(group, memberName);
                 return new PlainText(result);
             }
             case "/监控移除":
@@ -509,12 +509,12 @@ public class CommandOperator extends AsyncWebHandlerBase {
                 }
                 
                 String memberName = args[1].trim();
-                String result = OnlineStatusMonitor.INSTANCE.removeMonitor(group, memberName);
+                String result = AsyncOnlineStatusMonitor.INSTANCE.removeSubscribedMember(group, memberName);
                 return new PlainText(result);
             }
             case "/监控列表":
             case "/monitor_list": {
-                String result = OnlineStatusMonitor.INSTANCE.getMonitorList(group);
+                String result = AsyncOnlineStatusMonitor.INSTANCE.getSubscribedMembers(group);
                 return new PlainText(result);
             }
             case "/监控开关":
@@ -522,8 +522,8 @@ public class CommandOperator extends AsyncWebHandlerBase {
                 if (!Newboy.INSTANCE.getConfig().isAdmin(g, senderID))
                     return new PlainText("权限不足喵");
                     
-                boolean enabled = OnlineStatusMonitor.INSTANCE.toggleMonitoring();
-                return new PlainText(enabled ? "✅ 在线状态监控已开启" : "❌ 在线状态监控已关闭");
+                // 异步监控器始终启用，这里返回状态信息
+                return new PlainText("✅ 异步在线状态监控正在运行中\n📊 统计信息:\n" + AsyncOnlineStatusMonitor.INSTANCE.getStatistics());
             }
             case "/监控查询":
             case "/monitor_check": {
@@ -1172,19 +1172,18 @@ public class CommandOperator extends AsyncWebHandlerBase {
         help.append("  /微店 <群号> 状态 - 检查微店Cookie状态\n");
         help.append("  /微店 <群号> 检查 - 检查商品数量\n\n");
         
-        help.append("👥 在线状态监控\n");
+        help.append("👥 在线状态监控（异步系统）\n");
         help.append("群聊命令：\n");
         help.append("  /newboy monitor - 查看监控帮助\n");
         help.append("  /在线 <成员名> - 查询成员在线状态\n");
         help.append("  /online <成员名> - 查询成员在线状态（英文）\n");
+        help.append("  /监控添加 <成员名> - 添加成员到异步监控\n");
+        help.append("  /监控移除 <成员名> - 从异步监控移除成员\n");
+        help.append("  /监控列表 - 查看当前群组监控列表\n");
+        help.append("  /监控开关 - 查看异步监控状态\n");
         help.append("私聊命令：\n");
-        help.append("  /监控 添加 <成员名> <群号> - 为指定群组添加在线状态监控\n");
-        help.append("  /监控 移除 <成员名> <群号> - 为指定群组移除在线状态监控\n");
-        help.append("  /监控 列表 - 查看所有群组的在线状态订阅\n");
-        help.append("  /在线 <成员名> - 查询在线状态\n");
-        help.append("  /monitor 添加 <成员名> <群号> - 添加监控（英文）\n");
-        help.append("  /monitor 移除 <成员名> <群号> - 移除监控（英文）\n");
-        help.append("  /monitor 列表 - 查看监控列表（英文）\n\n");
+        help.append("  /监控 - 查看异步监控系统状态\n");
+        help.append("  /在线 <成员名> - 查询在线状态\n\n");
         
         help.append("🔧 管理功能\n");
         help.append("私聊命令（管理员）：\n");
@@ -1549,113 +1548,22 @@ public class CommandOperator extends AsyncWebHandlerBase {
         }
     }
 
-    // 处理私聊监控命令（合并原有监控功能和在线监控功能）
+    // 处理私聊监控命令（已迁移到异步监控系统）
     private Message handlePrivateMonitorCommand(String[] args, UserMessageEvent event) {
-        if (args.length < 2) {
-            StringBuilder help = new StringBuilder();
-            help.append("📱 监控管理私聊命令\n");
-            help.append("━━━━━━━━━━━━━━━━━━━━\n");
-            help.append("📋 /监控 列表 - 查看所有群组的在线状态订阅\n");
-            help.append("➕ /监控 添加 <成员名> <群号> - 为指定群组添加在线状态订阅\n");
-            help.append("➖ /监控 移除 <成员名> <群号> - 为指定群组移除在线状态订阅\n");
-            help.append("\n💡 示例：\n");
-            help.append("  /监控 添加 张三 123456789\n");
-            help.append("  /监控 移除 张三 123456789");
-            return new PlainText(help.toString());
-        }
-
-        String action = args[1];
-        switch (action) {
-            case "列表":
-                return getPrivateOnlineMonitorList(event.getSender().getId());
-            case "添加":
-                if (args.length < 4) {
-                    return new PlainText("❌ 参数不足，格式：/监控 添加 <成员名> <群号>");
-                }
-                return addPrivateOnlineMonitor(args[2], args[3], event);
-            case "移除":
-                if (args.length < 4) {
-                    return new PlainText("❌ 参数不足，格式：/监控 移除 <成员名> <群号>");
-                }
-                return removePrivateOnlineMonitor(args[2], args[3], event);
-            default:
-                return new PlainText("❌ 未知操作，请使用 /监控 查看帮助");
-        }
+        StringBuilder help = new StringBuilder();
+        help.append("📱 在线状态监控已迁移到异步系统\n");
+        help.append("━━━━━━━━━━━━━━━━━━━━\n");
+        help.append("✅ 异步监控系统正在自动运行\n");
+        help.append("📊 监控统计信息:\n");
+        help.append(AsyncOnlineStatusMonitor.INSTANCE.getStatistics());
+        help.append("\n\n💡 可用命令:\n");
+        help.append("  /在线 <成员名> - 查询成员在线状态\n");
+        help.append("  在群聊中使用 /监控添加 <成员名> 添加监控\n");
+        help.append("  在群聊中使用 /监控移除 <成员名> 移除监控");
+        return new PlainText(help.toString());
     }
 
-    // 获取私聊在线状态监控列表
-    private Message getPrivateOnlineMonitorList(long userId) {
-        StringBuilder result = new StringBuilder();
-        result.append("👁️ 在线状态监控列表\n");
-        result.append("━━━━━━━━━━━━━━━━━━━━\n");
-        
-        Properties properties = Newboy.INSTANCE.getProperties();
-        boolean hasSubscription = false;
-        
-        for (long groupId : properties.onlineStatus_subscribe.keySet()) {
-            if (!properties.onlineStatus_subscribe.get(groupId).isEmpty()) {
-                hasSubscription = true;
-                result.append("\n🏠 群组：").append(groupId).append("\n");
-                
-                int count = 1;
-                for (String memberName : properties.onlineStatus_subscribe.get(groupId)) {
-                    result.append("  ").append(count).append(". 成员: ").append(memberName).append("\n");
-                    count++;
-                }
-            }
-        }
-        
-        if (!hasSubscription) {
-            result.append("\n❌ 暂无订阅\n");
-            result.append("💡 使用 /监控 添加 <成员名> <群号> 添加订阅");
-        }
-        
-        return new PlainText(result.toString());
-    }
-
-    // 添加私聊在线状态监控
-    private Message addPrivateOnlineMonitor(String memberName, String groupIdStr, UserMessageEvent event) {
-        try {
-            long groupId = Long.parseLong(groupIdStr);
-            
-            // 权限检查
-            Message permissionTest = testPermission(groupId, event);
-            if (permissionTest != null) {
-                return permissionTest;
-            }
-            
-            boolean success = Newboy.INSTANCE.getConfig().addOnlineStatusSubscribe(memberName, groupId);
-            if (success) {
-                return new PlainText(String.format("✅ 成功为群 %d 添加在线状态监控\n👤 成员：%s", groupId, memberName));
-            } else {
-                return new PlainText(String.format("❌ 群 %d 已监控成员 %s", groupId, memberName));
-            }
-        } catch (NumberFormatException e) {
-            return new PlainText("❌ 群号格式错误，必须是数字");
-        }
-    }
-
-    // 移除私聊在线状态监控
-    private Message removePrivateOnlineMonitor(String memberName, String groupIdStr, UserMessageEvent event) {
-        try {
-            long groupId = Long.parseLong(groupIdStr);
-            
-            // 权限检查
-            Message permissionTest = testPermission(groupId, event);
-            if (permissionTest != null) {
-                return permissionTest;
-            }
-            
-            boolean success = Newboy.INSTANCE.getConfig().rmOnlineStatusSubscribe(memberName, groupId);
-            if (success) {
-                return new PlainText(String.format("✅ 成功为群 %d 移除在线状态监控\n👤 成员：%s", groupId, memberName));
-            } else {
-                return new PlainText(String.format("❌ 群 %d 未监控成员 %s", groupId, memberName));
-            }
-        } catch (NumberFormatException e) {
-            return new PlainText("❌ 群号格式错误，必须是数字");
-        }
-    }
+    // 旧的在线状态监控私聊命令已移除，请使用异步监控系统
 
     public Message testPermission(UserMessageEvent event) {
         if (!Newboy.INSTANCE.getConfig().isAdmin(event.getSender().getId())) {
