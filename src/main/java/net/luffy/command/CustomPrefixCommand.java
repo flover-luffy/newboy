@@ -1,6 +1,7 @@
 package net.luffy.command;
 
 import net.luffy.Newboy;
+import net.luffy.util.CommandOperator;
 import net.mamoe.mirai.contact.Group;
 import net.mamoe.mirai.contact.Member;
 import net.mamoe.mirai.contact.User;
@@ -23,6 +24,7 @@ import net.luffy.util.AsyncOnlineStatusMonitor;
 import net.luffy.util.Properties;
 import net.luffy.model.WeidianCookie;
 import net.luffy.model.Pocket48Subscribe;
+import net.luffy.util.DouyinMonitorService;
 
 /**
  * 自定义前缀命令处理器
@@ -57,6 +59,20 @@ public class CustomPrefixCommand {
         if ("newboy".equals(command) || "nb".equals(command)) {
             return handleNewboyCommand(parts, group, senderId);
         }
+        
+        // 处理抖音命令 - 已整合到CommandOperator
+        if ("抖音".equals(command) || "douyin".equals(command)) {
+            return new PlainText("💡 抖音监控功能已整合\n请使用以下命令：\n" +
+                    "• /抖音监控 - 查看帮助\n" +
+                    "• /抖音状态 - 查看监控状态\n" +
+                    "• /抖音用户 - 查看监控用户列表\n" +
+                    "• /抖音添加 <用户链接> - 添加监控\n" +
+                    "• /抖音删除 <用户ID> - 删除监控\n" +
+                    "• /抖音重启 - 重启监控服务\n" +
+                    "• /抖音 关注列表 - 查看群组关注列表");
+        }
+        
+
         
         return null;
     }
@@ -233,6 +249,12 @@ public class CustomPrefixCommand {
             int weidianGroups = properties.weidian_cookie != null ? properties.weidian_cookie.size() : 0;
             systemInfo.append(String.format("  微店订阅群数: %d\n", weidianGroups));
             
+            // 抖音订阅
+            int douyinGroups = properties.douyin_user_subscribe != null ? properties.douyin_user_subscribe.size() : 0;
+            systemInfo.append(String.format("  抖音订阅群数: %d\n", douyinGroups));
+            
+
+            
             // 异步在线状态监控
             systemInfo.append("  异步在线状态监控: ✅ 已启用\n");
         }
@@ -337,6 +359,13 @@ public class CustomPrefixCommand {
             configInfo.append(String.format("  Cookie: %s\n", hasWeidianCookie ? "✅ 已配置" : "❌ 未配置"));
             configInfo.append(String.format("  检查频率: %s\n", properties.weidian_pattern_order != null ? properties.weidian_pattern_order : "未设置"));
             
+            // 抖音配置
+            configInfo.append("\n📱 抖音配置:\n");
+            configInfo.append(String.format("  检查频率: %s\n", properties.douyin_pattern != null ? properties.douyin_pattern : "未设置"));
+            
+
+
+            
             // 异步在线状态监控配置
             configInfo.append("\n🟢 异步在线状态监控:\n");
             configInfo.append("  监控状态: ✅ 已启用\n");
@@ -416,6 +445,23 @@ public class CustomPrefixCommand {
             } else {
                 subscribeInfo.append("  ❌ 暂无订阅\n");
             }
+            
+            // 抖音订阅
+            subscribeInfo.append("\n📱 抖音订阅:\n");
+            if (properties.douyin_user_subscribe != null && !properties.douyin_user_subscribe.isEmpty()) {
+                for (Map.Entry<Long, List<String>> entry : properties.douyin_user_subscribe.entrySet()) {
+                    Long groupId = entry.getKey();
+                    List<String> userIds = entry.getValue();
+                    subscribeInfo.append(String.format("  群 %d: %d个用户\n", groupId, userIds.size()));
+                    for (String userId : userIds) {
+                        subscribeInfo.append(String.format("    - 用户ID: %s\n", userId));
+                    }
+                }
+            } else {
+                subscribeInfo.append("  ❌ 暂无订阅\n");
+            }
+            
+
             
             // 异步在线状态监控订阅
             subscribeInfo.append("\n🟢 异步在线状态监控:\n");
@@ -694,6 +740,23 @@ public class CustomPrefixCommand {
                     report.append("  🛒 微店订阅: 0个群\n");
                 }
                 
+                // 抖音订阅详细统计
+                int totalDouyinUsers = 0;
+                int douyinGroups = properties.douyin_user_subscribe != null ? properties.douyin_user_subscribe.size() : 0;
+                
+                if (properties.douyin_user_subscribe != null) {
+                    for (List<String> users : properties.douyin_user_subscribe.values()) {
+                        totalDouyinUsers += users.size();
+                    }
+                }
+                
+                report.append(String.format("  📱 抖音订阅: %d个群\n", douyinGroups));
+                if (douyinGroups > 0) {
+                    report.append(String.format("    - 监控用户总数: %d\n", totalDouyinUsers));
+                }
+                
+
+                
                 // 异步在线状态监控
                 report.append("  🟢 异步在线状态监控: ✅ 已启用\n");
                 try {
@@ -730,6 +793,21 @@ public class CustomPrefixCommand {
                 weiboLogin = false;
             }
             report.append(String.format("  微博服务: %s\n", weiboLogin ? "✅ 运行中" : "❌ 未运行"));
+            
+            // 抖音状态
+            boolean douyinRunning = false;
+            try {
+                // 检查抖音监控服务的实际运行状态
+                DouyinMonitorService douyinService = DouyinMonitorService.getInstance();
+                if (douyinService != null) {
+                    douyinRunning = douyinService.isRunning();
+                }
+            } catch (Exception e) {
+                douyinRunning = false;
+            }
+            report.append(String.format("  抖音服务: %s\n", douyinRunning ? "✅ 运行中" : "❌ 未运行"));
+            
+
             
             // 定时任务调度器
             boolean scheduler = instance.getCronScheduler() != null;

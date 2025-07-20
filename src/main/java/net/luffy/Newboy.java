@@ -7,8 +7,10 @@ import net.luffy.handler.WeiboHandler;
 import net.luffy.handler.WeidianHandler;
 import net.luffy.handler.WeidianSenderHandler;
 import net.luffy.handler.Xox48Handler;
+
 // import net.luffy.util.OnlineStatusMonitor; // 传统监控器已移除
 import net.luffy.util.AsyncOnlineStatusMonitor;
+
 import net.luffy.model.EndTime;
 import net.luffy.model.Pocket48SenderCache;
 import net.luffy.model.WeidianCookie;
@@ -17,6 +19,7 @@ import net.luffy.util.ConfigOperator;
 import net.luffy.util.Properties;
 import net.luffy.util.PropertiesCommon;
 import net.luffy.util.sender.*;
+
 import net.luffy.util.UnifiedSchedulerManager;
 import net.luffy.util.PerformanceMonitor;
 import net.luffy.util.AdaptiveThreadPoolManager;
@@ -48,8 +51,10 @@ public final class Newboy extends JavaPlugin {
     public WeidianHandler handlerWeidian;
     public WeidianSenderHandler handlerWeidianSender;
     public Xox48Handler handlerXox48;
+
     // 传统在线状态监控器已移除，使用AsyncOnlineStatusMonitor替代
     private Scheduler scheduler;
+
 
     private Newboy() {
         super(new JvmPluginDescriptionBuilder(ID, VERSION +
@@ -118,6 +123,8 @@ public final class Newboy extends JavaPlugin {
             getLogger().info("已启用定期性能报告，将发送给管理员: " + firstAdmin);
         }
 
+
+
         getLogger().info("New boy!");
 
         // ------------------------------------------------
@@ -132,7 +139,9 @@ public final class Newboy extends JavaPlugin {
         handlerWeidian = new WeidianHandler();
         handlerWeidianSender = new WeidianSenderHandler();
         handlerXox48 = new Xox48Handler();
+
         // 传统在线状态监控器初始化已移除
+
     }
 
 
@@ -164,6 +173,10 @@ public final class Newboy extends JavaPlugin {
     public Xox48Handler getHandlerXox48() {
         return handlerXox48;
     }
+
+
+    
+
     
     // 传统在线状态监控器已移除，使用AsyncOnlineStatusMonitor替代
     public AsyncOnlineStatusMonitor getAsyncOnlineStatusMonitor() {
@@ -213,6 +226,7 @@ public final class Newboy extends JavaPlugin {
         handlerWeidianSender = new WeidianSenderHandler();
         handlerXox48 = new Xox48Handler();
         // 传统在线状态监控器已移除，使用AsyncOnlineStatusMonitor替代
+
     }
     
     /**
@@ -284,6 +298,18 @@ public final class Newboy extends JavaPlugin {
             getLogger().info("异步监控系统初始化完成");
         } catch (Exception e) {
             getLogger().warning("异步监控系统初始化失败: " + e.getMessage());
+        }
+        
+        // 自动启动抖音监控服务
+        try {
+            if (properties.douyin_user_subscribe != null && !properties.douyin_user_subscribe.isEmpty()) {
+                net.luffy.util.DouyinMonitorService.getInstance().startMonitoring(10);
+                getLogger().info("抖音监控服务已自动启动");
+            } else {
+                getLogger().info("未配置抖音监控用户，跳过抖音监控服务启动");
+            }
+        } catch (Exception e) {
+            getLogger().warning("抖音监控服务启动失败: " + e.getMessage());
         }
     }
 
@@ -365,6 +391,8 @@ public final class Newboy extends JavaPlugin {
                 }
             }));
         }
+
+        // 抖音监听已移除 - 使用新的DouyinMonitorService替代
 
         // 微店订单播报
         scheduler.schedule(properties.weidian_pattern_order, new Runnable() {

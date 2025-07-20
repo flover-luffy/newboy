@@ -33,6 +33,8 @@ public class Listener extends SimpleListenerHost {
             }
         }
         
+
+        
         if (message.startsWith("/")) {
             // 排除Mirai Console注册的命令，避免冲突
             String[] parts = message.split(" ");

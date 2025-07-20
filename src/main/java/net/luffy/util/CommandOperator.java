@@ -4,12 +4,14 @@ package net.luffy.util;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import net.luffy.Newboy;
+
 import net.luffy.handler.AsyncWebHandlerBase;
 import net.luffy.handler.Pocket48Handler;
 import net.luffy.handler.WeidianHandler;
 import net.luffy.handler.WeidianSenderHandler;
 import net.luffy.handler.Xox48Handler;
 import net.luffy.util.AsyncOnlineStatusMonitor;
+import net.luffy.util.DouyinMonitorService;
 import net.luffy.model.Pocket48RoomInfo;
 import net.luffy.model.WeidianBuyer;
 import net.luffy.model.WeidianCookie;
@@ -37,6 +39,168 @@ public class CommandOperator extends AsyncWebHandlerBase {
     public CommandOperator() {
         INSTANCE = this;
         //需自行编写指令执行方法
+    }
+
+    // 抖音监控命令处理
+    private Message handleDouyinMonitorCommand(String[] args, long group, long senderID) {
+        if (args.length < 2) {
+            return new PlainText("🎵 抖音监控功能\n" +
+                    "━━━━━━━━━━━━━━━━━━━━\n" +
+                    "📋 可用命令:\n" +
+                    "• /抖音监控 启动 - 启动监控服务\n" +
+                    "• /抖音监控 停止 - 停止监控服务\n" +
+                    "• /抖音状态 - 查看监控状态\n" +
+                    "• /抖音用户 - 查看监控用户列表\n" +
+                    "• /抖音添加 <用户链接> - 添加监控用户\n" +
+                    "• /抖音删除 <用户ID> - 删除监控用户\n" +
+                    "• /抖音重启 - 重启监控服务\n\n" +
+                    "💡 提示: 使用 /抖音 命令管理群组关注列表");
+        }
+
+        switch (args[1]) {
+            case "启动":
+            case "start":
+                return startDouyinMonitoring(group, senderID);
+            case "停止":
+            case "stop":
+                return stopDouyinMonitoring(group, senderID);
+            default:
+                return new PlainText("❌ 未知操作\n💡 可用操作: 启动、停止");
+        }
+    }
+
+    // 启动抖音监控服务
+    private Message startDouyinMonitoring(long group, long senderID) {
+        if (!Newboy.INSTANCE.getConfig().isAdmin(senderID)) {
+            return new PlainText("权限不足喵");
+        }
+
+        try {
+            DouyinMonitorService monitorService = DouyinMonitorService.getInstance();
+            if (monitorService.isRunning()) {
+                return new PlainText("✅ 抖音监控服务已在运行中");
+            }
+
+            monitorService.startMonitoring(10); // 默认10分钟检查间隔
+            return new PlainText("✅ 抖音监控服务已启动");
+        } catch (Exception e) {
+            return new PlainText("❌ 启动抖音监控服务失败: " + e.getMessage());
+        }
+    }
+
+    // 停止抖音监控服务
+    private Message stopDouyinMonitoring(long group, long senderID) {
+        if (!Newboy.INSTANCE.getConfig().isAdmin(senderID)) {
+            return new PlainText("权限不足喵");
+        }
+
+        try {
+            DouyinMonitorService monitorService = DouyinMonitorService.getInstance();
+            if (!monitorService.isRunning()) {
+                return new PlainText("⚠️ 抖音监控服务未运行");
+            }
+
+            monitorService.stopMonitoring();
+            return new PlainText("✅ 抖音监控服务已停止");
+        } catch (Exception e) {
+            return new PlainText("❌ 停止抖音监控服务失败: " + e.getMessage());
+        }
+    }
+
+    // 获取抖音监控服务状态
+    private Message getDouyinMonitoringStatus() {
+        try {
+            DouyinMonitorService monitorService = DouyinMonitorService.getInstance();
+            return new PlainText(monitorService.getStatus());
+        } catch (Exception e) {
+            return new PlainText("❌ 获取抖音监控服务状态失败: " + e.getMessage());
+        }
+    }
+
+    // 获取抖音监控用户列表
+    private Message getDouyinMonitoredUsersList() {
+        try {
+            DouyinMonitorService monitorService = DouyinMonitorService.getInstance();
+            return new PlainText(monitorService.getMonitoredUsersList());
+        } catch (Exception e) {
+            return new PlainText("❌ 获取抖音监控用户列表失败: " + e.getMessage());
+        }
+    }
+
+    // 添加抖音监控用户
+    private Message handleDouyinAddCommand(String[] args, long group, long senderID) {
+        if (!Newboy.INSTANCE.getConfig().isAdmin(senderID)) {
+            return new PlainText("权限不足喵");
+        }
+
+        if (args.length < 2) {
+            return new PlainText("❌ 请提供用户链接或用户ID\n💡 使用方法: /抖音添加 <用户链接或用户ID>");
+        }
+
+        String userInput = args[1];
+        try {
+            DouyinMonitorService monitorService = DouyinMonitorService.getInstance();
+            
+            // 提取用户ID
+            String secUserId;
+            if (userInput.contains("douyin.com")) {
+                // 从分享链接提取用户ID的逻辑需要实现
+                return new PlainText("❌ 暂不支持从分享链接提取用户ID，请直接使用用户ID");
+            } else {
+                secUserId = userInput;
+            }
+
+            boolean success = monitorService.addMonitorUser(secUserId);
+            if (success) {
+                String nickname = monitorService.getMonitoredUserNickname(secUserId);
+                return new PlainText("✅ 成功添加抖音监控用户\n👤 用户: " + (nickname != null ? nickname : "未知用户") + "\n🆔 用户ID: " + secUserId);
+            } else {
+                return new PlainText("❌ 添加失败，用户可能已在监控列表中");
+            }
+        } catch (Exception e) {
+            return new PlainText("❌ 添加抖音监控用户失败: " + e.getMessage());
+        }
+    }
+
+    // 删除抖音监控用户
+    private Message handleDouyinRemoveCommand(String[] args, long group, long senderID) {
+        if (!Newboy.INSTANCE.getConfig().isAdmin(senderID)) {
+            return new PlainText("权限不足喵");
+        }
+
+        if (args.length < 2) {
+            return new PlainText("❌ 请提供用户ID\n💡 使用方法: /抖音删除 <用户ID>");
+        }
+
+        String secUserId = args[1];
+        try {
+            DouyinMonitorService monitorService = DouyinMonitorService.getInstance();
+            boolean success = monitorService.removeMonitorUser(secUserId);
+            if (success) {
+                return new PlainText("✅ 成功删除抖音监控用户\n🆔 用户ID: " + secUserId);
+            } else {
+                return new PlainText("❌ 删除失败，用户不在监控列表中");
+            }
+        } catch (Exception e) {
+            return new PlainText("❌ 删除抖音监控用户失败: " + e.getMessage());
+        }
+    }
+
+    // 重启抖音监控服务
+    private Message handleDouyinRestartCommand(long group, long senderID) {
+        if (!Newboy.INSTANCE.getConfig().isAdmin(senderID)) {
+            return new PlainText("权限不足喵");
+        }
+
+        try {
+            DouyinMonitorService monitorService = DouyinMonitorService.getInstance();
+            monitorService.stopMonitoring();
+            Thread.sleep(1000); // 等待1秒
+            monitorService.startMonitoring(10); // 默认10分钟检查间隔
+            return new PlainText("✅ 抖音监控服务已重启");
+        } catch (Exception e) {
+            return new PlainText("❌ 重启抖音监控服务失败: " + e.getMessage());
+        }
     }
 
     public Message executePublic(String[] args, Group g, long senderID) {
@@ -513,6 +677,98 @@ public class CommandOperator extends AsyncWebHandlerBase {
                 String result = AsyncOnlineStatusMonitor.INSTANCE.removeSubscribedMember(group, memberName);
                 return new PlainText(result);
             }
+            case "/抖音":
+            case "/douyin":
+                switch (args.length) {
+                    case 2:
+                        if (args[1].equals("关注列表")) {
+                            StringBuilder out = new StringBuilder();
+                            out.append("📱 抖音用户关注列表\n");
+            
+                            if (!Newboy.INSTANCE.getProperties().douyin_user_subscribe.containsKey(group)) {
+                                out.append("暂无关注的用户");
+                                return new PlainText(out.toString());
+                            }
+
+                            int count = 1;
+                            for (String secUserId : Newboy.INSTANCE.getProperties().douyin_user_subscribe.get(group)) {
+                                // 尝试从监控服务获取用户昵称
+                                String name = "抖音用户";
+                                try {
+                                    DouyinMonitorService monitorService = DouyinMonitorService.getInstance();
+                                    if (monitorService != null) {
+                                        String nickname = monitorService.getMonitoredUserNickname(secUserId);
+                                        if (nickname != null && !nickname.isEmpty() && !nickname.equals("未知用户")) {
+                                            name = nickname;
+                                        }
+                                    }
+                                } catch (Exception e) {
+                                    // 如果获取失败，使用默认名称
+                                }
+                                
+                                out.append(count).append(". ").append(name).append("\n");
+                                out.append("   用户ID：").append(secUserId).append("\n");
+                                
+                                if (count < Newboy.INSTANCE.getProperties().douyin_user_subscribe.get(group).size()) {
+                                    out.append("\n");
+                                }
+                                count++;
+                            }
+                            return new PlainText(out.toString());
+                        }
+                    case 3:
+                        switch (args[1]) {
+                            case "关注": {
+                                if (!Newboy.INSTANCE.getConfig().isAdmin(g, senderID))
+                                    return new PlainText("权限不足喵");
+
+                                String secUserId = args[2];
+                                // 简化处理，直接使用输入的ID
+                                if (secUserId.contains("douyin.com")) {
+                                    return new PlainText("请使用抖音监控命令处理分享链接");
+                                }
+                                
+                                // 添加到配置
+                                if (Newboy.INSTANCE.getConfig().addDouyinUserSubscribe(secUserId, group)) {
+                                    // 尝试添加到监控服务并获取用户昵称
+                                    String name = "抖音用户";
+                                    try {
+                                        DouyinMonitorService monitorService = DouyinMonitorService.getInstance();
+                                        if (monitorService != null) {
+                                            // 添加到监控服务
+                                            monitorService.addMonitorUser(secUserId);
+                                            // 获取用户昵称
+                                            String nickname = monitorService.getMonitoredUserNickname(secUserId);
+                                            if (nickname != null && !nickname.isEmpty() && !nickname.equals("未知用户")) {
+                                                name = nickname;
+                                            }
+                                        }
+                                    } catch (Exception e) {
+                                        // 如果获取失败，使用默认名称
+                                    }
+                                    return new PlainText("本群新增抖音关注：" + name + "\n用户ID：" + secUserId);
+                                } else {
+                                    return new PlainText("本群已经关注过这个用户了");
+                                }
+                            }
+                            case "取消关注": {
+                                if (!Newboy.INSTANCE.getConfig().isAdmin(g, senderID))
+                                    return new PlainText("权限不足喵");
+
+                                if (!Newboy.INSTANCE.getProperties().douyin_user_subscribe.containsKey(group))
+                                    return new PlainText("本群暂无抖音关注，先添加一个吧~");
+
+                                String secUserId = args[2];
+                                if (Newboy.INSTANCE.getConfig().rmDouyinUserSubscribe(secUserId, group))
+                                    return new PlainText("本群取消关注抖音用户：" + secUserId);
+                                else
+                                    return new PlainText("本群没有关注此用户捏~");
+                            }
+                        }
+                    default:
+                        return getCategorizedHelp(-1);
+                }
+
             case "/监控列表":
             case "/monitor_list": {
                 String result = AsyncOnlineStatusMonitor.INSTANCE.getSubscribedMembers(group);
@@ -540,6 +796,24 @@ public class CommandOperator extends AsyncWebHandlerBase {
                     return new PlainText("❌ 查询失败：" + e.getMessage());
                 }
             }
+            case "/抖音监控":
+            case "/douyin_monitor":
+                return handleDouyinMonitorCommand(args, group, senderID);
+            case "/抖音状态":
+            case "/douyin_status":
+                return getDouyinMonitoringStatus();
+            case "/抖音用户":
+            case "/douyin_users":
+                return getDouyinMonitoredUsersList();
+            case "/抖音添加":
+            case "/douyin_add":
+                return handleDouyinAddCommand(args, group, senderID);
+            case "/抖音删除":
+            case "/douyin_remove":
+                return handleDouyinRemoveCommand(args, group, senderID);
+            case "/抖音重启":
+            case "/douyin_restart":
+                return handleDouyinRestartCommand(group, senderID);
             case "/帮助":
             case "/help":
             case "/?":
@@ -566,19 +840,7 @@ public class CommandOperator extends AsyncWebHandlerBase {
                 }
                 break;
             }
-            // 进群欢迎功能已移除
-            /*
-            case "/欢迎": {
-                try {
-                    long groupId = Long.valueOf(args[1]);
-                    Message test = testPermission(groupId, event);
-                    if (test != null)
-                        return test;
-                } catch (Exception e) {
-                    return getCategorizedHelp(event.getSender().getId());
-                }
-            }
-            */
+
         }
 
         switch (args[0]) {
@@ -609,9 +871,11 @@ public class CommandOperator extends AsyncWebHandlerBase {
                 return handlePrivateWeiboCommand(args, event);
             }
             case "/超话":
-            case "/supertopic": {
+            case "/supertopic":
                 return handlePrivateSuperTopicCommand(args, event);
-            }
+            case "/抖音":
+            case "/douyin":
+                return handlePrivateDouyinCommand(args, event);
 
             case "/微店":
             case "/weidian": {
@@ -738,8 +1002,6 @@ public class CommandOperator extends AsyncWebHandlerBase {
                                         return new PlainText("❌ 微店Cookie已失效\n🔧 请重新设置Cookie：\n`/微店 " + groupId + " cookie <新Cookie>`");
                                     }
                                     
-                                    // Newboy.INSTANCE.getLogger().info("[全部发货] 开始执行全部发货命令，群号: " + groupId);
-                        // Newboy.INSTANCE.getLogger().info("[全部发货] Cookie自动发货状态: " + cookie.autoDeliver);
                                     
                                     boolean pre = cookie.autoDeliver;
                                     cookie.autoDeliver = true;
@@ -957,25 +1219,7 @@ public class CommandOperator extends AsyncWebHandlerBase {
                     return new PlainText("权限不足喵");
                 }
             }
-            // 进群欢迎功能已移除
-            /*
-            case "/欢迎": {
-                long groupId;
-                try {
-                    groupId = Long.valueOf(args[1]);
-                } catch (Exception e) {
-                    return getCategorizedHelp(event.getSender().getId());
-                }
 
-                if (!args[2].equals("取消")) {
-                    Newboy.INSTANCE.getConfig().setWelcome(args[2], groupId);
-                    return new PlainText("设置成功");
-                } else {
-                    Newboy.INSTANCE.getConfig().closeWelcome(groupId);
-                    return new PlainText("取消成功");
-                }
-            }
-            */
         }
         return null;
     }
@@ -1115,100 +1359,48 @@ public class CommandOperator extends AsyncWebHandlerBase {
 
     // 分类帮助信息
     public Message getCategorizedHelp(long contactId) {
-        StringBuilder help = new StringBuilder();
-        help.append("🤖 Newboy 帮助菜单\n");
-        help.append("━━━━━━━━━━━━━━━━━━━━\n\n");
-        
-        help.append("📱 口袋48功能\n");
-        help.append("群聊命令：\n");
-        help.append("  /口袋 搜索 <关键词> - 搜索成员/队伍\n");
-        help.append("  /口袋 查询 <用户ID> - 查询用户信息\n");
-        help.append("  /口袋 查询2 <服务器ID> - 查询服务器房间信息\n");
-        help.append("  /口袋 关注 <房间ID> - 关注房间\n");
-        help.append("  /口袋 取消关注 <房间ID> - 取消关注\n");
-        help.append("  /口袋 关注列表 - 查看关注列表\n");
-        help.append("  /口袋 连接 <房间ID> <服务器ID> - 连接加密房间\n");
-        help.append("隐藏命令：\n");
-        help.append("  /口袋 查直播 - 查看当前直播列表\n");
-        help.append("  /口袋 查录播 - 查看当前录播列表\n");
-        help.append("  /口袋 余额 - 查看账户余额（管理员）\n");
-        help.append("私聊命令：\n");
-        help.append("  /口袋 关注 <房间ID> <群号> - 为指定群添加关注\n");
-        help.append("  /口袋 取消关注 <房间ID> <群号> - 为指定群取消关注\n");
-        help.append("  /口袋 关注列表 - 查看所有群的关注情况\n");
-        help.append("  /口袋 搜索 <关键词> - 搜索成员/队伍\n");
-        help.append("  /口袋 查询 <用户ID> - 查询用户详细信息\n\n");
-        
-        help.append("🐦 微博功能\n");
-        help.append("群聊命令：\n");
-        help.append("  /微博 关注 <用户UID> - 关注微博用户\n");
-        help.append("  /微博 取消关注 <用户UID> - 取消关注\n");
-        help.append("  /微博 关注列表 - 查看关注列表\n");
-        help.append("私聊命令：\n");
-        help.append("  /微博 关注 <用户UID> <群号> - 为指定群添加关注\n");
-        help.append("  /微博 取消关注 <用户UID> <群号> - 为指定群取消关注\n");
-        help.append("  /微博 关注列表 - 查看所有群的关注情况\n\n");
-        
-        help.append("🔥 超话功能\n");
-        help.append("群聊命令：\n");
-        help.append("  /超话 关注 <超话ID> - 关注超话\n");
-        help.append("  /超话 取消关注 <超话ID> - 取消关注\n");
-        help.append("  /超话 关注列表 - 查看关注列表\n");
-        help.append("私聊命令：\n");
-        help.append("  /超话 关注 <超话ID> <群号> - 为指定群添加关注\n");
-        help.append("  /超话 取消关注 <超话ID> <群号> - 为指定群取消关注\n");
-        help.append("  /超话 关注列表 - 查看所有群的关注情况\n\n");
-        
-        help.append("🛍️ 微店功能\n");
-        help.append("私聊命令：\n");
-        help.append("  /微店 <群号> cookie <Cookie> - 设置微店Cookie\n");
-        help.append("  /微店 <群号> 全部 - 查看商品列表和状态\n");
-        help.append("  /微店 <群号> 关闭 - 关闭微店播报\n");
-        help.append("  /微店 <群号> 自动发货 - 切换自动发货状态\n");
-        help.append("  /微店 <群号> 群播报 - 切换群播报状态\n");
-        help.append("  /微店 <群号> 全部发货 - 手动发货所有订单\n");
-        help.append("  /微店 <群号> # <商品ID> - 切换商品特殊链状态\n");
-        help.append("  /微店 <群号> 屏蔽 <商品ID> - 切换商品屏蔽状态\n");
-        help.append("  /微店 <群号> 查 <商品ID> - 查看商品详情和购买统计\n");
-        help.append("  /微店 <群号> 状态 - 检查微店Cookie状态\n");
-        help.append("  /微店 <群号> 检查 - 检查商品数量\n\n");
-        
-        help.append("👥 在线状态监控（异步系统）\n");
-        help.append("群聊命令（无空格）：\n");
-        help.append("  /newboy monitor - 查看监控帮助\n");
-        help.append("  /在线 <成员名> - 查询成员在线状态\n");
-        help.append("  /online <成员名> - 查询成员在线状态（英文）\n");
-        help.append("  /监控添加 <成员名> - 添加成员到异步监控\n");
-        help.append("  /监控移除 <成员名> - 从异步监控移除成员\n");
-        help.append("  /监控列表 - 查看当前群组监控列表\n");
-        help.append("  /监控开关 - 查看异步监控状态\n");
-        help.append("私聊命令（有空格）：\n");
-        help.append("  /监控 - 查看异步监控系统状态\n");
-        help.append("  /监控 添加 <成员名> <群号> - 为指定群添加成员监控\n");
-        help.append("  /监控 移除 <成员名> <群号> - 为指定群移除成员监控\n");
-        help.append("  /监控 列表 - 查看所有群的监控情况\n");
-        help.append("  /在线 <成员名> - 查询在线状态\n\n");
-        
-        help.append("🔧 管理功能\n");
-        help.append("私聊命令（管理员）：\n");
-        help.append("  /清理 - 清理失效群配置（超级管理员）\n");
-        help.append("  /帮助 或 /help - 显示帮助信息\n");
-        help.append("  /? - 显示帮助信息\n\n");
-        
-        help.append("🌐 命令别名\n");
-        help.append("支持的英文命令：\n");
-        help.append("  /pocket - 等同于 /口袋\n");
-        help.append("  /weibo - 等同于 /微博\n");
-        help.append("  /supertopic - 等同于 /超话\n");
-        help.append("  /weidian - 等同于 /微店\n\n");
-        
-        help.append("💡 提示：\n");
-        help.append("• 私聊命令可以无感添加配置，不打扰群组\n");
-        help.append("• 管理员可以通过私聊为任意群配置功能\n");
-        help.append("• 支持中英文命令，方便不同用户使用\n");
-        help.append("• 使用 /帮助 随时查看此帮助信息");
-        
-        return new PlainText(help.toString());
+        return new PlainText("📋 Newboy 机器人帮助\n" +
+                "━━━━━━━━━━━━━━━━━━━━\n" +
+                "🎯 可用命令:\n\n" +
+                "📱 /口袋 - 口袋48相关功能\n" +
+                "  • /口袋 关注列表 - 查看订阅列表\n" +
+                "  • /口袋 搜索 <关键词> - 搜索成员/团体\n" +
+                "  • /口袋 查询 <用户ID> - 查询用户信息\n" +
+                "  • /口袋 关注 <房间ID> - 添加订阅\n" +
+                "  • /口袋 取消关注 <房间ID> - 取消订阅\n\n" +
+                "📱 /微博 - 微博监控功能\n" +
+                "  • /微博 关注列表 - 查看关注的微博用户\n" +
+                "  • /微博 关注 <用户ID> - 关注微博用户\n" +
+                "  • /微博 取消关注 <用户ID> - 取消关注\n\n" +
+                "🎭 /超话 - 微博超话功能\n" +
+                "  • /超话 关注列表 - 查看关注的超话\n" +
+                "  • /超话 关注 <超话ID> - 关注超话\n" +
+                "  • /超话 取消关注 <超话ID> - 取消关注\n\n" +
+                "🛒 /微店 - 微店管理功能\n" +
+                "  • /微店 <群号> 全部 - 查看所有商品\n" +
+                "  • /微店 <群号> # <商品ID> - 查看商品详情\n" +
+                "  • /微店 <群号> 屏蔽 <商品ID> - 屏蔽商品\n\n" +
+                "🎵 /抖音 - 抖音用户关注功能\n" +
+                "  • /抖音 关注列表 - 查看关注的抖音用户\n" +
+                "  • /抖音 关注 <用户ID> - 关注抖音用户\n" +
+                "  • /抖音 取消关注 <用户ID> - 取消关注\n\n" +
+                "🎵 /抖音监控 - 抖音监控服务管理\n" +
+                "  • /抖音监控 启动 - 启动监控服务\n" +
+                "  • /抖音监控 停止 - 停止监控服务\n" +
+                "  • /抖音状态 - 查看监控状态\n" +
+                "  • /抖音用户 - 查看监控用户列表\n" +
+                "  • /抖音添加 <用户链接> - 添加监控用户\n" +
+                "  • /抖音删除 <用户ID> - 删除监控用户\n" +
+                "  • /抖音重启 - 重启监控服务\n\n" +
+                "📊 /监控 - 在线状态监控\n" +
+                "  • /监控列表 - 查看监控列表\n" +
+                "  • /监控开关 - 切换监控状态\n" +
+                "  • /监控查询 <成员名> - 查询成员状态\n\n" +
+                "❓ /帮助 - 显示此帮助信息\n\n" +
+                "💡 提示:\n" +
+                "  • 使用 !newboy help 查看系统级帮助\n" +
+                "  • 大部分命令支持中英文别名\n" +
+                "  • 管理员权限命令需要相应权限");
     }
 
     // 获取私聊口袋48订阅列表
@@ -1662,7 +1854,112 @@ public class CommandOperator extends AsyncWebHandlerBase {
         return null;
     }
 
+    // 私聊抖音订阅管理
+    private Message handlePrivateDouyinCommand(String[] args, UserMessageEvent event) {
+        if (args.length < 2) {
+            return new PlainText("❌ 参数不足\n💡 使用方法：/抖音 <操作> [参数]\n📋 可用操作：关注、取消关注、关注列表");
+        }
 
+        switch (args[1]) {
+            case "关注列表": {
+                return getPrivateDouyinSubscribeList(event.getSender().getId());
+            }
+            case "关注": {
+                if (args.length < 4) {
+                    return new PlainText("❌ 参数不足\n💡 使用方法：/抖音 关注 <用户ID或分享链接> <群号>\n📝 示例：/抖音 关注 MS4wLjABAAAA... 987654321");
+                }
+                return addPrivateDouyinSubscribe(args[2], args[3], event);
+            }
+            case "取消关注": {
+                if (args.length < 4) {
+                    return new PlainText("❌ 参数不足\n💡 使用方法：/抖音 取消关注 <用户ID> <群号>\n📝 示例：/抖音 取消关注 MS4wLjABAAAA... 987654321");
+                }
+                return removePrivateDouyinSubscribe(args[2], args[3], event);
+            }
+            default:
+                return new PlainText("❌ 未知操作\n📋 可用操作：关注、取消关注、关注列表");
+        }
+    }
+
+    // 获取私聊抖音订阅列表
+    private Message getPrivateDouyinSubscribeList(long userId) {
+        StringBuilder result = new StringBuilder();
+        result.append("📱 抖音订阅列表\n");
+        result.append("━━━━━━━━━━━━━━━━━━━━\n");
+        
+        Properties properties = Newboy.INSTANCE.getProperties();
+        boolean hasSubscription = false;
+        
+        for (long groupId : properties.douyin_user_subscribe.keySet()) {
+            if (!properties.douyin_user_subscribe.get(groupId).isEmpty()) {
+                hasSubscription = true;
+                result.append("\n🏠 群组：").append(groupId).append("\n");
+                
+                int count = 1;
+                for (String secUserId : properties.douyin_user_subscribe.get(groupId)) {
+                    result.append("  ").append(count).append(". 用户ID: ").append(secUserId).append("\n");
+                    count++;
+                }
+            }
+        }
+        
+        if (!hasSubscription) {
+            result.append("\n❌ 暂无订阅\n");
+            result.append("💡 使用 /抖音 关注 <用户ID> <群号> 添加订阅");
+        }
+        
+        return new PlainText(result.toString());
+    }
+
+    // 添加私聊抖音订阅
+    private Message addPrivateDouyinSubscribe(String secUserIdStr, String groupIdStr, UserMessageEvent event) {
+        try {
+            long groupId = Long.parseLong(groupIdStr);
+            
+            // 权限检查
+            Message permissionTest = testPermission(groupId, event);
+            if (permissionTest != null) {
+                return permissionTest;
+            }
+            
+            String secUserId = secUserIdStr;
+            // 简化处理，直接使用输入的ID
+            if (secUserId.contains("douyin.com")) {
+                return new PlainText("❌ 请使用抖音监控命令处理分享链接");
+            }
+            
+            boolean success = Newboy.INSTANCE.getConfig().addDouyinUserSubscribe(secUserId, groupId);
+            if (success) {
+                return new PlainText(String.format("✅ 成功为群 %d 添加抖音订阅\n👤 用户ID：%s", groupId, secUserId));
+            } else {
+                return new PlainText(String.format("❌ 群 %d 已订阅用户 %s", groupId, secUserId));
+            }
+        } catch (NumberFormatException e) {
+            return new PlainText("❌ 群号格式错误，必须是数字");
+        }
+    }
+
+    // 移除私聊抖音订阅
+    private Message removePrivateDouyinSubscribe(String secUserId, String groupIdStr, UserMessageEvent event) {
+        try {
+            long groupId = Long.parseLong(groupIdStr);
+            
+            // 权限检查
+            Message permissionTest = testPermission(groupId, event);
+            if (permissionTest != null) {
+                return permissionTest;
+            }
+            
+            boolean success = Newboy.INSTANCE.getConfig().rmDouyinUserSubscribe(secUserId, groupId);
+            if (success) {
+                return new PlainText(String.format("✅ 成功为群 %d 移除抖音订阅\n👤 用户ID：%s", groupId, secUserId));
+            } else {
+                return new PlainText(String.format("❌ 群 %d 未订阅用户 %s", groupId, secUserId));
+            }
+        } catch (NumberFormatException e) {
+            return new PlainText("❌ 群号格式错误，必须是数字");
+        }
+    }
 
     /* 函数工具 */
     private boolean testRoomIDWithServerID(long room_id, long server_id) {

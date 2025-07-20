@@ -38,6 +38,17 @@ public class Properties {
     public String weidian_pattern_item;
     public HashMap<Long, WeidianCookie> weidian_cookie = new HashMap<>();
 
+    //抖音
+    public String douyin_pattern;
+    public String douyin_cookie;
+    public String douyin_user_agent;
+    public String douyin_referer;
+    public int douyin_api_timeout;
+    public int douyin_max_retries;
+    public HashMap<Long, List<String>> douyin_user_subscribe = new HashMap<>();
+
+
+
     //在线状态监控配置已迁移到异步监控系统
     
     // 异步监控配置

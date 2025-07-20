@@ -56,6 +56,8 @@ public class ConfigOperator {
             // 设置定时任务默认配置 - 优化为5秒间隔，减少系统负载
             tempSetting.setByGroup("schedule", "pocket48", "*/5 * * * * *");
             tempSetting.setByGroup("schedule", "weibo", "*/5 * * * *");
+            tempSetting.setByGroup("schedule", "douyin", "*/10 * * * *");
+    
             // onlineStatus定时任务已迁移到异步监控系统
             tempSetting.setByGroup("schedule_order", "weidian", "*/2 * * * *");
             tempSetting.setByGroup("schedule_item", "weidian", "*/5 * * * *");
@@ -83,7 +85,16 @@ public class ConfigOperator {
             // 设置订阅配置默认值
             tempSetting.setByGroup("subscribe", "pocket48", "[]");
             tempSetting.setByGroup("subscribe", "weibo", "[]");
+            tempSetting.setByGroup("subscribe", "douyin", "[]");
+    
             // onlineStatus订阅已迁移到异步监控系统
+            
+            // 设置抖音配置默认值
+            tempSetting.setByGroup("douyin", "cookie", "");
+            tempSetting.setByGroup("douyin", "user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+            tempSetting.setByGroup("douyin", "referer", "https://www.douyin.com/");
+            tempSetting.setByGroup("douyin", "api_timeout", "30000");
+            tempSetting.setByGroup("douyin", "max_retries", "3");
             
             // 设置商店配置默认值
             tempSetting.setByGroup("shops", "weidian", "[]");
@@ -120,6 +131,8 @@ public class ConfigOperator {
         properties.pocket48_pattern = setting.getStr("schedule", "pocket48", "* * * * *");
 
         properties.weibo_pattern = setting.getStr("schedule", "weibo", "*/5 * * * *");
+        properties.douyin_pattern = setting.getStr("schedule", "douyin", "*/10 * * * *");
+
         properties.weidian_pattern_order = setting.getStr("schedule_order", "weidian", "*/2 * * * *");
         properties.weidian_pattern_item = setting.getStr("schedule_item", "weidian", "*/5 * * * *");
         // 在线状态监控配置已迁移到异步监控系统
@@ -270,6 +283,53 @@ public class ConfigOperator {
             setting.setByGroup("shops", "weidian", "[]");
             safeStoreConfig("修复微店配置错误");
         }
+        
+        //抖音 - 添加JSON格式验证
+        String douyinJson = setting.getByGroup("subscribe", "douyin");
+        Newboy.INSTANCE.getLogger().info("读取到的抖音订阅配置: " + douyinJson);
+        if (douyinJson == null || douyinJson.trim().isEmpty() || 
+            !douyinJson.trim().startsWith("[") || !douyinJson.trim().endsWith("]")) {
+            Newboy.INSTANCE.getLogger().warning("抖音订阅配置格式无效，重置为空数组: " + douyinJson);
+            douyinJson = "[]";
+            setting.setByGroup("subscribe", "douyin", douyinJson);
+            safeStoreConfig("修复抖音订阅配置格式");
+        }
+        
+        try {
+            Object[] douyinArray = JSONUtil.parseArray(douyinJson).toArray();
+            for (Object a : douyinArray) {
+                JSONObject subs = (a instanceof JSONObject) ? (JSONObject) a : JSONUtil.parseObj(a);
+
+                long g = subs.getLong("qqGroup");
+                @SuppressWarnings("unchecked")
+                List<String> userSubs = (List<String>) subs.getBeanList("userSubs", String.class);
+                properties.douyin_user_subscribe.put(g, userSubs == null ? new ArrayList<>() : userSubs);
+            }
+        } catch (Exception e) {
+            Newboy.INSTANCE.getLogger().error("解析抖音订阅配置时发生错误: " + e.getMessage());
+            setting.setByGroup("subscribe", "douyin", "[]");
+            safeStoreConfig("修复抖音订阅配置错误");
+        }
+        
+
+        
+        // 抖音配置
+        properties.douyin_cookie = setting.getStr("douyin", "cookie", "");
+        properties.douyin_user_agent = setting.getStr("douyin", "user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+        properties.douyin_referer = setting.getStr("douyin", "referer", "https://www.douyin.com/");
+        properties.douyin_api_timeout = setting.getInt("douyin", "api_timeout", 30000);
+        properties.douyin_max_retries = setting.getInt("douyin", "max_retries", 3);
+        
+
+        
+        // 配置验证日志
+        if (!properties.douyin_cookie.isEmpty()) {
+            Newboy.INSTANCE.getLogger().info("抖音 Cookie 配置已读取，长度: " + properties.douyin_cookie.length());
+        } else {
+            Newboy.INSTANCE.getLogger().warning("抖音未配置Cookie，可能影响数据获取准确性");
+        }
+        
+
         
         // 加载异步监控订阅配置
         loadAsyncMonitorSubscribeConfig();
@@ -521,6 +581,45 @@ public class ConfigOperator {
         setting.setByGroup("shops", "weidian", (a.length() > 1 ? a.substring(0, a.length() - 1) : a) + "]");
         safeStoreConfig("微店配置");
     }
+
+    // ========== 抖音订阅管理方法 ==========
+    
+    public boolean addDouyinUserSubscribe(String userId, long group) {
+        if (!properties.douyin_user_subscribe.containsKey(group)) {
+            properties.douyin_user_subscribe.put(group, new ArrayList<>());
+        }
+
+        if (properties.douyin_user_subscribe.get(group).contains(userId))
+            return false;
+
+        properties.douyin_user_subscribe.get(group).add(userId);
+        saveDouyinConfig();
+        return true;
+    }
+
+    public boolean rmDouyinUserSubscribe(String userId, long group) {
+        if (!properties.douyin_user_subscribe.containsKey(group) || 
+            !properties.douyin_user_subscribe.get(group).contains(userId))
+            return false;
+
+        properties.douyin_user_subscribe.get(group).remove(userId);
+        saveDouyinConfig();
+        return true;
+    }
+
+    public void saveDouyinConfig() {
+        String a = "[";
+        for (long group : properties.douyin_user_subscribe.keySet()) {
+            JSONObject object = new JSONObject();
+            object.set("qqGroup", group);
+            object.set("userSubs", properties.douyin_user_subscribe.get(group));
+            a += object + ",";
+        }
+        setting.setByGroup("subscribe", "douyin", (a.length() > 1 ? a.substring(0, a.length() - 1) : a) + "]");
+        safeStoreConfig("抖音订阅配置");
+    }
+
+
 
     public boolean isAdmin(Group group, long qqID) {
         for (String g : properties.secureGroup) {
