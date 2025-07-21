@@ -159,7 +159,7 @@ public class Xox48Handler extends AsyncWebHandlerBase {
                     // 内存使用率过高，强制清理并建议GC
                     resetCache();
                     System.gc();
-                    System.out.println(String.format("[Xox48Handler] 内存使用率过高(%.1f%%)，已执行强制清理", memoryUsage * 100));
+                    // 内存使用率过高，已执行强制清理
                 }
             }
             

@@ -174,7 +174,7 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
                     try {
                         // 指数退避重试策略
                         Thread.sleep(1000 * (long) Math.pow(2, i));
-                        System.out.println("[下载重试] 第 " + (i + 1) + " 次重试下载: " + url);
+                        // 下载重试
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                         throw new RuntimeException("下载重试被中断", ie);
@@ -195,7 +195,7 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
      * @throws IOException 当下载失败时抛出
      */
     private File downloadToTempFileInternal(String url, String fileExtension) throws IOException {
-        System.out.println("[下载开始] 正在下载资源到本地: " + url);
+        // 下载开始
         
         Pocket48ResourceCache cache = Pocket48ResourceCache.getInstance();
         
@@ -214,7 +214,7 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
             // 直接从流缓存文件
             File cachedFile = cache.cacheFromStream(url, body.byteStream(), fileExtension);
             if (cachedFile != null) {
-                System.out.println("[下载完成] 文件已缓存: " + cachedFile.getAbsolutePath());
+                // 下载完成
                 return cachedFile;
             } else {
                 throw new IOException("缓存文件失败: " + url);

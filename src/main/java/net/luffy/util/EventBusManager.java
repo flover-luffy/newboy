@@ -19,7 +19,7 @@ public class EventBusManager {
     static {
         int processors = Runtime.getRuntime().availableProcessors();
         PROCESSOR_THREADS = Math.max(1, Math.min(processors, 3));
-        System.out.println("[DEBUG] EventBusManager - 可用处理器数: " + processors + ", PROCESSOR_THREADS: " + PROCESSOR_THREADS);
+        // EventBusManager初始化完成
     }
     
     private static final EventBusManager INSTANCE = new EventBusManager();

@@ -170,8 +170,6 @@ public class Pocket48Sender extends Sender {
                 File audioFile = null;
                 
                 try {
-                    System.out.println("[音频处理] 开始处理音频: " + audioUrl);
-                    
                     // 智能获取音频文件（优先使用缓存）
                     String audioExt = message.getExt() != null && !message.getExt().isEmpty() ? "." + message.getExt() : ".amr";
                     audioFile = resourceOptimizer.getResourceSmart(audioUrl);
@@ -185,8 +183,6 @@ public class Pocket48Sender extends Sender {
                         throw new RuntimeException("音频文件获取失败");
                     }
                     
-                    System.out.println("[音频处理] 音频下载完成: " + audioFile.getAbsolutePath());
-                    
                     // 读取文件头进行格式检测
                     byte[] header = new byte[16];
                     try (InputStream fileStream = java.nio.file.Files.newInputStream(audioFile.toPath())) {
@@ -196,14 +192,10 @@ public class Pocket48Sender extends Sender {
                             String format = net.luffy.util.AudioFormatDetector.detectFormat(header);
                             String compatibility = net.luffy.util.AudioFormatDetector.getCompatibilityDescription(format);
                             
-                            // 记录音频格式信息
-                            System.out.println("[音频格式检测] URL: " + audioUrl);
-                            System.out.println("[音频格式检测] 格式: " + format);
-                            System.out.println("[音频格式检测] 兼容性: " + compatibility);
-                            System.out.println("[音频格式检测] 文件头: " + net.luffy.util.AudioFormatDetector.bytesToHex(header, bytesRead));
+                            // 记录音频格式信息（仅在调试时使用）
                             
                             if (!net.luffy.util.AudioFormatDetector.isQQCompatible(format)) {
-                                System.out.println("[音频转换] 检测到不兼容格式" + format + "，尝试转换为AMR格式");
+                                // 检测到不兼容格式，尝试转换为AMR格式
                                 // 尝试转换音频格式
                                 try (InputStream audioInputStream = java.nio.file.Files.newInputStream(audioFile.toPath());
                                      BufferedInputStream bufferedAudioStream = new BufferedInputStream(audioInputStream)) {
@@ -223,7 +215,7 @@ public class Pocket48Sender extends Sender {
                                         // 删除原文件，使用转换后的文件
                                         audioFile.delete();
                                         audioFile = convertedFile;
-                                        System.out.println("[音频转换] 音频格式转换完成: " + audioFile.getAbsolutePath());
+                                        // 音频格式转换完成
                                     } else {
                                         System.err.println("[音频转换] 音频格式转换失败，使用原始音频");
                                     }
@@ -237,7 +229,7 @@ public class Pocket48Sender extends Sender {
                     // 上传音频
                     try (ExternalResource audioResource = ExternalResource.create(audioFile)) {
                         Audio audio = group.uploadAudio(audioResource);
-                        System.out.println("[音频处理] 音频上传成功");
+                        // 音频上传成功
                         String audioContent = "【" + n + "】: 发送了一条语音\n查看链接: " + (audioUrl != null ? audioUrl : "[链接获取失败]") + "\n频道：" + r + "\n时间: " + timeStr;
                         return new Pocket48SenderMessage(false, null, new Message[]{new PlainText(audioContent), audio});
                     }
@@ -252,7 +244,7 @@ public class Pocket48Sender extends Sender {
                     if (audioFile != null && audioFile.exists()) {
                         try {
                             audioFile.delete();
-                            System.out.println("[清理] 删除临时音频文件: " + audioFile.getAbsolutePath());
+                            // 删除临时音频文件
                         } catch (Exception e) {
                             System.err.println("[警告] 删除临时音频文件失败: " + e.getMessage());
                         }
@@ -309,7 +301,7 @@ public class Pocket48Sender extends Sender {
                 File thumbnailFile = null;
                 
                 try {
-                    System.out.println("[视频处理] 开始处理视频: " + videoUrl);
+                    // 开始处理视频
                     
                     // 智能获取视频文件（优先使用缓存）
                     String videoExt = message.getExt() != null && !message.getExt().isEmpty() ? "." + message.getExt() : ".mp4";
@@ -324,7 +316,7 @@ public class Pocket48Sender extends Sender {
                         throw new RuntimeException("视频文件获取失败");
                     }
                     
-                    System.out.println("[视频处理] 视频下载完成: " + videoFile.getAbsolutePath());
+                    // 视频下载完成
                     
                     // 生成缩略图
                     try (InputStream videoInputStream = java.nio.file.Files.newInputStream(videoFile.toPath())) {
@@ -341,7 +333,7 @@ public class Pocket48Sender extends Sender {
                                 }
                             }
                             thumbnailFile.deleteOnExit();
-                            System.out.println("[视频处理] 缩略图生成完成: " + thumbnailFile.getAbsolutePath());
+                            // 缩略图生成完成
                         }
                     }
                     
@@ -352,7 +344,7 @@ public class Pocket48Sender extends Sender {
                             try (ExternalResource thumbnailResource = ExternalResource.create(thumbnailFile)) {
                                 ShortVideo video = group.uploadShortVideo(thumbnailResource, videoResource,
                                     message.getOwnerName() + "房间视频(" + DateUtil.format(new Date(message.getTime()), "yyyy-MM-dd HH-mm-ss") + ")." + message.getExt());
-                                System.out.println("[视频处理] 视频上传成功");
+                                // 视频上传成功
                                 
                                 String videoContent = "【" + n + "】: 发送了一个视频\n查看链接: " + videoUrl + "\n频道：" + r + "\n时间: " + timeStr;
                                 return new Pocket48SenderMessage(false, null, new Message[]{new PlainText(videoContent), video});
@@ -364,7 +356,7 @@ public class Pocket48Sender extends Sender {
                                 
                                 ShortVideo video = group.uploadShortVideo(thumbnailResource, videoResource,
                                     message.getOwnerName() + "房间视频(" + DateUtil.format(new Date(message.getTime()), "yyyy-MM-dd HH-mm-ss") + ")." + message.getExt());
-                                System.out.println("[视频处理] 视频上传成功");
+                                // 视频上传成功
                                 
                                 String videoContent = "【" + n + "】: 发送了一个视频\n查看链接: " + videoUrl + "\n频道：" + r + "\n时间: " + timeStr;
                                 return new Pocket48SenderMessage(false, null, new Message[]{new PlainText(videoContent), video});
@@ -382,7 +374,7 @@ public class Pocket48Sender extends Sender {
                     if (videoFile != null && videoFile.exists()) {
                         try {
                             videoFile.delete();
-                            System.out.println("[清理] 删除临时视频文件: " + videoFile.getAbsolutePath());
+                            // 删除临时视频文件
                         } catch (Exception e) {
                             System.err.println("[警告] 删除临时视频文件失败: " + e.getMessage());
                         }
@@ -390,7 +382,7 @@ public class Pocket48Sender extends Sender {
                     if (thumbnailFile != null && thumbnailFile.exists()) {
                         try {
                             thumbnailFile.delete();
-                            System.out.println("[清理] 删除临时缩略图文件: " + thumbnailFile.getAbsolutePath());
+                            // 删除临时缩略图文件
                         } catch (Exception e) {
                             System.err.println("[警告] 删除临时缩略图文件失败: " + e.getMessage());
                         }
@@ -410,12 +402,43 @@ public class Pocket48Sender extends Sender {
                 return new Pocket48SenderMessage(false, null,
                         new Message[]{new PlainText(replyContent)});
             case LIVEPUSH:
-                try (ExternalResource coverResource = ExternalResource.create(getRes(message.getLivePush().getCover()))) {
-                    Image cover = group.uploadImage(coverResource);
-                    String livePushContent = "【" + n + "】: 直播中快来~\n直播标题：" + message.getLivePush().getTitle();
-                    // 将封面图嵌入到消息链中，确保图片在文字消息内部
-                    MessageChain messageChain = new PlainText(livePushContent + "\n").plus(cover).plus("\n频道：" + r + "\n时间: " + timeStr);
-                    return new Pocket48SenderMessage(false, null, new Message[]{messageChain});
+                // 直播封面处理：跳过缓存创建，直接下载图片文件
+                File coverFile = null;
+                try {
+                    String coverUrl = message.getLivePush().getCover();
+                    
+                    // 直接下载封面图片，不使用缓存（避免.tmp扩展名导致的图片识别问题）
+                    coverFile = resourceHandler.downloadToTempFileWithRetry(coverUrl, ".jpg", 3);
+                    
+                    if (coverFile == null || !coverFile.exists()) {
+                        throw new RuntimeException("直播封面下载失败");
+                    }
+                    
+                    try (ExternalResource coverResource = ExternalResource.create(coverFile)) {
+                        Image cover = group.uploadImage(coverResource);
+                        String livePushContent = "【" + n + "】: 直播中快来~\n直播标题：" + message.getLivePush().getTitle();
+                        // 将封面图嵌入到消息链中，确保图片在文字消息内部
+                        MessageChain messageChain = new PlainText(livePushContent + "\n").plus(cover).plus("\n频道：" + r + "\n时间: " + timeStr);
+                        // 直播推送自动@全体成员（如果机器人有管理权限）
+                        MessageChain notificationChain = (MessageChain) toNotification(messageChain);
+                        return new Pocket48SenderMessage(false, null, new Message[]{notificationChain});
+                    }
+                } catch (Exception e) {
+                    System.err.println("[错误] 处理直播封面失败: " + e.getMessage());
+                    e.printStackTrace();
+                    String errorContent = "【" + n + "】: 直播封面处理失败(" + e.getMessage() + ")\n直播标题：" + message.getLivePush().getTitle() + "\n频道：" + r + "\n时间: " + timeStr;
+                    // 错误消息也尝试@全体成员
+                    Message errorNotification = toNotification(new PlainText(errorContent));
+                    return new Pocket48SenderMessage(false, null, new Message[]{errorNotification});
+                } finally {
+                    // 清理临时文件
+                    if (coverFile != null && coverFile.exists()) {
+                        try {
+                            coverFile.delete();
+                        } catch (Exception e) {
+                            System.err.println("[警告] 删除临时直播封面文件失败: " + e.getMessage());
+                        }
+                    }
                 }
             case FLIPCARD:
                 String flipContent = "【" + n + "】: 翻牌回复消息\n" + pocket.getAnswerNameTo(message.getAnswer().getAnswerID(), message.getAnswer().getQuestionID()) + ": " + message.getAnswer().getMsgTo() + "\n------\n" + message.getAnswer().getAnswer() + "\n频道：" + r + "\n时间: " + timeStr;
@@ -431,7 +454,7 @@ public class Pocket48Sender extends Sender {
                 File audioFile = null;
                 
                 try {
-                    System.out.println("[翻牌音频处理] 开始处理翻牌音频: " + flipcardAudioUrl);
+                    // 开始处理翻牌音频
                     
                     // 智能获取翻牌音频文件（优先使用缓存）
                     String audioExt = message.getAnswer().getExt() != null && !message.getAnswer().getExt().isEmpty() ? "." + message.getAnswer().getExt() : ".amr";
@@ -446,7 +469,7 @@ public class Pocket48Sender extends Sender {
                         throw new RuntimeException("翻牌音频文件获取失败");
                     }
                     
-                    System.out.println("[翻牌音频处理] 音频下载完成: " + audioFile.getAbsolutePath());
+                    // 翻牌音频下载完成
                     
                     // 读取文件头进行格式检测
                     byte[] header = new byte[16];
@@ -457,14 +480,10 @@ public class Pocket48Sender extends Sender {
                             String format = net.luffy.util.AudioFormatDetector.detectFormat(header);
                             String compatibility = net.luffy.util.AudioFormatDetector.getCompatibilityDescription(format);
                             
-                            // 记录音频格式信息
-                            System.out.println("[翻牌音频格式检测] URL: " + flipcardAudioUrl);
-                            System.out.println("[翻牌音频格式检测] 格式: " + format);
-                            System.out.println("[翻牌音频格式检测] 兼容性: " + compatibility);
-                            System.out.println("[翻牌音频格式检测] 文件头: " + net.luffy.util.AudioFormatDetector.bytesToHex(header, bytesRead));
+                            // 记录音频格式信息（仅在调试时使用）
                             
                             if (!net.luffy.util.AudioFormatDetector.isQQCompatible(format)) {
-                                System.out.println("[翻牌音频转换] 检测到不兼容格式" + format + "，尝试转换为AMR格式");
+                                // 检测到不兼容格式，尝试转换为AMR格式
                                 // 尝试转换音频格式
                                 try (InputStream audioInputStream = java.nio.file.Files.newInputStream(audioFile.toPath());
                                      BufferedInputStream bufferedAudioStream = new BufferedInputStream(audioInputStream)) {
@@ -484,7 +503,7 @@ public class Pocket48Sender extends Sender {
                                         // 删除原文件，使用转换后的文件
                                         audioFile.delete();
                                         audioFile = convertedFile;
-                                        System.out.println("[翻牌音频转换] 音频格式转换完成: " + audioFile.getAbsolutePath());
+                                        // 翻牌音频格式转换完成
                                     } else {
                                         System.err.println("[翻牌音频转换] 音频格式转换失败，使用原始音频");
                                     }
@@ -498,7 +517,7 @@ public class Pocket48Sender extends Sender {
                     // 上传音频
                     try (ExternalResource audioResource = ExternalResource.create(audioFile)) {
                         Audio audio = group.uploadAudio(audioResource);
-                        System.out.println("[翻牌音频处理] 翻牌音频上传成功");
+                        // 翻牌音频上传成功
                         String flipAudioContent = "【" + n + "】: 翻牌回复语音\n" + pocket.getAnswerNameTo(message.getAnswer().getAnswerID(), message.getAnswer().getQuestionID()) + ": " + message.getAnswer().getMsgTo() + "\n------\n频道：" + r + "\n时间: " + timeStr;
                         return new Pocket48SenderMessage(false, null, new Message[]{new PlainText(flipAudioContent), audio});
                     }
@@ -513,7 +532,7 @@ public class Pocket48Sender extends Sender {
                     if (audioFile != null && audioFile.exists()) {
                         try {
                             audioFile.delete();
-                            System.out.println("[清理] 删除临时翻牌音频文件: " + audioFile.getAbsolutePath());
+                            // 删除临时翻牌音频文件
                         } catch (Exception e) {
                             System.err.println("[警告] 删除临时翻牌音频文件失败: " + e.getMessage());
                         }
@@ -540,8 +559,7 @@ public class Pocket48Sender extends Sender {
                 File previewFile = null;
                 
                 try {
-                    System.out.println("[翻牌视频处理] 开始处理翻牌视频: " + videoUrl);
-                    System.out.println("[翻牌视频处理] 预览图: " + previewUrl);
+                    // 开始处理翻牌视频
                     
                     // 下载视频文件到本地
                     String videoExt = message.getAnswer().getExt() != null && !message.getAnswer().getExt().isEmpty() ? "." + message.getAnswer().getExt() : ".mp4";
@@ -551,7 +569,7 @@ public class Pocket48Sender extends Sender {
                         throw new RuntimeException("翻牌视频文件下载失败");
                     }
                     
-                    System.out.println("[翻牌视频处理] 视频下载完成: " + videoFile.getAbsolutePath());
+                    // 翻牌视频下载完成
                     
                     // 下载预览图到本地
                     previewFile = resourceHandler.downloadToTempFile(previewUrl, ".jpg");
@@ -560,7 +578,7 @@ public class Pocket48Sender extends Sender {
                         throw new RuntimeException("翻牌视频预览图下载失败");
                     }
                     
-                    System.out.println("[翻牌视频处理] 预览图下载完成: " + previewFile.getAbsolutePath());
+                    // 翻牌预览图下载完成
                     
                     // 上传视频
                     try (ExternalResource previewResource = ExternalResource.create(previewFile);
@@ -568,7 +586,7 @@ public class Pocket48Sender extends Sender {
                         
                         ShortVideo video = group.uploadShortVideo(previewResource, videoResource,
                                 message.getOwnerName() + "翻牌回复视频(" + DateUtil.format(new Date(message.getTime()), "yyyy-MM-dd HH-mm-ss") + ")." + message.getAnswer().getExt());
-                        System.out.println("[翻牌视频处理] 翻牌视频上传成功");
+                        // 翻牌视频上传成功
                         
                         String flipVideoContent = "【" + n + "】: 翻牌回复视频\n" + pocket.getAnswerNameTo(message.getAnswer().getAnswerID(), message.getAnswer().getQuestionID()) + ": " + message.getAnswer().getMsgTo() + "\n------\n频道：" + r + "\n时间: " + timeStr;
                         return new Pocket48SenderMessage(false, null, new Message[]{new PlainText(flipVideoContent), video});
@@ -584,7 +602,7 @@ public class Pocket48Sender extends Sender {
                     if (videoFile != null && videoFile.exists()) {
                         try {
                             videoFile.delete();
-                            System.out.println("[清理] 删除临时翻牌视频文件: " + videoFile.getAbsolutePath());
+                            // 删除临时翻牌视频文件
                         } catch (Exception e) {
                             System.err.println("[警告] 删除临时翻牌视频文件失败: " + e.getMessage());
                         }
@@ -592,7 +610,7 @@ public class Pocket48Sender extends Sender {
                     if (previewFile != null && previewFile.exists()) {
                         try {
                             previewFile.delete();
-                            System.out.println("[清理] 删除临时翻牌预览图文件: " + previewFile.getAbsolutePath());
+                            // 删除临时翻牌预览图文件
                         } catch (Exception e) {
                             System.err.println("[警告] 删除临时翻牌预览图文件失败: " + e.getMessage());
                         }
@@ -777,7 +795,7 @@ public class Pocket48Sender extends Sender {
                 // 内存使用率过高，强制清理
                 resourceOptimizer.cleanupExpiredCache(5);
                 System.gc();
-                System.out.println(String.format("[Pocket48Sender] %s，已执行强制清理", monitor.checkMemoryStatus()));
+                // 内存清理完成
             } else if (monitor.shouldCleanup() && monitor.getTotalQueries() % 50 == 0) {
                 // 内存使用率较高且每50次查询才清理一次
                 resourceOptimizer.cleanupExpiredCache(30);

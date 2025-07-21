@@ -108,7 +108,7 @@ public class WeiboSender extends Sender {
                                     info = info.substring(info.indexOf("clear_picSrc=") + "clear_picSrc=".length());
                                     String src = info.substring(0, info.indexOf("\">")).replace("%2F", "/")
                                             .replace("\\", "");
-                                    System.out.println("https:" + src);
+                                    // 处理图片链接
                                     try (ExternalResource imageResource = ExternalResource.create(getRes("https:" + src))) {
                                         o = o.plus(group.uploadImage(imageResource));
                                     } catch (Exception e) {
@@ -119,7 +119,7 @@ public class WeiboSender extends Sender {
                                             info.indexOf("clear_picSrc=") + "clear_picSrc=".length(),
                                             info.indexOf("&thumb_picSrc=")).replace("%2F", "/").split(",")) {
                                         src = src.replace("\\", "");
-                                        System.out.println("https:" + src);
+                                        // 处理图片链接
                                         try (ExternalResource imageResource = ExternalResource.create(getRes("https:" + src))) {
                                             o = o.plus(group.uploadImage(imageResource));
                                         } catch (Exception e) {

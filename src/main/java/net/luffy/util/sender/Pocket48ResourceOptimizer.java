@@ -50,7 +50,7 @@ public class Pocket48ResourceOptimizer {
                         File cachedFile = resourceHandler.downloadToTempFile(url, ".tmp");
                         if (cachedFile != null && cachedFile.exists()) {
                             resourceCache.put(url, cachedFile);
-                            System.out.println("[预加载成功] " + url);
+                            // 预加载成功
                         }
                     } catch (Exception e) {
                         System.err.println("[预加载失败] " + url + ": " + e.getMessage());
@@ -155,7 +155,7 @@ public class Pocket48ResourceOptimizer {
                 if (file != null && file.exists()) {
                     try {
                         file.delete();
-                        System.out.println("[缓存清理] 删除过期文件: " + file.getName());
+                        // 删除过期文件
                     } catch (Exception e) {
                         System.err.println("[缓存清理失败] " + file.getName() + ": " + e.getMessage());
                     }
@@ -191,7 +191,7 @@ public class Pocket48ResourceOptimizer {
             // 清理所有缓存文件
             cleanupExpiredCache(0);
             
-            System.out.println("[资源优化器] 已关闭，" + getCacheStats());
+            // 资源优化器已关闭
         } catch (InterruptedException e) {
             preloadExecutor.shutdownNow();
             Thread.currentThread().interrupt();

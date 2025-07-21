@@ -32,11 +32,7 @@ public class AdaptiveThreadPoolManager {
     private static final int HIGH_QUEUE_THRESHOLD = 20;    // 队列长度阈值
     
     private AdaptiveThreadPoolManager() {
-        // 调试信息：打印线程池参数
-        System.out.println("[DEBUG] 线程池参数 - MIN_POOL_SIZE: " + MIN_POOL_SIZE + 
-                          ", MAX_POOL_SIZE: " + MAX_POOL_SIZE + 
-                          ", INITIAL_POOL_SIZE: " + INITIAL_POOL_SIZE + 
-                          ", 可用处理器数: " + Runtime.getRuntime().availableProcessors());
+        // 线程池参数初始化完成
         
         // 确保参数合法性
         if (INITIAL_POOL_SIZE > MAX_POOL_SIZE) {

@@ -70,7 +70,7 @@ public class Pocket48ResourceCache {
             if (file.exists()) {
                 // 更新访问时间
                 fileAccessTime.put(filePath, System.currentTimeMillis());
-                System.out.println("[缓存命中] 使用缓存文件: " + url);
+                // 缓存命中
                 return file;
             } else {
                 // 文件已被删除，清理映射
@@ -108,7 +108,7 @@ public class Pocket48ResourceCache {
             urlToFileMap.put(url, cacheFile.getAbsolutePath());
             fileAccessTime.put(cacheFile.getAbsolutePath(), System.currentTimeMillis());
             
-            System.out.println("[缓存添加] 文件已缓存: " + url + " -> " + cacheFile.getAbsolutePath());
+            // 文件已缓存
             
             // 检查缓存大小
             checkCacheSize();
@@ -153,7 +153,7 @@ public class Pocket48ResourceCache {
             urlToFileMap.put(url, cacheFile.getAbsolutePath());
             fileAccessTime.put(cacheFile.getAbsolutePath(), System.currentTimeMillis());
             
-            System.out.println("[缓存创建] 文件已缓存: " + url + " -> " + cacheFile.getAbsolutePath());
+            // 文件已缓存
             
             // 检查缓存大小
             checkCacheSize();
@@ -215,7 +215,7 @@ public class Pocket48ResourceCache {
             }
             
             if (cleanedCount > 0) {
-                System.out.println("[缓存清理] 清理了 " + cleanedCount + " 个过期文件");
+                // 缓存清理完成
             }
         } catch (Exception e) {
             System.err.println("[缓存清理错误] " + e.getMessage());
@@ -239,7 +239,7 @@ public class Pocket48ResourceCache {
                 .sum();
                 
             if (totalSize > MAX_CACHE_SIZE) {
-                System.out.println("[缓存清理] 缓存大小超限 (" + (totalSize / 1024 / 1024) + "MB)，开始清理最旧文件");
+                // 缓存大小超限，开始清理最旧文件
                 cleanOldestFiles(totalSize - MAX_CACHE_SIZE / 2); // 清理到一半大小
             }
         } catch (IOException e) {
@@ -309,7 +309,7 @@ public class Pocket48ResourceCache {
                 });
             urlToFileMap.clear();
             fileAccessTime.clear();
-            System.out.println("[缓存清理] 所有缓存已清空");
+            // 所有缓存已清空
         } catch (IOException e) {
             System.err.println("[缓存清空错误] " + e.getMessage());
         }

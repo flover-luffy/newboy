@@ -106,7 +106,7 @@ public class UnifiedSchedulerManager {
             } finally {
                 long duration = System.currentTimeMillis() - startTime;
                 if (duration > 1000) { // 超过1秒的任务记录警告
-                    System.out.println(String.format("[调度器警告] 任务执行耗时过长: %dms", duration));
+                    // 任务执行耗时过长
                 }
             }
         };
