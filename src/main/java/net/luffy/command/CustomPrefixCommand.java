@@ -649,7 +649,25 @@ public class CustomPrefixCommand {
                 report.append("  ❌ 无法获取增强性能监控数据: ").append(e.getMessage()).append("\n");
             }
             
-            // 5. CPU负载均衡器统计
+            // 5. HTTP性能统计
+            report.append("\n🌐 HTTP性能统计:\n");
+            try {
+                // 统一HTTP客户端性能统计
+                net.luffy.util.UnifiedHttpClient httpClient = net.luffy.util.UnifiedHttpClient.getInstance();
+                String httpStats = httpClient.getPerformanceStats();
+                report.append("  ").append(httpStats).append("\n");
+                
+                // 异步Web处理器性能统计
+                net.luffy.handler.AsyncWebHandler asyncWebHandler = net.luffy.handler.AsyncWebHandler.getInstance();
+                String asyncWebStats = asyncWebHandler.getPerformanceStats();
+                report.append("  ").append(asyncWebStats).append("\n");
+                
+                // 迁移助手已删除，HTTP客户端已完全统一
+            } catch (Exception e) {
+                report.append("  ❌ 无法获取HTTP性能数据: ").append(e.getMessage()).append("\n");
+            }
+            
+            // 6. CPU负载均衡器统计
             report.append("\n⚖️ CPU负载均衡器统计:\n");
             try {
                 CpuLoadBalancer loadBalancer = CpuLoadBalancer.getInstance();
@@ -659,7 +677,7 @@ public class CustomPrefixCommand {
                 report.append("  ❌ 无法获取负载均衡器数据: ").append(e.getMessage()).append("\n");
             }
             
-            // 6. 功能模块订阅统计
+            // 7. 功能模块订阅统计
             report.append("\n📋 功能模块订阅统计:\n");
             Newboy instance = Newboy.INSTANCE;
             if (instance.getProperties() != null) {
@@ -778,7 +796,7 @@ public class CustomPrefixCommand {
                 }
             }
             
-            // 7. 服务状态汇总
+            // 8. 服务状态汇总
             report.append("\n🔧 服务状态汇总:\n");
             
             // 口袋48状态

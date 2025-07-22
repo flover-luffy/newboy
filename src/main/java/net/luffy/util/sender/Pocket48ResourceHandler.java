@@ -1,10 +1,8 @@
 package net.luffy.util.sender;
 
 import net.luffy.handler.AsyncWebHandlerBase;
-import okhttp3.Headers;
-import okhttp3.Request;
-import okhttp3.Response;
-import okhttp3.ResponseBody;
+import net.luffy.util.UnifiedHttpClient;
+// OkHttp imports removed - migrated to UnifiedHttpClient
 
 import java.io.File;
 import java.io.IOException;
@@ -56,19 +54,18 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
      */
     public Pocket48ResourceInfo checkResourceAvailability(String url) {
         try {
-            Request request = buildPocket48Request(url).head().build();
-            Response response = httpClient.newCall(request).execute();
+            // 使用UnifiedHttpClient进行HEAD请求检查资源可用性
+            // 注意：UnifiedHttpClient目前不支持HEAD请求，使用GET请求代替
+            String response = UnifiedHttpClient.getInstance().get(url, getPocket48Headers());
             
             Pocket48ResourceInfo info = new Pocket48ResourceInfo();
             info.setUrl(url);
-            info.setAvailable(response.isSuccessful());
-            info.setStatusCode(response.code());
-            info.setContentType(response.header("Content-Type"));
-            info.setContentLength(response.header("Content-Length"));
+            info.setAvailable(true); // 如果没有异常，说明资源可访问
+            info.setStatusCode(200);
+            info.setContentType("application/octet-stream"); // 默认类型
             
-            response.close();
             return info;
-        } catch (IOException e) {
+        } catch (Exception e) {
             Pocket48ResourceInfo info = new Pocket48ResourceInfo();
             info.setUrl(url);
             info.setAvailable(false);
@@ -78,29 +75,28 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
     }
     
     /**
-     * 构建口袋48专用的请求对象
+     * 获取口袋48专用的请求头
      * 添加必要的认证头信息
      * 
-     * @param url 请求URL
-     * @return 请求构建器
+     * @return 请求头Map
      */
-    private Request.Builder buildPocket48Request(String url) {
-        return new Request.Builder()
-                .url(url)
-                // 口袋48专用User-Agent
-                .addHeader("User-Agent", "PocketFans201807/7.1.34 (iPhone; iOS 19.0; Scale/2.00)")
-                // 重要：添加Referer头，某些资源需要此头信息
-                .addHeader("Referer", "https://pocketapi.48.cn/")
-                // 接受所有类型的内容
-                .addHeader("Accept", "*/*")
-                // 语言偏好
-                .addHeader("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
-                // 连接保持
-                .addHeader("Connection", "keep-alive")
-                // 缓存控制
-                .addHeader("Cache-Control", "no-cache")
-                // 编码支持
-                .addHeader("Accept-Encoding", "gzip, deflate, br");
+    private java.util.Map<String, String> getPocket48Headers() {
+        java.util.Map<String, String> headers = new java.util.HashMap<>();
+        // 口袋48专用User-Agent
+        headers.put("User-Agent", "PocketFans201807/7.1.34 (iPhone; iOS 19.0; Scale/2.00)");
+        // 重要：添加Referer头，某些资源需要此头信息
+        headers.put("Referer", "https://pocketapi.48.cn/");
+        // 接受所有类型的内容
+        headers.put("Accept", "*/*");
+        // 语言偏好
+        headers.put("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
+        // 连接保持
+        headers.put("Connection", "keep-alive");
+        // 缓存控制
+        headers.put("Cache-Control", "no-cache");
+        // 编码支持
+        headers.put("Accept-Encoding", "gzip, deflate, br");
+        return headers;
     }
     
     /**
@@ -199,26 +195,18 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
         
         Pocket48ResourceCache cache = Pocket48ResourceCache.getInstance();
         
-        // 下载文件并直接缓存
-        Request request = buildPocket48Request(url).get().build();
-        try (Response response = httpClient.newCall(request).execute()) {
-            if (!response.isSuccessful()) {
-                throw new IOException("下载失败: HTTP " + response.code() + " " + url);
-            }
-            
-            ResponseBody body = response.body();
-            if (body == null) {
-                throw new IOException("响应体为空: " + url);
-            }
-            
+        // 使用UnifiedHttpClient下载文件并直接缓存
+        try (InputStream inputStream = UnifiedHttpClient.getInstance().getInputStreamWithHeaders(url, getPocket48Headers())) {
             // 直接从流缓存文件
-            File cachedFile = cache.cacheFromStream(url, body.byteStream(), fileExtension);
+            File cachedFile = cache.cacheFromStream(url, inputStream, fileExtension);
             if (cachedFile != null) {
                 // 下载完成
                 return cachedFile;
             } else {
                 throw new IOException("缓存文件失败: " + url);
             }
+        } catch (Exception e) {
+            throw new IOException("下载失败: " + e.getMessage() + " " + url, e);
         }
     }
     

@@ -29,9 +29,10 @@ public class AsyncOnlineStatusMonitor {
     private String batchQueryTaskId;
     private String cacheCleanupTaskId;
     
-    // 批量查询统计
+    // 统计字段
     private final AtomicInteger batchQueryCount = new AtomicInteger(0);
     private final AtomicInteger totalMembersQueried = new AtomicInteger(0);
+    private final Set<String> uniqueMembersQueried = ConcurrentHashMap.newKeySet();
     private final AtomicLong totalBatchTime = new AtomicLong(0);
     private final AtomicInteger concurrentBatches = new AtomicInteger(0);
     private String scheduledMonitorTaskId;
@@ -61,7 +62,7 @@ public class AsyncOnlineStatusMonitor {
     private final Map<String, CompletableFuture<BatchMemberStatusResult>> queryFutures = new ConcurrentHashMap<>();
     
     private AsyncOnlineStatusMonitor() {
-        this.asyncWebHandler = new AsyncWebHandler();
+        this.asyncWebHandler = AsyncWebHandler.getInstance();
         this.config = MonitorConfig.getInstance();
         
         // 从配置文件读取设置并更新MonitorConfig
@@ -142,7 +143,9 @@ public class AsyncOnlineStatusMonitor {
         
         long startTime = System.currentTimeMillis();
         batchQueryCount.incrementAndGet();
-        totalMembersQueried.addAndGet(memberNames.size());
+        // 统计唯一成员数而不是查询次数
+        uniqueMembersQueried.addAll(memberNames);
+        totalMembersQueried.set(uniqueMembersQueried.size());
         concurrentBatches.incrementAndGet();
         
         return asyncWebHandler.batchQueryMemberStatus(memberNames)
@@ -170,6 +173,13 @@ public class AsyncOnlineStatusMonitor {
                     long batchTime = System.currentTimeMillis() - startTime;
                     totalBatchTime.addAndGet(batchTime);
                     concurrentBatches.decrementAndGet();
+                    
+                    // 记录到全局性能监控器
+                    try {
+                        net.luffy.util.PerformanceMonitor.getInstance().recordQuery(batchTime);
+                    } catch (Exception e) {
+                        // 忽略性能监控记录失败
+                    }
                     
                     // 已禁用控制台输出
                     // if (config.isVerboseLogging()) {
@@ -294,12 +304,7 @@ public class AsyncOnlineStatusMonitor {
             long monitorInterval = CronExpressionParser.parseToMilliseconds(props.async_monitor_schedule_pattern);
             String cronDescription = CronExpressionParser.getCronDescription(props.async_monitor_schedule_pattern);
             
-            // 记录调度配置信息
-            if (config.isVerboseLogging()) {
-                Newboy.INSTANCE.getLogger().info(String.format(
-                    "异步监控调度配置: %s (%s, 间隔: %dms)", 
-                    props.async_monitor_schedule_pattern, cronDescription, monitorInterval));
-            }
+            // 异步监控调度配置已加载
             
             UnifiedSchedulerManager scheduler = UnifiedSchedulerManager.getInstance();
             this.scheduledMonitorTaskId = scheduler.scheduleMonitorTask(() -> {
@@ -635,7 +640,7 @@ public class AsyncOnlineStatusMonitor {
         java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
         String lastUpdate = sdf.format(new java.util.Date(lastUpdateTime));
         
-        result.append("监控用户数: ").append(subscribedMembers.size()).append("\n");
+        result.append("监控用户数: ").append(getAllSubscribedMembers().size()).append("\n");
         result.append("当前在线: ").append(onlineMembers.isEmpty() ? "无" : String.join(", ", onlineMembers)).append("\n");
         result.append("当前离线: ").append(offlineMembers.isEmpty() ? "无" : String.join(", ", offlineMembers)).append("\n");
         result.append("今日状态变化: ").append(dailyStatusChanges.get()).append("\n");
@@ -709,7 +714,8 @@ public class AsyncOnlineStatusMonitor {
      */
     public String getStatistics() {
         int batchCount = batchQueryCount.get();
-        int totalMembers = totalMembersQueried.get();
+        int totalQueriedMembers = totalMembersQueried.get();
+        int actualSubscribedMembers = getAllSubscribedMembers().size();
         long avgBatchTime = batchCount > 0 ? totalBatchTime.get() / batchCount : 0;
         int currentConcurrent = concurrentBatches.get();
         int cacheSize = memberStatusCache.size();
@@ -718,14 +724,15 @@ public class AsyncOnlineStatusMonitor {
         return String.format(
                 "异步监控统计信息:\n" +
                 "━━━━━━━━━━━━━━━━━━━━\n" +
+                "订阅成员总数: %d\n" +
                 "批量查询次数: %d\n" +
-                "查询成员总数: %d\n" +
+                "累计查询成员数: %d\n" +
                 "平均批量耗时: %dms\n" +
                 "当前并发批次: %d\n" +
                 "缓存条目数量: %d\n" +
                 "待查询队列: %d\n" +
                 "异步HTTP统计:\n%s",
-                batchCount, totalMembers, avgBatchTime, currentConcurrent, 
+                actualSubscribedMembers, batchCount, totalQueriedMembers, avgBatchTime, currentConcurrent, 
                 cacheSize, pendingSize, asyncWebHandler.getPerformanceStats()
         );
     }
@@ -770,6 +777,7 @@ public class AsyncOnlineStatusMonitor {
     public void resetAsyncStats() {
         batchQueryCount.set(0);
         totalMembersQueried.set(0);
+        uniqueMembersQueried.clear();
         totalBatchTime.set(0);
         concurrentBatches.set(0);
         memberStatusCache.clear();

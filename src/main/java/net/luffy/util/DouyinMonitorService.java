@@ -4,10 +4,15 @@ import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import net.luffy.Newboy;
+import net.luffy.util.UnifiedJsonParser;
+import net.luffy.util.UnifiedHttpClient;
 // 移除了对旧DouyinHandler的依赖
 import net.mamoe.mirai.Bot;
 import net.mamoe.mirai.contact.Group;
-import okhttp3.*;
+// 已迁移到UnifiedHttpClient，移除okhttp3依赖
+
+import java.util.Map;
+import java.util.HashMap;
 
 import java.io.IOException;
 import java.util.*;
@@ -29,7 +34,6 @@ public class DouyinMonitorService {
     private static volatile DouyinMonitorService instance;
     
     private final DouyinSignatureGenerator signatureGenerator;
-    private final OkHttpClient httpClient;
     private final ScheduledExecutorService scheduler;
     private final Map<String, UserMonitorInfo> monitoredUsers;
     private final AtomicBoolean isRunning;
@@ -38,6 +42,10 @@ public class DouyinMonitorService {
     // 限流相关
     private final AtomicLong lastRequestTime = new AtomicLong(0);
     private static final long MIN_REQUEST_INTERVAL = 2000; // 2秒最小间隔
+    
+    // 调试模式
+    private static final boolean DEBUG_MODE = Boolean.getBoolean("douyin.debug") || 
+        System.getProperty("http.debug", "false").equals("true");
     
     /**
      * 用户监控信息
@@ -62,12 +70,6 @@ public class DouyinMonitorService {
     
     private DouyinMonitorService() {
         this.signatureGenerator = new DouyinSignatureGenerator();
-        this.httpClient = new OkHttpClient.Builder()
-                .connectTimeout(30, TimeUnit.SECONDS)
-                .readTimeout(30, TimeUnit.SECONDS)
-                .writeTimeout(30, TimeUnit.SECONDS)
-                .retryOnConnectionFailure(true)
-                .build();
         this.scheduler = Executors.newScheduledThreadPool(2);
         this.monitoredUsers = new ConcurrentHashMap<>();
         this.isRunning = new AtomicBoolean(false);
@@ -103,7 +105,7 @@ public class DouyinMonitorService {
      */
     public void startMonitoring(int intervalMinutes) {
         if (isRunning.compareAndSet(false, true)) {
-            Newboy.INSTANCE.getLogger().info("启动抖音监控服务，检查间隔: " + intervalMinutes + "分钟");
+            // 启动抖音监控服务
             
             // 从配置文件加载监控用户
             loadMonitorUsersFromConfig();
@@ -131,7 +133,7 @@ public class DouyinMonitorService {
      */
     public void stopMonitoring() {
         if (isRunning.compareAndSet(true, false)) {
-            Newboy.INSTANCE.getLogger().info("停止抖音监控服务");
+            // 停止抖音监控服务
             scheduler.shutdown();
             try {
                 if (!scheduler.awaitTermination(10, TimeUnit.SECONDS)) {
@@ -172,15 +174,15 @@ public class DouyinMonitorService {
                         userInfo.nickname = author.getStr("nickname", "未知用户");
                     }
                 } else {
-                    Newboy.INSTANCE.getLogger().warning("用户 " + secUserId + " 没有作品，无法获取昵称");
+                    // 用户没有作品，无法获取昵称
                 }
             }
         } catch (Exception e) {
-            Newboy.INSTANCE.getLogger().warning("初始化用户信息失败: " + secUserId + ", " + e.getMessage());
+            // 初始化用户信息失败
         }
         
         monitoredUsers.put(secUserId, userInfo);
-        Newboy.INSTANCE.getLogger().info("添加抖音监控用户: " + userInfo.nickname + " (" + secUserId + ")");
+        // 添加抖音监控用户
         return true;
     }
     
@@ -192,7 +194,7 @@ public class DouyinMonitorService {
     public boolean removeMonitorUser(String secUserId) {
         UserMonitorInfo removed = monitoredUsers.remove(secUserId);
         if (removed != null) {
-            Newboy.INSTANCE.getLogger().info("移除抖音监控用户: " + removed.nickname + " (" + secUserId + ")");
+            // 移除抖音监控用户
             return true;
         }
         return false;
@@ -205,7 +207,7 @@ public class DouyinMonitorService {
         try {
             Map<Long, List<String>> douyinSubscribe = Newboy.INSTANCE.getProperties().douyin_user_subscribe;
             if (douyinSubscribe == null || douyinSubscribe.isEmpty()) {
-                Newboy.INSTANCE.getLogger().info("配置文件中没有抖音监控用户配置");
+                // 配置文件中没有抖音监控用户配置
                 return;
             }
             
@@ -217,7 +219,7 @@ public class DouyinMonitorService {
             }
             
             if (allUsers.isEmpty()) {
-                Newboy.INSTANCE.getLogger().info("配置文件中没有配置抖音监控用户");
+                // 配置文件中没有配置抖音监控用户
                 return;
             }
             
@@ -230,10 +232,10 @@ public class DouyinMonitorService {
                 }
             }
             
-            Newboy.INSTANCE.getLogger().info("从配置文件加载了 " + loadedCount + " 个抖音监控用户");
+            // 从配置文件加载抖音监控用户完成
             
         } catch (Exception e) {
-            Newboy.INSTANCE.getLogger().warning("从配置文件加载抖音监控用户失败: " + e.getMessage());
+            Newboy.INSTANCE.getLogger().error("从配置文件加载抖音监控用户失败: " + e.getMessage());
         }
     }
     
@@ -245,7 +247,7 @@ public class DouyinMonitorService {
             return;
         }
         
-        Newboy.INSTANCE.getLogger().info("开始检查抖音用户更新，监控用户数: " + monitoredUsers.size());
+        // 开始检查抖音用户更新
         
         for (UserMonitorInfo userInfo : monitoredUsers.values()) {
             if (!userInfo.isActive) {
@@ -258,7 +260,8 @@ public class DouyinMonitorService {
                 waitForRateLimit();
             } catch (Exception e) {
                 userInfo.failureCount++;
-                Newboy.INSTANCE.getLogger().warning(
+                // 检查用户更新失败，记录错误
+                Newboy.INSTANCE.getLogger().error(
                     String.format("检查用户 %s 更新失败 (失败次数: %d): %s", 
                         userInfo.nickname, userInfo.failureCount, e.getMessage())
                 );
@@ -266,7 +269,7 @@ public class DouyinMonitorService {
                 // 连续失败过多次则暂时停用
                 if (userInfo.failureCount >= 5) {
                     userInfo.isActive = false;
-                    Newboy.INSTANCE.getLogger().warning("用户 " + userInfo.nickname + " 连续失败过多，暂时停用监控");
+                    Newboy.INSTANCE.getLogger().error("用户 " + userInfo.nickname + " 连续失败过多，暂时停用监控");
                 }
             }
         }
@@ -313,10 +316,7 @@ public class DouyinMonitorService {
             if (author != null) {
                 String currentNickname = author.getStr("nickname");
                 if (currentNickname != null && !currentNickname.equals(userInfo.nickname)) {
-                    Newboy.INSTANCE.getLogger().info(
-                        String.format("用户昵称变更: %s -> %s (%s)", 
-                            userInfo.nickname, currentNickname, userInfo.secUserId)
-                    );
+                    // 用户昵称变更
                     userInfo.nickname = currentNickname;
                 }
             }
@@ -336,12 +336,9 @@ public class DouyinMonitorService {
             // 这里需要根据实际的群组订阅关系来发送
             notifySubscribedGroups(userInfo.secUserId, message);
             
-            Newboy.INSTANCE.getLogger().info(
-                String.format("检测到用户 %s 的新作品: %s", 
-                    userInfo.nickname, aweme.getStr("desc", "无描述"))
-            );
+            // 检测到用户新作品
         } catch (Exception e) {
-            Newboy.INSTANCE.getLogger().warning("处理新作品失败: " + e.getMessage());
+            Newboy.INSTANCE.getLogger().error("处理新作品失败: " + e.getMessage());
         }
     }
     
@@ -415,7 +412,7 @@ public class DouyinMonitorService {
                         }
                     }
                 } catch (Exception e) {
-                    Newboy.INSTANCE.getLogger().warning(
+                    Newboy.INSTANCE.getLogger().error(
                         String.format("发送抖音消息到群 %d 失败: %s", groupId, e.getMessage())
                     );
                 }
@@ -429,6 +426,60 @@ public class DouyinMonitorService {
      * @return 用户信息JSON
      */
     private JSONObject getUserInfo(String secUserId) {
+        return getUserInfoWithRetry(secUserId, 3);
+    }
+    
+    /**
+     * 获取用户信息（带重试机制）
+     * @param secUserId 用户ID
+     * @param maxRetries 最大重试次数
+     * @return 用户信息JSON
+     */
+    private JSONObject getUserInfoWithRetry(String secUserId, int maxRetries) {
+        Exception lastException = null;
+        
+        for (int attempt = 0; attempt < maxRetries; attempt++) {
+            try {
+                if (attempt > 0) {
+                    // 重试前等待，避免频繁请求
+                    Thread.sleep(1000 * (attempt + 1));
+                    Newboy.INSTANCE.getLogger().info(
+                        String.format("重试获取抖音用户信息，用户: %s, 第%d次尝试", secUserId, attempt + 1)
+                    );
+                }
+                
+                JSONObject result = performGetUserInfo(secUserId);
+                if (result != null) {
+                    if (attempt > 0) {
+                        Newboy.INSTANCE.getLogger().info(
+                            String.format("重试成功获取抖音用户信息，用户: %s", secUserId)
+                        );
+                    }
+                    return result;
+                }
+            } catch (Exception e) {
+                lastException = e;
+                Newboy.INSTANCE.getLogger().error(
+                     String.format("获取抖音用户信息失败，用户: %s, 尝试: %d/%d, 错误: %s", 
+                         secUserId, attempt + 1, maxRetries, e.getMessage())
+                 );
+            }
+        }
+        
+        // 所有重试都失败
+        Newboy.INSTANCE.getLogger().error(
+            String.format("获取抖音用户信息最终失败，用户: %s, 已重试%d次", secUserId, maxRetries),
+            lastException
+        );
+        return null;
+    }
+    
+    /**
+     * 执行获取用户信息的实际请求
+     * @param secUserId 用户ID
+     * @return 用户信息JSON
+     */
+    private JSONObject performGetUserInfo(String secUserId) {
         try {
             Map<String, String> params = signatureGenerator.buildAwemePostQuery(secUserId, null, 18);
             String queryString = signatureGenerator.buildQueryString(params);
@@ -442,72 +493,81 @@ public class DouyinMonitorService {
             String finalQueryString = signatureGenerator.buildQueryString(params);
             String url = API_AWEME_POST + "?" + finalQueryString;
             
-            // 构建请求
-            Request.Builder requestBuilder = new Request.Builder()
-                    .url(url)
-                    .addHeader("User-Agent", userAgent)
-                    .addHeader("Referer", "https://www.douyin.com/user/" + secUserId)
-                    .addHeader("Accept", "application/json, text/plain, */*")
-                    .addHeader("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
-                    .addHeader("Accept-Encoding", "gzip, deflate")
-                    .addHeader("Connection", "keep-alive")
-                    .addHeader("Sec-Fetch-Dest", "empty")
-                    .addHeader("Sec-Fetch-Mode", "cors")
-                    .addHeader("Sec-Fetch-Site", "same-origin")
-                    .addHeader("Cache-Control", "no-cache")
-                    .addHeader("Pragma", "no-cache");
+            // 构建请求头
+            Map<String, String> headers = new HashMap<>();
+            headers.put("User-Agent", userAgent);
+            headers.put("Referer", "https://www.douyin.com/user/" + secUserId);
+            headers.put("Accept", "application/json, text/plain, */*");
+            headers.put("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
+            // 移除Accept-Encoding，让OkHttp自动处理压缩
+            headers.put("Connection", "keep-alive");
+            headers.put("Sec-Fetch-Dest", "empty");
+            headers.put("Sec-Fetch-Mode", "cors");
+            headers.put("Sec-Fetch-Site", "same-origin");
+            headers.put("Cache-Control", "no-cache");
+            headers.put("Pragma", "no-cache");
             
             // 添加Cookie
             // Cookie管理现在通过配置文件处理
             String cookie = Newboy.INSTANCE.getProperties().douyin_cookie;
             if (cookie != null && !cookie.isEmpty()) {
-                requestBuilder.addHeader("Cookie", cookie);
+                headers.put("Cookie", cookie);
             }
             
-            Request request = requestBuilder.build();
+            // 调试模式下输出请求信息
+            if (DEBUG_MODE) {
+                Newboy.INSTANCE.getLogger().info("抖音API请求URL: " + url);
+                Newboy.INSTANCE.getLogger().info("抖音API请求头: " + headers.toString());
+            }
             
-            try (Response response = httpClient.newCall(request).execute()) {
-                if (response.isSuccessful() && response.body() != null) {
-                    String responseBody;
-                    
-                    // 检查响应压缩格式
-                    String contentEncoding = response.header("Content-Encoding");
-                    if ("gzip".equalsIgnoreCase(contentEncoding)) {
-                        // 处理gzip压缩的响应
-                        try (java.util.zip.GZIPInputStream gzipInputStream = new java.util.zip.GZIPInputStream(response.body().byteStream());
-                             java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(gzipInputStream, "UTF-8"))) {
-                            
-                            StringBuilder sb = new StringBuilder();
-                            String line;
-                            while ((line = reader.readLine()) != null) {
-                                sb.append(line);
-                            }
-                            responseBody = sb.toString();
-                        }
-                    } else {
-                        responseBody = response.body().string();
-                    }
-                    
-                    // 检查响应是否为有效JSON
-                    if (responseBody.trim().startsWith("{")) {
-                        JSONObject result = JSONUtil.parseObj(responseBody);
-                        
-                        if (result.getInt("status_code", -1) == 0) {
-                            return result;
-                        } else {
-                            Newboy.INSTANCE.getLogger().warning(
-                                "抖音API返回错误状态: " + result.getInt("status_code", -1)
-                            );
-                        }
-                    } else {
-                        Newboy.INSTANCE.getLogger().warning("抖音API返回非JSON格式响应: " + responseBody.substring(0, Math.min(100, responseBody.length())));
-                    }
-                } else {
-                    Newboy.INSTANCE.getLogger().warning("抖音API请求失败，HTTP状态码: " + response.code());
+            String responseBody = UnifiedHttpClient.getInstance().get(url, headers);
+            
+            // 调试模式下输出响应信息
+            if (DEBUG_MODE) {
+                Newboy.INSTANCE.getLogger().info("抖音API响应长度: " + 
+                    (responseBody != null ? responseBody.length() : "null"));
+                if (responseBody != null && responseBody.length() < 1000) {
+                    Newboy.INSTANCE.getLogger().info("抖音API完整响应: " + responseBody);
                 }
             }
+            
+            // 详细的响应分析
+            if (responseBody == null) {
+                Newboy.INSTANCE.getLogger().error("抖音API返回空响应");
+                return null;
+            }
+            
+            // 检查响应是否包含乱码或二进制数据
+            if (containsBinaryData(responseBody)) {
+                Newboy.INSTANCE.getLogger().error("抖音API返回二进制数据或编码错误，可能是压缩问题: " + 
+                    getResponsePreview(responseBody));
+                return null;
+            }
+            
+            // 检查响应是否为有效JSON
+            String trimmedResponse = responseBody.trim();
+            if (trimmedResponse.startsWith("{")) {
+                try {
+                    JSONObject result = UnifiedJsonParser.getInstance().parseObj(responseBody);
+                    
+                    if (result.getInt("status_code", -1) == 0) {
+                        return result;
+                    } else {
+                        Newboy.INSTANCE.getLogger().error(
+                            "抖音API返回错误状态: " + result.getInt("status_code", -1) + 
+                            ", 消息: " + result.getStr("status_msg", "未知错误")
+                        );
+                    }
+                } catch (Exception parseException) {
+                    Newboy.INSTANCE.getLogger().error("解析抖音API响应JSON失败: " + parseException.getMessage() + 
+                        ", 响应内容: " + getResponsePreview(responseBody));
+                }
+            } else {
+                Newboy.INSTANCE.getLogger().error("抖音API返回非JSON格式响应: " + getResponsePreview(responseBody));
+            }
         } catch (Exception e) {
-            Newboy.INSTANCE.getLogger().warning("获取抖音用户信息失败: " + e.getMessage());
+            // 抛出异常让重试机制处理
+            throw new RuntimeException("获取抖音用户信息失败: " + e.getMessage(), e);
         }
         
         return null;
@@ -546,7 +606,7 @@ public class DouyinMonitorService {
             
             if (!userInfo.isActive && (currentTime - userInfo.lastCheckTime) > inactiveThreshold) {
                 iterator.remove();
-                Newboy.INSTANCE.getLogger().info("清理不活跃用户: " + userInfo.nickname);
+                // 清理不活跃用户
             }
         }
     }
@@ -600,7 +660,7 @@ public class DouyinMonitorService {
         if (userInfo != null && !userInfo.isActive) {
             userInfo.isActive = true;
             userInfo.failureCount = 0;
-            Newboy.INSTANCE.getLogger().info("重新激活用户监控: " + userInfo.nickname);
+            // 重新激活用户监控
             return true;
         }
         return false;
@@ -633,10 +693,79 @@ public class DouyinMonitorService {
     }
     
     /**
+     * 检查响应是否包含二进制数据或乱码
+     * @param response 响应字符串
+     * @return 是否包含二进制数据
+     */
+    private boolean containsBinaryData(String response) {
+        if (response == null || response.isEmpty()) {
+            return false;
+        }
+        
+        // 检查是否包含大量不可打印字符
+        int nonPrintableCount = 0;
+        int totalChars = Math.min(response.length(), 200); // 只检查前200个字符
+        
+        for (int i = 0; i < totalChars; i++) {
+            char c = response.charAt(i);
+            // 检查是否为不可打印字符（排除常见的空白字符）
+            if (c < 32 && c != '\t' && c != '\n' && c != '\r') {
+                nonPrintableCount++;
+            }
+        }
+        
+        // 如果不可打印字符超过10%，认为是二进制数据
+        return (double) nonPrintableCount / totalChars > 0.1;
+    }
+    
+    /**
+     * 获取响应内容的安全预览
+     * @param response 响应字符串
+     * @return 预览字符串
+     */
+    private String getResponsePreview(String response) {
+        if (response == null) {
+            return "null";
+        }
+        
+        if (response.isEmpty()) {
+            return "empty";
+        }
+        
+        // 限制预览长度
+        int previewLength = Math.min(100, response.length());
+        String preview = response.substring(0, previewLength);
+        
+        // 替换不可打印字符为可读形式
+        StringBuilder safePreview = new StringBuilder();
+        for (char c : preview.toCharArray()) {
+            if (c >= 32 && c <= 126) {
+                // 可打印ASCII字符
+                safePreview.append(c);
+            } else if (c == '\t') {
+                safePreview.append("\\t");
+            } else if (c == '\n') {
+                safePreview.append("\\n");
+            } else if (c == '\r') {
+                safePreview.append("\\r");
+            } else {
+                // 其他不可打印字符显示为十六进制
+                safePreview.append(String.format("\\x%02X", (int) c));
+            }
+        }
+        
+        if (response.length() > previewLength) {
+            safePreview.append("...(truncated)");
+        }
+        
+        return safePreview.toString();
+    }
+    
+    /**
      * 重新加载配置中的监控用户
      */
     public void reloadMonitorUsers() {
-        Newboy.INSTANCE.getLogger().info("重新加载抖音监控用户配置");
+        // 重新加载抖音监控用户配置
         loadMonitorUsersFromConfig();
     }
 }

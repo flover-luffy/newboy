@@ -3,6 +3,7 @@ package net.luffy.util;
 import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
+import net.luffy.util.UnifiedJsonParser;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -47,7 +48,7 @@ public class JsonOptimizer {
         }
         
         // 解析并缓存
-        JSONObject result = JSONUtil.parseObj(jsonStr);
+        JSONObject result = UnifiedJsonParser.getInstance().parseObj(jsonStr);
         if (JSON_CACHE.size() < MAX_CACHE_SIZE) {
             JSON_CACHE.put(jsonStr, result);
         }
@@ -72,7 +73,7 @@ public class JsonOptimizer {
         }
         
         // 解析并缓存
-        JSONArray result = JSONUtil.parseArray(jsonStr);
+        JSONArray result = UnifiedJsonParser.getInstance().parseArray(jsonStr);
         if (ARRAY_CACHE.size() < MAX_CACHE_SIZE) {
             ARRAY_CACHE.put(jsonStr, result);
         }

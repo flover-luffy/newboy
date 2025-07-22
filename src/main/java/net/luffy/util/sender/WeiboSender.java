@@ -5,6 +5,7 @@ import cn.hutool.core.date.DateUtil;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import net.luffy.Newboy;
+import net.luffy.util.UnifiedJsonParser;
 import net.mamoe.mirai.Bot;
 import net.mamoe.mirai.message.data.Message;
 import net.mamoe.mirai.message.data.PlainText;
@@ -23,6 +24,7 @@ public class WeiboSender extends Sender {
 
     public static final String URLVideo = "https://video.weibo.com/show?fid=";
     private final HashMap<String, Long> endTime;
+    private final UnifiedJsonParser jsonParser = UnifiedJsonParser.getInstance();
 
     public WeiboSender(Bot bot, long group, HashMap<String, Long> endTime) {
         super(bot, group);
@@ -135,14 +137,15 @@ public class WeiboSender extends Sender {
                         ms.add(new messageWithTime(o.plus("\nlink: " + link), time));
 
                     } catch (Exception e) {
-                        Newboy.INSTANCE.getLogger().warning("【超话播报处于测试版 请将以下信息提交至 https://github.com/Lawaxi/Newboy/issues/8】");
-                        Newboy.INSTANCE.getLogger().warning("错误微博：" + link);
+                        Newboy.INSTANCE.getLogger().error("【超话播报处于测试版 请将以下信息提交至 https://github.com/Lawaxi/Newboy/issues/8】");
+                        Newboy.INSTANCE.getLogger().error("错误微博：" + link);
                         e.printStackTrace();
                     }
                 }
 
-                if (!find)
-                    Newboy.INSTANCE.getLogger().info(name + "超话找不到任何东西");
+                if (!find) {
+                    // 超话找不到任何东西
+                }
 
                 if (m > endTime.get(id))
                     endTime.put(id, m);
@@ -163,13 +166,13 @@ public class WeiboSender extends Sender {
                 String name = Newboy.INSTANCE.getHandlerWeibo().getUserName(id);
                 Object[] as = Newboy.INSTANCE.getHandlerWeibo().getUserBlog(id);
                 if (as == null) {
-                    Newboy.INSTANCE.getLogger().info(name + "主页找不到任何东西");
+                    // 主页找不到任何东西
                     continue;
                 }
 
                 long m = 0;
                 for (Object a : as) {
-                    JSONObject b = JSONUtil.parseObj(a);
+                    JSONObject b = jsonParser.parseObj(a.toString());
                     if (b.containsKey("title")) { //赞过的，转发的微博(暂不处理——时间无法获取 排序也不对)
                         /*
                         o = new PlainText("【"+ b.getJSONObject("title").getStr("text")
@@ -214,7 +217,7 @@ public class WeiboSender extends Sender {
         //图片夹视频
         if (b.containsKey("mix_media_info")) {
             for (Object media_ : b.getJSONObject("mix_media_info").getJSONArray("items").stream().toArray()) {
-                JSONObject media = JSONUtil.parseObj(media_);
+                JSONObject media = jsonParser.parseObj(media_.toString());
                 String id = media.getStr("id");
                 JSONObject data = media.getJSONObject("data");
                 String cover = data.getStr("page_pic");
@@ -277,26 +280,12 @@ public class WeiboSender extends Sender {
 
     @Override
     public InputStream getRes(String resLoc) {
-        // 使用父类的getInputStream方法，但需要设置Referer头
+        // 使用UnifiedHttpClient获取资源，设置Referer头
         try {
-            okhttp3.Request request = buildRequest(resLoc)
-                    .addHeader("Referer", "https://weibo.com/")
-                    .get()
-                    .build();
+            java.util.Map<String, String> headers = new java.util.HashMap<>();
+            headers.put("Referer", "https://weibo.com/");
             
-            okhttp3.Response response = httpClient.newCall(request).execute();
-            if (!response.isSuccessful()) {
-                response.close();
-                throw new RuntimeException("HTTP请求失败: " + response.code() + " " + resLoc);
-            }
-            
-            okhttp3.ResponseBody body = response.body();
-            if (body == null) {
-                response.close();
-                throw new RuntimeException("响应体为空: " + resLoc);
-            }
-            
-            return body.byteStream();
+            return net.luffy.util.UnifiedHttpClient.getInstance().getInputStreamWithHeaders(resLoc, headers);
         } catch (Exception e) {
             throw new RuntimeException("获取资源失败: " + e.getMessage(), e);
         }

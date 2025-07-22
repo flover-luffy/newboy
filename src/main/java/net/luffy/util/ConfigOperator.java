@@ -8,6 +8,7 @@ import net.luffy.Newboy;
 import net.luffy.model.Pocket48Subscribe;
 import net.luffy.model.WeidianCookie;
 import net.luffy.util.SubscriptionConfig;
+import net.luffy.util.UnifiedJsonParser;
 import net.mamoe.mirai.contact.Group;
 import net.mamoe.mirai.contact.MemberPermission;
 import net.mamoe.mirai.contact.NormalMember;
@@ -24,6 +25,7 @@ public class ConfigOperator {
     private static ConfigOperator instance;
     private Setting setting;
     private Properties properties;
+    private final UnifiedJsonParser jsonParser = UnifiedJsonParser.getInstance();
     
     /**
      * 获取ConfigOperator单例实例
@@ -53,8 +55,8 @@ public class ConfigOperator {
             tempSetting.setByGroup("basic", "admins", "123456789");
             tempSetting.setByGroup("basic", "secureGroup", "");
             
-            // 设置定时任务默认配置 - 优化为5秒间隔，减少系统负载
-            tempSetting.setByGroup("schedule", "pocket48", "*/5 * * * * *");
+            // 设置定时任务默认配置 - 优化为3秒间隔，提升实时性
+            tempSetting.setByGroup("schedule", "pocket48", "*/3 * * * * *");
             tempSetting.setByGroup("schedule", "weibo", "*/5 * * * *");
             tempSetting.setByGroup("schedule", "douyin", "*/10 * * * *");
     
@@ -82,6 +84,8 @@ public class ConfigOperator {
             tempSetting.setByGroup("message_delay", "high_load_multiplier", "1.0");
             tempSetting.setByGroup("message_delay", "critical_load_multiplier", "2.0");
             
+            // 口袋48异步处理队列配置已迁移到 Pocket48ResourceManager
+            
             // 设置订阅配置默认值
             tempSetting.setByGroup("subscribe", "pocket48", "[]");
             tempSetting.setByGroup("subscribe", "weibo", "[]");
@@ -102,9 +106,7 @@ public class ConfigOperator {
             // 保存默认配置
             tempSetting.store();
             
-            Newboy.INSTANCE.getLogger().info("首次加载已生成 config/net.luffy.newboy/config.setting 配置文件");
-            Newboy.INSTANCE.getLogger().info("请根据需要修改配置文件后重启插件");
-            Newboy.INSTANCE.getLogger().info("配置文件路径: config/net.luffy.newboy/config.setting");
+            // 首次加载已生成配置文件
         }
 
         this.setting = new Setting(file, StandardCharsets.UTF_8, false);
@@ -149,36 +151,29 @@ public class ConfigOperator {
         properties.message_delay_processing_timeout = setting.getInt("message_delay", "processing_timeout", 15);
         properties.message_delay_high_load_multiplier = setting.getDouble("message_delay", "high_load_multiplier", 1.0);
         properties.message_delay_critical_load_multiplier = setting.getDouble("message_delay", "critical_load_multiplier", 2.0);
+        
+        // 口袋48异步处理队列配置已迁移到 Pocket48ResourceManager
 
         //口袋48
         properties.pocket48_account = setting.getStr("pocket48", "account", "");
         properties.pocket48_password = setting.getStr("pocket48", "password", "");
         properties.pocket48_token = setting.getStr("pocket48", "token", "");
         
-        // 配置验证日志
-        if (!properties.pocket48_token.isEmpty()) {
-            Newboy.INSTANCE.getLogger().info("口袋48 Token 配置已读取，长度: " + properties.pocket48_token.length());
-        } else if (!properties.pocket48_account.isEmpty() && !properties.pocket48_password.isEmpty()) {
-            Newboy.INSTANCE.getLogger().info("口袋48账号密码配置已读取");
-        } else {
-            Newboy.INSTANCE.getLogger().warning("口袋48未配置登录信息，请在config.setting中配置token或账号密码");
-        }
+        // 配置验证（静默处理）
 
         // 口袋48订阅配置 - 添加JSON格式验证
         String pocket48SubscribeJson = setting.getByGroup("subscribe", "pocket48");
-        Newboy.INSTANCE.getLogger().info("读取到的口袋48订阅配置: " + pocket48SubscribeJson);
         
         if (pocket48SubscribeJson == null || pocket48SubscribeJson.trim().isEmpty() || 
             !pocket48SubscribeJson.trim().startsWith("[") || !pocket48SubscribeJson.trim().endsWith("]")) {
-            Newboy.INSTANCE.getLogger().warning("口袋48订阅配置格式无效，重置为空数组: " + pocket48SubscribeJson);
             pocket48SubscribeJson = "[]";
             setting.setByGroup("subscribe", "pocket48", pocket48SubscribeJson);
             safeStoreConfig("修复口袋48订阅配置格式");
         }
         
         try {
-            for (Object a : JSONUtil.parseArray(pocket48SubscribeJson).toArray()) {
-                JSONObject sub = JSONUtil.parseObj(a);
+            for (Object a : jsonParser.parseArray(pocket48SubscribeJson).toArray()) {
+                JSONObject sub = jsonParser.parseObj(a.toString());
                 @SuppressWarnings("unchecked")
                 List<Long> rooms = (List<Long>) sub.getBeanList("roomSubs", Long.class);
                 @SuppressWarnings("unchecked")
@@ -194,7 +189,7 @@ public class ConfigOperator {
             }
         } catch (Exception e) {
             Newboy.INSTANCE.getLogger().error("解析口袋48订阅配置时发生错误: " + e.getMessage());
-            Newboy.INSTANCE.getLogger().info("重置口袋48订阅配置为空数组");
+            // 重置口袋48订阅配置为空数组
             setting.setByGroup("subscribe", "pocket48", "[]");
             safeStoreConfig("修复口袋48订阅配置错误");
         }
@@ -203,16 +198,16 @@ public class ConfigOperator {
         String pocket48RoomJson = setting.getByGroup("roomConnection", "pocket48");
         if (pocket48RoomJson == null || pocket48RoomJson.trim().isEmpty() || 
             !pocket48RoomJson.trim().startsWith("[") || !pocket48RoomJson.trim().endsWith("]")) {
-            Newboy.INSTANCE.getLogger().warning("口袋48房间连接配置格式无效，重置为空数组: " + pocket48RoomJson);
+            Newboy.INSTANCE.getLogger().error("口袋48房间连接配置格式无效，重置为空数组: " + pocket48RoomJson);
             pocket48RoomJson = "[]";
             setting.setByGroup("roomConnection", "pocket48", pocket48RoomJson);
             safeStoreConfig("修复口袋48房间连接配置格式");
         }
         
         try {
-            Object[] pocket48Array = JSONUtil.parseArray(pocket48RoomJson).toArray();
+            Object[] pocket48Array = jsonParser.parseArray(pocket48RoomJson).toArray();
             for (Object a : pocket48Array) {
-                JSONObject sid = (a instanceof JSONObject) ? (JSONObject) a : JSONUtil.parseObj(a);
+                JSONObject sid = (a instanceof JSONObject) ? (JSONObject) a : jsonParser.parseObj(a.toString());
                 properties.pocket48_serverID.put(sid.getLong("roomID"), sid.getLong("serverID"));
             }
         } catch (Exception e) {
@@ -227,16 +222,16 @@ public class ConfigOperator {
         String weiboJson = setting.getByGroup("subscribe", "weibo");
         if (weiboJson == null || weiboJson.trim().isEmpty() || 
             !weiboJson.trim().startsWith("[") || !weiboJson.trim().endsWith("]")) {
-            Newboy.INSTANCE.getLogger().warning("微博订阅配置格式无效，重置为空数组: " + weiboJson);
+            // 微博订阅配置格式无效，重置为空数组
             weiboJson = "[]";
             setting.setByGroup("subscribe", "weibo", weiboJson);
             safeStoreConfig("修复微博订阅配置格式");
         }
         
         try {
-            Object[] weiboArray = JSONUtil.parseArray(weiboJson).toArray();
+            Object[] weiboArray = jsonParser.parseArray(weiboJson).toArray();
             for (Object a : weiboArray) {
-                JSONObject subs = (a instanceof JSONObject) ? (JSONObject) a : JSONUtil.parseObj(a);
+                JSONObject subs = (a instanceof JSONObject) ? (JSONObject) a : jsonParser.parseObj(a.toString());
 
                 long g = subs.getLong("qqGroup");
                 @SuppressWarnings("unchecked")
@@ -257,16 +252,16 @@ public class ConfigOperator {
         String weidianJson = setting.getByGroup("shops", "weidian");
         if (weidianJson == null || weidianJson.trim().isEmpty() || 
             !weidianJson.trim().startsWith("[") || !weidianJson.trim().endsWith("]")) {
-            Newboy.INSTANCE.getLogger().warning("微店配置格式无效，重置为空数组: " + weidianJson);
+            // 微店配置格式无效，重置为空数组
             weidianJson = "[]";
             setting.setByGroup("shops", "weidian", weidianJson);
             safeStoreConfig("修复微店配置格式");
         }
         
         try {
-            Object[] weidianArray = JSONUtil.parseArray(weidianJson).toArray();
+            Object[] weidianArray = jsonParser.parseArray(weidianJson).toArray();
             for (Object a : weidianArray) {
-                JSONObject shop = (a instanceof JSONObject) ? (JSONObject) a : JSONUtil.parseObj(a);
+                JSONObject shop = (a instanceof JSONObject) ? (JSONObject) a : jsonParser.parseObj(a.toString());
 
                 long g = shop.getLong("qqGroup");
                 String cookie = shop.getStr("cookie", "");
@@ -286,19 +281,19 @@ public class ConfigOperator {
         
         //抖音 - 添加JSON格式验证
         String douyinJson = setting.getByGroup("subscribe", "douyin");
-        Newboy.INSTANCE.getLogger().info("读取到的抖音订阅配置: " + douyinJson);
+        // 读取抖音订阅配置
         if (douyinJson == null || douyinJson.trim().isEmpty() || 
             !douyinJson.trim().startsWith("[") || !douyinJson.trim().endsWith("]")) {
-            Newboy.INSTANCE.getLogger().warning("抖音订阅配置格式无效，重置为空数组: " + douyinJson);
+            // 抖音订阅配置格式无效，重置为空数组
             douyinJson = "[]";
             setting.setByGroup("subscribe", "douyin", douyinJson);
             safeStoreConfig("修复抖音订阅配置格式");
         }
         
         try {
-            Object[] douyinArray = JSONUtil.parseArray(douyinJson).toArray();
+            Object[] douyinArray = jsonParser.parseArray(douyinJson).toArray();
             for (Object a : douyinArray) {
-                JSONObject subs = (a instanceof JSONObject) ? (JSONObject) a : JSONUtil.parseObj(a);
+                JSONObject subs = (a instanceof JSONObject) ? (JSONObject) a : jsonParser.parseObj(a.toString());
 
                 long g = subs.getLong("qqGroup");
                 @SuppressWarnings("unchecked")
@@ -322,12 +317,8 @@ public class ConfigOperator {
         
 
         
-        // 配置验证日志
-        if (!properties.douyin_cookie.isEmpty()) {
-            Newboy.INSTANCE.getLogger().info("抖音 Cookie 配置已读取，长度: " + properties.douyin_cookie.length());
-        } else {
-            Newboy.INSTANCE.getLogger().warning("抖音未配置Cookie，可能影响数据获取准确性");
-        }
+        // 配置验证 - 仅在错误时输出
+        // 抖音Cookie配置检查完成
         
 
         
@@ -698,13 +689,13 @@ public class ConfigOperator {
     public void saveAsyncMonitorSubscribeConfig() {
         // 检查setting是否已初始化，如果未初始化则尝试重新初始化
         if (setting == null) {
-            Newboy.INSTANCE.getLogger().warning("ConfigOperator的setting为null，尝试重新初始化...");
+            Newboy.INSTANCE.getLogger().error("ConfigOperator的setting为null，尝试重新初始化...");
             
             // 尝试重新获取Properties实例并初始化
             if (properties != null && properties.configData != null) {
                 try {
                     this.setting = new Setting(properties.configData, StandardCharsets.UTF_8, false);
-                    Newboy.INSTANCE.getLogger().info("ConfigOperator重新初始化成功");
+                    // ConfigOperator重新初始化成功
                 } catch (Exception e) {
                     Newboy.INSTANCE.getLogger().error("ConfigOperator重新初始化失败: " + e.getMessage(), e);
                     return;
@@ -753,13 +744,13 @@ public class ConfigOperator {
     public void loadAsyncMonitorSubscribeConfig() {
         // 检查setting是否已初始化
         if (setting == null) {
-            Newboy.INSTANCE.getLogger().warning("ConfigOperator的setting为null，尝试重新初始化...");
+            Newboy.INSTANCE.getLogger().error("ConfigOperator的setting为null，尝试重新初始化...");
             
             // 尝试重新获取Properties实例并初始化
             if (properties != null && properties.configData != null) {
                 try {
                     this.setting = new Setting(properties.configData, StandardCharsets.UTF_8, false);
-                    Newboy.INSTANCE.getLogger().info("ConfigOperator重新初始化成功");
+                    // ConfigOperator重新初始化成功
                 } catch (Exception e) {
                     Newboy.INSTANCE.getLogger().error("ConfigOperator重新初始化失败: " + e.getMessage(), e);
                     return;
@@ -776,7 +767,7 @@ public class ConfigOperator {
             AsyncOnlineStatusMonitor monitor = AsyncOnlineStatusMonitor.INSTANCE;
             
             // 调试日志：输出读取到的JSON字符串
-            Newboy.INSTANCE.getLogger().info("读取到的异步监控配置JSON: " + subscribeJson);
+            // 读取到的异步监控配置JSON
             
             // 验证JSON格式
             if (subscribeJson == null || subscribeJson.trim().isEmpty()) {
@@ -786,19 +777,19 @@ public class ConfigOperator {
             // 检查是否是有效的JSON数组格式
             String trimmed = subscribeJson.trim();
             if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) {
-                Newboy.INSTANCE.getLogger().warning("异步监控配置格式错误，重置为空数组: " + subscribeJson);
+                Newboy.INSTANCE.getLogger().error("异步监控配置格式错误，重置为空数组: " + subscribeJson);
                 subscribeJson = "[]";
                 // 修复配置文件
                 setting.setByGroup("subscribe", "async_monitor", "[]");
                 safeStoreConfig("异步监控配置修复");
             }
             
-            // 使用Hutool的JSONUtil解析JSON配置: [{"qqGroup":253610309,"memberSubs":["胡丹"]}]
+            // 使用统一JSON解析器解析JSON配置: [{"qqGroup":253610309,"memberSubs":["胡丹"]}]
             if (!subscribeJson.trim().equals("[]")) {
-                Object[] configArray = JSONUtil.parseArray(subscribeJson).toArray();
+                Object[] configArray = jsonParser.parseArray(subscribeJson).toArray();
                 
                 for (Object configObj : configArray) {
-                    JSONObject config = (configObj instanceof JSONObject) ? (JSONObject) configObj : JSONUtil.parseObj(configObj);
+                    JSONObject config = (configObj instanceof JSONObject) ? (JSONObject) configObj : jsonParser.parseObj(configObj.toString());
                     
                     long qqGroup = config.getLong("qqGroup");
                     @SuppressWarnings("unchecked")
@@ -816,7 +807,7 @@ public class ConfigOperator {
             
             int totalMembers = monitor.getAllSubscribedMembers().size();
             int totalGroups = monitor.getSubscriptionConfigs().size();
-            Newboy.INSTANCE.getLogger().info("异步监控订阅配置加载完成，共加载 " + totalGroups + " 个群组，" + totalMembers + " 个订阅成员");
+            // 异步监控订阅配置加载完成
             
         } catch (Exception e) {
             Newboy.INSTANCE.getLogger().error("加载异步监控订阅配置失败: " + e.getMessage(), e);
@@ -833,13 +824,12 @@ public class ConfigOperator {
      */
     private void safeStoreConfig(String configType) {
         try {
-            // 记录配置保存操作
-            Newboy.INSTANCE.getLogger().info("正在保存" + configType + "...");
+            // 正在保存配置
             
             // 使用原有的保存方式，但添加更好的错误处理
             setting.store();
             
-            Newboy.INSTANCE.getLogger().info(configType + "已成功保存到: " + properties.configData.getAbsolutePath());
+            // 配置已成功保存
             
         } catch (Exception e) {
             Newboy.INSTANCE.getLogger().error("保存" + configType + "失败: " + e.getMessage(), e);

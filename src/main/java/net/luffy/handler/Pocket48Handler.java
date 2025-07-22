@@ -4,8 +4,8 @@ import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import net.luffy.Newboy;
-import okhttp3.Headers;
-import okhttp3.Request;
+import net.luffy.util.UnifiedJsonParser;
+// OkHttp imports removed - migrated to UnifiedHttpClient
 import net.luffy.model.Pocket48Message;
 import net.luffy.model.Pocket48RoomInfo;
 
@@ -33,6 +33,7 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
     private static final String APIRoomVoice = ROOT + "/im/api/v1/team/voice/operate";
     private final Pocket48HandlerHeader header;
     private final HashMap<Long, String> name = new HashMap<>();
+    private final UnifiedJsonParser jsonParser = UnifiedJsonParser.getInstance();
 
     public Pocket48Handler() {
         super();
@@ -73,11 +74,11 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
             requestBody.set("pwd", password);
             requestBody.set("mobile", account);
             
-            String s = post(url, requestBody.toString());
+            String s = post(url, requestBody.toString(), header.getLoginHeaders());
             
-            JSONObject object = JSONUtil.parseObj(s);
+            JSONObject object = jsonParser.parseObj(s);
             if (object.getInt("status") == 200) {
-                JSONObject content = JSONUtil.parseObj(object.getObj("content"));
+                JSONObject content = jsonParser.parseObj(object.getObj("content").toString());
                 login(content.getStr("token"), true);
                 return true;
             } else {
@@ -126,38 +127,36 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
         super.logError(msg);
     }
 
-    // 重写buildRequest方法以添加Token头
-    @Override
-    protected Request.Builder buildRequest(String url) {
-        Request.Builder builder = super.buildRequest(url)
-                .addHeader("Content-Type", "application/json;charset=utf-8")
-                .addHeader("Host", "pocketapi.48.cn")
-                .addHeader("pa", "MTc1MTg5NTgzMjAwMCwzODMzLEQ3ODVBRENBM0U3QTkzRDVFNTJCMjVDQUJDRUY4NDczLA==")
-                .addHeader("User-Agent", "PocketFans201807/7.1.34 (iPhone; iOS 19.0; Scale/2.00)")
-                .addHeader("appInfo", "{\"vendor\":\"apple\",\"deviceId\":\"8D6DDD0B-2233-4622-89AA-AABB14D4F37B\",\"appVersion\":\"7.1.34\",\"appBuild\":\"25060602\",\"osVersion\":\"19.0\",\"osType\":\"ios\",\"deviceName\":\"iPhone 11\",\"os\":\"ios\"}");
+    // 获取Pocket48专用请求头
+    protected java.util.Map<String, String> getPocket48Headers() {
+        java.util.Map<String, String> headers = new java.util.HashMap<>();
+        headers.put("Content-Type", "application/json;charset=utf-8");
+        headers.put("Host", "pocketapi.48.cn");
+        headers.put("pa", "MTc1MTg5NTgzMjAwMCwzODMzLEQ3ODVBRENBM0U3QTkzRDVFNTJCMjVDQUJDRUY4NDczLA==");
+        headers.put("User-Agent", "PocketFans201807/7.1.34 (iPhone; iOS 19.0; Scale/2.00)");
+        headers.put("appInfo", "{\"vendor\":\"apple\",\"deviceId\":\"8D6DDD0B-2233-4622-89AA-AABB14D4F37B\",\"appVersion\":\"7.1.34\",\"appBuild\":\"25060602\",\"osVersion\":\"19.0\",\"osType\":\"ios\",\"deviceName\":\"iPhone 11\",\"os\":\"ios\"}");
         
         // 如果已登录，添加token头
         if (header.getToken() != null) {
-            builder.addHeader("token", header.getToken());
+            headers.put("token", header.getToken());
         }
         
-        return builder;
+        return headers;
     }
 
     public String getBalance() {
         try {
             String url = "https://pocketapi.48.cn/user/api/v1/user/info/pfid";
             
-            Headers headers = new Headers.Builder()
-                .add("token", header.getToken())
-                .add("User-Agent", "PocketFans201807/6.0.16 (iPhone; iOS 13.5.1; Scale/2.00)")
-                .add("Accept", "application/json")
-                .add("Accept-Language", "zh-Hans-CN;q=1")
-                .build();
+            java.util.Map<String, String> headers = new java.util.HashMap<>();
+            headers.put("token", header.getToken());
+            headers.put("User-Agent", "PocketFans201807/6.0.16 (iPhone; iOS 13.5.1; Scale/2.00)");
+            headers.put("Accept", "application/json");
+            headers.put("Accept-Language", "zh-Hans-CN;q=1");
             
             String response = get(url, headers);
             
-            JSONObject jsonResponse = JSONUtil.parseObj(response);
+            JSONObject jsonResponse = jsonParser.parseObj(response);
             if (jsonResponse.getInt("status") == 200) {
                 JSONObject content = jsonResponse.getJSONObject("content");
                 return content.getStr("pfid", "0");
@@ -187,12 +186,12 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
     }
 
     public JSONObject getUserInfo(long starID) {
-        String s = post(APIUserInfo, String.format("{\"userId\":%d}", starID));
-        JSONObject object = JSONUtil.parseObj(s);
+        String s = post(APIUserInfo, String.format("{\"userId\":%d}", starID), getPocket48Headers());
+        JSONObject object = jsonParser.parseObj(s);
 
         if (object.getInt("status") == 200) {
-            JSONObject content = JSONUtil.parseObj(object.getObj("content"));
-            return JSONUtil.parseObj(content.getObj("baseUserInfo"));
+            JSONObject content = jsonParser.parseObj(object.getObj("content").toString());
+            return jsonParser.parseObj(content.getObj("baseUserInfo").toString());
 
         } else {
             logError(starID + object.getStr("message"));
@@ -202,11 +201,11 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
     }
 
     public JSONObject getUserArchives(long starID) {
-        String s = post(APIUserArchives, String.format("{\"memberId\":%d}", starID));
-        JSONObject object = JSONUtil.parseObj(s);
+        String s = post(APIUserArchives, String.format("{\"memberId\":%d}", starID), getPocket48Headers());
+        JSONObject object = jsonParser.parseObj(s);
 
         if (object.getInt("status") == 200) {
-            return JSONUtil.parseObj(object.getObj("content"));
+            return jsonParser.parseObj(object.getObj("content").toString());
 
         } else {
             logError(starID + object.getStr("message"));
@@ -224,11 +223,11 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
     }
 
     private JSONObject getJumpContent(long starID) {
-        String s = post(APIStar2Server, String.format("{\"starId\":%d,\"targetType\":1}", starID));
-        JSONObject object = JSONUtil.parseObj(s);
+        String s = post(APIStar2Server, String.format("{\"starId\":%d,\"targetType\":1}", starID), getPocket48Headers());
+        JSONObject object = jsonParser.parseObj(s);
 
         if (object.getInt("status") == 200) {
-            return JSONUtil.parseObj(object.getObj("content"));
+            return jsonParser.parseObj(object.getObj("content").toString());
 
         } else {
             logError(starID + object.getStr("message"));
@@ -250,7 +249,7 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
     public Long getServerIDByStarID(long starID) {
         JSONObject content = getJumpContent(starID);
         if (content != null) {
-            JSONObject serverInfo = JSONUtil.parseObj(content.getObj("jumpServerInfo"));
+            JSONObject serverInfo = jsonParser.parseObj(content.getObj("jumpServerInfo").toString());
             if (serverInfo != null) {
                 return serverInfo.getLong("serverId");
             }
@@ -259,14 +258,14 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
     }
 
     public Long[] getChannelIDBySeverID(long serverID) {
-        String s = post(APIServer2Channel, String.format("{\"serverId\":\"%d\"}", serverID));
-        JSONObject object = JSONUtil.parseObj(s);
+        String s = post(APIServer2Channel, String.format("{\"serverId\":\"%d\"}", serverID), getPocket48Headers());
+        JSONObject object = jsonParser.parseObj(s);
 
         if (object.getInt("status") == 200) {
-            JSONObject content = JSONUtil.parseObj(object.getObj("content"));
+            JSONObject content = jsonParser.parseObj(object.getObj("content").toString());
             List<Long> rs = new ArrayList<>();
             for (Object room : content.getBeanList("lastMsgList", Object.class)) {
-                rs.add(JSONUtil.parseObj(room).getLong("channelId"));
+                rs.add(jsonParser.parseObj(room.toString()).getLong("channelId"));
             }
             return rs.toArray(new Long[0]);
 
@@ -277,17 +276,17 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
     }
 
     public Pocket48RoomInfo getRoomInfoByChannelID(long roomID) {
-        String s = post(APIChannel2Server, String.format("{\"channelId\":\"%d\"}", roomID));
-        JSONObject object = JSONUtil.parseObj(s);
+        String s = post(APIChannel2Server, String.format("{\"channelId\":\"%d\"}", roomID), getPocket48Headers());
+        JSONObject object = jsonParser.parseObj(s);
 
         if (object.getInt("status") == 200) {
-            JSONObject content = JSONUtil.parseObj(object.getObj("content"));
-            JSONObject roomInfo = JSONUtil.parseObj(content.getObj("channelInfo"));
+            JSONObject content = jsonParser.parseObj(object.getObj("content").toString());
+            JSONObject roomInfo = jsonParser.parseObj(content.getObj("channelInfo").toString());
             return new Pocket48RoomInfo(roomInfo);
 
         } else if (object.getInt("status") == 2001
                 && object.getStr("message").indexOf("question") != -1) { //只有配置中存有severID的加密房间会被解析
-            JSONObject message = JSONUtil.parseObj(object.getObj("message"));
+            JSONObject message = jsonParser.parseObj(object.getObj("message").toString());
             return new Pocket48RoomInfo.LockedRoomInfo(message.getStr("question") + "？",
                     properties.pocket48_serverID.get(roomID), roomID);
         } else {
@@ -298,11 +297,11 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
     }
 
     public Object[] search(String content_) {
-        String s = post(APISearch, String.format("{\"searchContent\":\"%s\"}", content_));
-        JSONObject object = JSONUtil.parseObj(s);
+        String s = post(APISearch, String.format("{\"searchContent\":\"%s\"}", content_), getPocket48Headers());
+        JSONObject object = jsonParser.parseObj(s);
 
         if (object.getInt("status") == 200) {
-            JSONObject content = JSONUtil.parseObj(object.getObj("content"));
+            JSONObject content = jsonParser.parseObj(object.getObj("content").toString());
             if (content.containsKey("serverApiList")) {
                 JSONArray a = content.getJSONArray("serverApiList");
                 return a.stream().toArray();
@@ -315,11 +314,11 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
     }
 
     public String getAnswerNameTo(String answerID, String questionID) {
-        String s = post(APIAnswerDetail, String.format("{\"answerId\":\"%s\",\"questionId\":\"%s\"}", answerID, questionID));
-        JSONObject object = JSONUtil.parseObj(s);
+        String s = post(APIAnswerDetail, String.format("{\"answerId\":\"%s\",\"questionId\":\"%s\"}", answerID, questionID), getPocket48Headers());
+        JSONObject object = jsonParser.parseObj(s);
 
         if (object.getInt("status") == 200) {
-            JSONObject content = JSONUtil.parseObj(object.getObj("content"));
+            JSONObject content = jsonParser.parseObj(object.getObj("content").toString());
             return content.getStr("userName");
 
         } else {
@@ -342,7 +341,7 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
             List<Pocket48Message> rs = new ArrayList<>();
             long latest = 0;
             for (Object message : msgs) {
-                JSONObject m = JSONUtil.parseObj(message);
+                JSONObject m = jsonParser.parseObj(message.toString());
                 long time = m.getLong("msgTime");
 
                 if (endTime.get(roomID) >= time)
@@ -381,7 +380,7 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
             for (Object message : msgs) {
                 rs.add(Pocket48Message.construct(
                         roomInfo,
-                        JSONUtil.parseObj(message)
+                        jsonParser.parseObj(message.toString())
                 ));
             }
             return rs.toArray(new Pocket48Message[0]);
@@ -401,13 +400,13 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
 
     //获取未整理的消息
     private List<Object> getOriMessages(long roomID, long serverID) {
-        String s = post(APIMsgOwner, String.format("{\"nextTime\":0,\"serverId\":%d,\"channelId\":%d,\"limit\":100}", serverID, roomID));
-        JSONObject object = JSONUtil.parseObj(s);
+        String s = post(APIMsgOwner, String.format("{\"nextTime\":0,\"serverId\":%d,\"channelId\":%d,\"limit\":100}", serverID, roomID), getPocket48Headers());
+        JSONObject object = jsonParser.parseObj(s);
 
         if (object.getInt("status") == 200) {
-            JSONObject content = JSONUtil.parseObj(object.getObj("content"));
+            JSONObject content = jsonParser.parseObj(object.getObj("content").toString());
             List<Object> out = content.getBeanList("message", Object.class);
-            out.sort((a, b) -> JSONUtil.parseObj(b).getLong("msgTime") - JSONUtil.parseObj(a).getLong("msgTime") > 0 ? 1 : 0);//口袋消息好像会乱（？）
+            out.sort((a, b) -> jsonParser.parseObj(b.toString()).getLong("msgTime") - jsonParser.parseObj(a.toString()).getLong("msgTime") > 0 ? 1 : 0);//口袋消息好像会乱（？）
             return out;
 
         } else {
@@ -418,15 +417,15 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
     }
 
     public List<Long> getRoomVoiceList(long roomID, long serverID) {
-        String s = post(APIRoomVoice, String.format("{\"channelId\":%d,\"serverId\":%d,\"operateCode\":2}", roomID, serverID));
-        JSONObject object = JSONUtil.parseObj(s);
+        String s = post(APIRoomVoice, String.format("{\"channelId\":%d,\"serverId\":%d,\"operateCode\":2}", roomID, serverID), getPocket48Headers());
+        JSONObject object = jsonParser.parseObj(s);
         if (object.getInt("status") == 200) {
-            JSONObject content = JSONUtil.parseObj(object.getObj("content"));
+            JSONObject content = jsonParser.parseObj(object.getObj("content").toString());
             JSONArray a = content.getJSONArray("voiceUserList");
             List<Long> l = new ArrayList<>();
             if (a.size() > 0) {
                 for (Object star_ : a.stream().toArray()) {
-                    JSONObject star = JSONUtil.parseObj(star_);
+                    JSONObject star = jsonParser.parseObj(star_.toString());
                     long starID = star.getLong("userId");
                     l.add(starID);
 
@@ -446,11 +445,11 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
 
     /* ----------------------直播类---------------------- */
     public List<Object> getLiveList() {
-        String s = post(APILiveList, "{\"groupId\":0,\"debug\":true,\"next\":0,\"record\":false}");
-        JSONObject object = JSONUtil.parseObj(s);
+        String s = post(APILiveList, "{\"groupId\":0,\"debug\":true,\"next\":0,\"record\":false}", getPocket48Headers());
+        JSONObject object = jsonParser.parseObj(s);
 
         if (object.getInt("status") == 200) {
-            JSONObject content = JSONUtil.parseObj(object.getObj("content"));
+            JSONObject content = jsonParser.parseObj(object.getObj("content").toString());
             return content.getBeanList("liveList", Object.class);
 
         } else {
@@ -461,11 +460,11 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
     }
 
     public List<Object> getRecordList() {
-        String s = post(APILiveList, "{\"groupId\":0,\"debug\":true,\"next\":0,\"record\":true}");
-        JSONObject object = JSONUtil.parseObj(s);
+        String s = post(APILiveList, "{\"groupId\":0,\"debug\":true,\"next\":0,\"record\":true}", getPocket48Headers());
+        JSONObject object = jsonParser.parseObj(s);
 
         if (object.getInt("status") == 200) {
-            JSONObject content = JSONUtil.parseObj(object.getObj("content"));
+            JSONObject content = jsonParser.parseObj(object.getObj("content").toString());
             return content.getBeanList("liveList", Object.class);
 
         } else {

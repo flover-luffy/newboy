@@ -106,11 +106,7 @@ public class MessageDelayConfig {
      * 记录配置摘要
      */
     private void logConfigurationSummary() {
-        if (consoleOutput) {
-            Newboy.INSTANCE.getLogger().info(
-                String.format("消息延迟配置加载完成 - 模式: %s, 文本延迟: %dms, 媒体延迟: %dms, 超时: %ds",
-                    delayMode.getValue(), textDelay, mediaDelay, processingTimeout));
-        }
+        // 消息延迟配置加载完成，静默处理
     }
     
     /**

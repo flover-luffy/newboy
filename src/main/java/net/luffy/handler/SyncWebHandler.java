@@ -1,11 +1,11 @@
 package net.luffy.handler;
 
-import cn.hutool.http.HttpRequest;
-import cn.hutool.http.HttpResponse;
 import net.luffy.Newboy;
 import net.luffy.util.Properties;
+import net.luffy.util.UnifiedHttpClient;
 
 import java.io.InputStream;
+import java.util.Map;
 
 /**
  * 同步Web处理器基类
@@ -31,10 +31,7 @@ public class SyncWebHandler {
      */
     protected String get(String url) {
         try {
-            HttpResponse response = HttpRequest.get(url)
-                    .timeout(DEFAULT_TIMEOUT)
-                    .execute();
-            return response.body();
+            return net.luffy.util.UnifiedHttpClient.getInstance().get(url);
         } catch (Exception e) {
             throw new RuntimeException("GET请求失败: " + e.getMessage(), e);
         }
@@ -48,11 +45,7 @@ public class SyncWebHandler {
      */
     protected String post(String url, String body) {
         try {
-            HttpResponse response = HttpRequest.post(url)
-                    .body(body)
-                    .timeout(DEFAULT_TIMEOUT)
-                    .execute();
-            return response.body();
+            return net.luffy.util.UnifiedHttpClient.getInstance().post(url, body);
         } catch (Exception e) {
             throw new RuntimeException("POST请求失败: " + e.getMessage(), e);
         }
@@ -60,20 +53,14 @@ public class SyncWebHandler {
 
     /**
      * 发送带请求头的GET请求
+     * 使用统一HTTP客户端支持自定义Headers
      * @param url 请求URL
      * @param headers 请求头
      * @return 响应内容
      */
-    protected String get(String url, java.util.Map<String, String> headers) {
+    protected String get(String url, Map<String, String> headers) {
         try {
-            HttpRequest request = HttpRequest.get(url).timeout(DEFAULT_TIMEOUT);
-            if (headers != null) {
-                for (java.util.Map.Entry<String, String> header : headers.entrySet()) {
-                    request.header(header.getKey(), header.getValue());
-                }
-            }
-            HttpResponse response = request.execute();
-            return response.body();
+            return UnifiedHttpClient.getInstance().get(url, headers);
         } catch (Exception e) {
             throw new RuntimeException("GET请求失败: " + e.getMessage(), e);
         }
@@ -86,18 +73,9 @@ public class SyncWebHandler {
      * @param body 请求体
      * @return 响应内容
      */
-    protected String post(String url, java.util.Map<String, String> headers, String body) {
+    protected String post(String url, Map<String, String> headers, String body) {
         try {
-            HttpRequest request = HttpRequest.post(url)
-                    .body(body)
-                    .timeout(DEFAULT_TIMEOUT);
-            if (headers != null) {
-                for (java.util.Map.Entry<String, String> header : headers.entrySet()) {
-                    request.header(header.getKey(), header.getValue());
-                }
-            }
-            HttpResponse response = request.execute();
-            return response.body();
+            return UnifiedHttpClient.getInstance().post(url, body, headers);
         } catch (Exception e) {
             throw new RuntimeException("POST请求失败: " + e.getMessage(), e);
         }
@@ -110,10 +88,7 @@ public class SyncWebHandler {
      */
     protected InputStream getInputStream(String url) {
         try {
-            return HttpRequest.get(url)
-                    .timeout(DEFAULT_TIMEOUT)
-                    .execute()
-                    .bodyStream();
+            return net.luffy.util.UnifiedHttpClient.getInstance().getInputStream(url);
         } catch (Exception e) {
             throw new RuntimeException("获取输入流失败: " + e.getMessage(), e);
         }
@@ -124,8 +99,8 @@ public class SyncWebHandler {
      * @param message 日志消息
      */
     protected void logInfo(String message) {
-        // 使用Mirai日志系统而非控制台输出
-        Newboy.INSTANCE.getLogger().info(message);
+        // 仅在错误时输出日志，info级别日志已禁用
+        // Newboy.INSTANCE.getLogger().info(message);
     }
 
     /**

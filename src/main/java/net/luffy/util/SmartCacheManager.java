@@ -113,8 +113,7 @@ public class SmartCacheManager {
     public void performMemoryPressureCleanup() {
         double memoryUsage = getMemoryUsage();
         if (memoryUsage > MEMORY_PRESSURE_THRESHOLD) {
-            Newboy.INSTANCE.getLogger().info(
-                String.format("[智能缓存] 内存压力清理开始 (使用率: %.1f%%)", memoryUsage * 100));
+            // 内存压力清理开始
             
             // 清理弱引用缓存中的无效引用
             cleanupWeakReferences();
@@ -136,8 +135,7 @@ public class SmartCacheManager {
         LRUCache<String, CacheEntry> cache = caches.get(cacheName);
         if (cache != null) {
             cache.clear();
-            Newboy.INSTANCE.getLogger().info(
-                String.format("[智能缓存] 已清理缓存: %s", cacheName));
+            // 已清理缓存
         }
     }
     
@@ -147,7 +145,7 @@ public class SmartCacheManager {
     public void clearAllCaches() {
         caches.values().forEach(LRUCache::clear);
         weakCache.clear();
-        Newboy.INSTANCE.getLogger().info("[智能缓存] 已清理所有缓存");
+        // 已清理所有缓存
     }
     
     /**
@@ -222,13 +220,12 @@ public class SmartCacheManager {
         }
         
         if (cleanedCount > 0) {
-            Newboy.INSTANCE.getLogger().debug(
-                String.format("[智能缓存] 清理了 %d 个无效弱引用", cleanedCount));
+            // 清理了无效弱引用
         }
     }
     
     private void performAggressiveCleanup() {
-        Newboy.INSTANCE.getLogger().info("[智能缓存] 执行激进清理策略");
+        // 执行激进清理策略
         
         // 清理一半的缓存条目
         for (LRUCache<String, CacheEntry> cache : caches.values()) {

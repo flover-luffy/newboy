@@ -67,7 +67,9 @@ public final class Newboy extends JavaPlugin {
 
     @Override
     public void onEnable() {
-        getLogger().info("正在启动插件...");
+        // HTTP调试模式已关闭 - 如需开启请通过JVM参数 -Dhttp.debug=true
+        // System.setProperty("http.debug", "true");
+        // getLogger().info("HTTP调试模式已开启");
         
         // 初始化统一调度器
         UnifiedSchedulerManager.getInstance();
@@ -78,8 +80,8 @@ public final class Newboy extends JavaPlugin {
         EventBusManager.getInstance();
         
         // 预热JSON解析器，提高首次解析性能
-        net.luffy.util.HighPerformanceJsonParser.warmUp();
-        getLogger().info("JSON解析器预热完成");
+        // 预热统一JSON解析器
+        net.luffy.util.UnifiedJsonParser.getInstance();
         
         initProperties();
         loadConfig();
@@ -101,17 +103,14 @@ public final class Newboy extends JavaPlugin {
                     properties.pocket48_password);
         } else {
             pocket48_has_login = false;
-            getLogger().info("开启口袋48播报需填写config/net.luffy.newboy/config.setting并重启");
         }
 
         boolean weibo_has_login = false;
         try {
             this.handlerWeibo.updateLoginToSuccess();
             weibo_has_login = true;
-            getLogger().info("微博Cookie更新成功");
-
         } catch (Exception e) {
-            getLogger().info("微博Cookie更新失败");
+            // 微博Cookie更新失败，静默处理
         }
         boolean finalWeibo_has_login = weibo_has_login;
         listenBroadcast(pocket48_has_login, finalWeibo_has_login);
@@ -120,12 +119,11 @@ public final class Newboy extends JavaPlugin {
         if (properties.admins != null && properties.admins.length > 0) {
             String firstAdmin = properties.admins[0];
             PerformanceMonitor.getInstance().enablePeriodicReporting(firstAdmin, 1440); // 24小时间隔
-            getLogger().info("已启用定期性能报告，将发送给管理员: " + firstAdmin);
         }
 
 
 
-        getLogger().info("New boy!");
+        // 插件启动完成
 
         // ------------------------------------------------
         // YLG功能已移除
@@ -209,7 +207,6 @@ public final class Newboy extends JavaPlugin {
         if (scheduler != null) {
             try {
                 scheduler.stop();
-                getLogger().info("所有定时任务已停止");
             } catch (Exception e) {
                 getLogger().error("停止定时任务时发生错误", e);
             }
@@ -260,8 +257,6 @@ public final class Newboy extends JavaPlugin {
     @Override
     public void onDisable() {
         try {
-            getLogger().info("正在关闭插件...");
-            
             // 停止所有定时任务
             stopAllScheduledTasks();
             
@@ -276,13 +271,11 @@ public final class Newboy extends JavaPlugin {
             AdaptiveThreadPoolManager.getInstance().shutdown();
             
             // 清理JSON解析器缓存
-            net.luffy.util.HighPerformanceJsonParser.clearCache();
-            getLogger().info("JSON解析器缓存已清理");
+            // 清理统一JSON解析器缓存
+        net.luffy.util.UnifiedJsonParser.getInstance().clearCache();
             
             // 关闭统一调度器（最后关闭）
             UnifiedSchedulerManager.getInstance().shutdown();
-            
-            getLogger().info("插件已安全关闭，所有资源已释放");
         } catch (Exception e) {
             getLogger().error("插件关闭时发生错误", e);
         }
@@ -295,21 +288,17 @@ public final class Newboy extends JavaPlugin {
         // 在配置加载完成后初始化异步监控系统
         try {
             AsyncOnlineStatusMonitor.INSTANCE.initializeMonitoring();
-            getLogger().info("异步监控系统初始化完成");
         } catch (Exception e) {
-            getLogger().warning("异步监控系统初始化失败: " + e.getMessage());
+            getLogger().error("异步监控系统初始化失败: " + e.getMessage());
         }
         
         // 自动启动抖音监控服务
         try {
             if (properties.douyin_user_subscribe != null && !properties.douyin_user_subscribe.isEmpty()) {
                 net.luffy.util.DouyinMonitorService.getInstance().startMonitoring(10);
-                getLogger().info("抖音监控服务已自动启动");
-            } else {
-                getLogger().info("未配置抖音监控用户，跳过抖音监控服务启动");
             }
         } catch (Exception e) {
-            getLogger().warning("抖音监控服务启动失败: " + e.getMessage());
+            getLogger().error("抖音监控服务启动失败: " + e.getMessage());
         }
     }
 

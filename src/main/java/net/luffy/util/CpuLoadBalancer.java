@@ -218,7 +218,7 @@ public class CpuLoadBalancer {
                     new EventBusManager.ResourceCleanupEvent("Emergency", 1, 
                         Runtime.getRuntime().freeMemory()));
                 
-                Newboy.INSTANCE.getLogger().info("[CPU负载均衡器] 紧急资源清理完成");
+                // 紧急资源清理完成
                 
             } catch (Exception e) {
                 Newboy.INSTANCE.getLogger().error("[CPU负载均衡器] 紧急清理失败", e);

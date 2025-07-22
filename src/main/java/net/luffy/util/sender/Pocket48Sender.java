@@ -3,9 +3,10 @@ package net.luffy.util.sender;
 import cn.hutool.core.date.DateUtil;
 import net.luffy.Newboy;
 import net.luffy.handler.Pocket48Handler;
-import net.luffy.util.sender.Pocket48ResourceHandler;
+import net.luffy.util.sender.Pocket48UnifiedResourceManager;
 import net.luffy.util.PerformanceMonitor;
 import net.luffy.util.MessageDelayConfig;
+// UnifiedClientMigrationHelper已删除，直接使用UnifiedHttpClient
 import net.luffy.model.*;
 import net.mamoe.mirai.Bot;
 import net.mamoe.mirai.contact.Group;
@@ -24,6 +25,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -33,20 +35,22 @@ public class Pocket48Sender extends Sender {
     private final HashMap<Long, Long> endTime;
     private final HashMap<Long, List<Long>> voiceStatus;
     private final HashMap<Long, Pocket48SenderCache> cache;
-    private final Pocket48ResourceHandler resourceHandler;
+    private final Pocket48UnifiedResourceManager unifiedResourceManager;
     private final Pocket48AsyncMessageProcessor asyncProcessor;
-    private final Pocket48ResourceOptimizer resourceOptimizer;
     private final MessageDelayConfig delayConfig;
+    private final net.luffy.util.CpuLoadBalancer loadBalancer;
+    private final Pocket48MediaQueue mediaQueue;
 
     public Pocket48Sender(Bot bot, long group, HashMap<Long, Long> endTime, HashMap<Long, List<Long>> voiceStatus, HashMap<Long, Pocket48SenderCache> cache) {
         super(bot, group);
         this.endTime = endTime;
         this.voiceStatus = voiceStatus;
         this.cache = cache;
-        this.resourceHandler = new Pocket48ResourceHandler();
+        this.unifiedResourceManager = Pocket48UnifiedResourceManager.getInstance();
         this.asyncProcessor = new Pocket48AsyncMessageProcessor(this);
-        this.resourceOptimizer = new Pocket48ResourceOptimizer(resourceHandler);
         this.delayConfig = MessageDelayConfig.getInstance();
+        this.loadBalancer = net.luffy.util.CpuLoadBalancer.getInstance();
+        this.mediaQueue = new Pocket48MediaQueue();
     }
 
     @Override
@@ -102,23 +106,21 @@ public class Pocket48Sender extends Sender {
                 voiceStatus.put(roomID, n);
             }
 
-            //房间消息 - 使用异步处理器并行处理
+            //房间消息 - 优化：按时间统一排序后逐个发送，避免批量发送造成的延迟
             if (totalMessages.size() > 0) {
+                // 将所有房间的消息合并并按时间排序
+                List<Pocket48Message> allMessages = new ArrayList<>();
                 for (Pocket48Message[] roomMessage : totalMessages) {
-                    // 创建倒序消息数组
-                    Pocket48Message[] reversedMessages = new Pocket48Message[roomMessage.length];
-                    for (int i = 0; i < roomMessage.length; i++) {
-                        reversedMessages[i] = roomMessage[roomMessage.length - 1 - i];
+                    for (Pocket48Message msg : roomMessage) {
+                        allMessages.add(msg);
                     }
-                    
-                    // 异步处理消息
-                    List<CompletableFuture<Pocket48SenderMessage>> futures = 
-                        asyncProcessor.processMessagesAsync(reversedMessages, group);
-                    
-                    // 等待处理完成并按顺序发送 - 使用智能超时：文本消息快速处理，媒体消息允许更长时间
-                    asyncProcessor.waitAndSendMessagesWithSmartTimeout(futures, group, 
-                        delayConfig.getTextProcessingTimeout(), delayConfig.getMediaProcessingTimeout());
                 }
+                
+                // 按消息时间戳排序（从旧到新）
+                allMessages.sort((a, b) -> Long.compare(a.getTime(), b.getTime()));
+                
+                // 使用优化的发送方法：按时间顺序逐个发送
+                sendMessagesInTimeOrder(allMessages, group);
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -172,11 +174,11 @@ public class Pocket48Sender extends Sender {
                 try {
                     // 智能获取音频文件（优先使用缓存）
                     String audioExt = message.getExt() != null && !message.getExt().isEmpty() ? "." + message.getExt() : ".amr";
-                    audioFile = resourceOptimizer.getResourceSmart(audioUrl);
+                    audioFile = unifiedResourceManager.getResourceSmart(audioUrl);
                     
                     // 如果缓存未命中，使用传统下载方式
                     if (audioFile == null) {
-                        audioFile = resourceHandler.downloadToTempFile(audioUrl, audioExt);
+                        audioFile = unifiedResourceManager.downloadToTempFile(audioUrl, audioExt);
                     }
                     
                     if (audioFile == null || !audioFile.exists()) {
@@ -305,11 +307,11 @@ public class Pocket48Sender extends Sender {
                     
                     // 智能获取视频文件（优先使用缓存）
                     String videoExt = message.getExt() != null && !message.getExt().isEmpty() ? "." + message.getExt() : ".mp4";
-                    videoFile = resourceOptimizer.getResourceSmart(videoUrl);
+                    videoFile = unifiedResourceManager.getResourceSmart(videoUrl);
                     
                     // 如果缓存未命中，使用传统下载方式
                     if (videoFile == null) {
-                        videoFile = resourceHandler.downloadToTempFile(videoUrl, videoExt);
+                        videoFile = unifiedResourceManager.downloadToTempFile(videoUrl, videoExt);
                     }
                     
                     if (videoFile == null || !videoFile.exists()) {
@@ -408,7 +410,7 @@ public class Pocket48Sender extends Sender {
                     String coverUrl = message.getLivePush().getCover();
                     
                     // 直接下载封面图片，不使用缓存（避免.tmp扩展名导致的图片识别问题）
-                    coverFile = resourceHandler.downloadToTempFileWithRetry(coverUrl, ".jpg", 3);
+                    coverFile = unifiedResourceManager.downloadToTempFileWithRetry(coverUrl, ".jpg", 3);
                     
                     if (coverFile == null || !coverFile.exists()) {
                         throw new RuntimeException("直播封面下载失败");
@@ -458,11 +460,11 @@ public class Pocket48Sender extends Sender {
                     
                     // 智能获取翻牌音频文件（优先使用缓存）
                     String audioExt = message.getAnswer().getExt() != null && !message.getAnswer().getExt().isEmpty() ? "." + message.getAnswer().getExt() : ".amr";
-                    audioFile = resourceOptimizer.getResourceSmart(flipcardAudioUrl);
+                    audioFile = unifiedResourceManager.getResourceSmart(flipcardAudioUrl);
                     
                     // 如果缓存未命中，使用传统下载方式
                     if (audioFile == null) {
-                        audioFile = resourceHandler.downloadToTempFile(flipcardAudioUrl, audioExt);
+                        audioFile = unifiedResourceManager.downloadToTempFile(flipcardAudioUrl, audioExt);
                     }
                     
                     if (audioFile == null || !audioFile.exists()) {
@@ -563,7 +565,7 @@ public class Pocket48Sender extends Sender {
                     
                     // 下载视频文件到本地
                     String videoExt = message.getAnswer().getExt() != null && !message.getAnswer().getExt().isEmpty() ? "." + message.getAnswer().getExt() : ".mp4";
-                    videoFile = resourceHandler.downloadToTempFile(videoUrl, videoExt);
+                    videoFile = unifiedResourceManager.downloadToTempFile(videoUrl, videoExt);
                     
                     if (videoFile == null || !videoFile.exists()) {
                         throw new RuntimeException("翻牌视频文件下载失败");
@@ -572,7 +574,7 @@ public class Pocket48Sender extends Sender {
                     // 翻牌视频下载完成
                     
                     // 下载预览图到本地
-                    previewFile = resourceHandler.downloadToTempFile(previewUrl, ".jpg");
+                    previewFile = unifiedResourceManager.downloadToTempFile(previewUrl, ".jpg");
                     
                     if (previewFile == null || !previewFile.exists()) {
                         throw new RuntimeException("翻牌视频预览图下载失败");
@@ -733,7 +735,7 @@ public class Pocket48Sender extends Sender {
     }
 
     /**
-     * 重写getRes方法，统一使用Pocket48ResourceHandler处理所有资源链接
+     * 重写getRes方法，统一使用Pocket48UnifiedResourceManager处理所有资源链接
      * @param resLoc 资源链接
      * @return 资源输入流
      */
@@ -741,7 +743,7 @@ public class Pocket48Sender extends Sender {
     public InputStream getRes(String resLoc) {
         try {
             // 统一使用口袋48资源处理器处理所有链接
-            return resourceHandler.getPocket48InputStreamWithRetry(resLoc, 3);
+            return unifiedResourceManager.getPocket48InputStreamWithRetry(resLoc, 3);
         } catch (Exception e) {
             System.err.println("获取资源失败，尝试使用默认方式: " + e.getMessage());
             // 如果专用处理器失败，回退到父类的默认处理方式
@@ -771,7 +773,7 @@ public class Pocket48Sender extends Sender {
         
         // 启动资源预加载（异步）
         List<CompletableFuture<Void>> preloadFutures = 
-            resourceOptimizer.preloadMessageResources(optimizedMessages);
+            unifiedResourceManager.preloadMessageResources(optimizedMessages);
         
         // 使用异步处理器并行处理消息
         List<CompletableFuture<Pocket48SenderMessage>> futures = 
@@ -793,15 +795,15 @@ public class Pocket48Sender extends Sender {
             // 优化：减少清理频率，只在必要时清理
             if (monitor.shouldForceCleanup()) {
                 // 内存使用率过高，强制清理
-                resourceOptimizer.cleanupExpiredCache(5);
+                unifiedResourceManager.cleanupExpiredCache(5);
                 System.gc();
                 // 内存清理完成
             } else if (monitor.shouldCleanup() && monitor.getTotalQueries() % 50 == 0) {
                 // 内存使用率较高且每50次查询才清理一次
-                resourceOptimizer.cleanupExpiredCache(30);
+                unifiedResourceManager.cleanupExpiredCache(30);
             } else if (monitor.getTotalQueries() % 100 == 0) {
                 // 正常情况，每100次查询清理一次过期缓存
-                resourceOptimizer.cleanupExpiredCache(60);
+                unifiedResourceManager.cleanupExpiredCache(60);
             }
         }
     }
@@ -887,14 +889,200 @@ public class Pocket48Sender extends Sender {
     }
 
     /**
+     * 按时间顺序发送消息（优化版）- 解决短时间内批量发送导致的延迟问题
+     * 文本消息优先发送，媒体消息异步处理
+     * @param messages 按时间排序的消息列表
+     * @param group 目标群组
+     */
+    private void sendMessagesInTimeOrder(List<Pocket48Message> messages, Group group) {
+        if (messages == null || messages.isEmpty()) {
+            return;
+        }
+        
+        long startTime = System.currentTimeMillis();
+        
+        // 分离文本消息和媒体消息
+        List<Pocket48Message> textMessages = new ArrayList<>();
+        List<Pocket48Message> mediaMessages = new ArrayList<>();
+        
+        for (Pocket48Message message : messages) {
+            if (isTextMessage(message)) {
+                textMessages.add(message);
+            } else {
+                mediaMessages.add(message);
+            }
+        }
+        
+        // 优先处理文本消息（同步发送）
+        if (!textMessages.isEmpty()) {
+            sendTextMessagesSync(textMessages, group);
+        }
+        
+        // 异步处理媒体消息
+        if (!mediaMessages.isEmpty() && unifiedResourceManager.isMediaQueueEnabled()) {
+            for (Pocket48Message mediaMessage : mediaMessages) {
+                mediaQueue.submitMediaMessage(mediaMessage, group, this);
+            }
+        } else if (!mediaMessages.isEmpty()) {
+            // 如果异步队列未启用，使用原有的同步处理方式
+            sendMediaMessagesSync(mediaMessages, group);
+        }
+        
+        long endTime = System.currentTimeMillis();
+        PerformanceMonitor.getInstance().recordQuery(endTime - startTime);
+        
+        // 清理缓存
+        if (messages.size() > 10) {
+            unifiedResourceManager.cleanupExpiredCache(60);
+        }
+    }
+    
+    /**
+     * 判断是否为文本类消息
+     * @param message 消息对象
+     * @return 是否为文本消息
+     */
+    private boolean isTextMessage(Pocket48Message message) {
+        if (message == null || message.getType() == null) {
+            return false;
+        }
+        
+        String type = message.getType().toString();
+        return "TEXT".equals(type) ||
+               "GIFT_TEXT".equals(type) ||
+               "FLIPCARD".equals(type) ||
+               "PASSWORD_REDPACKAGE".equals(type) ||
+               "VOTE".equals(type) ||
+               "REPLY".equals(type) ||
+               "GIFTREPLY".equals(type);
+    }
+    
+    /**
+     * 同步发送文本消息
+     * @param textMessages 文本消息列表
+     * @param group 目标群组
+     */
+    private void sendTextMessagesSync(List<Pocket48Message> textMessages, Group group) {
+        int baseInterval = calculateSendInterval(textMessages.size());
+        
+        for (int i = 0; i < textMessages.size(); i++) {
+            try {
+                Pocket48Message message = textMessages.get(i);
+                
+                // 异步处理单条消息
+                CompletableFuture<Pocket48SenderMessage> future = 
+                    asyncProcessor.processMessageAsync(message, group);
+                
+                // 等待处理完成并立即发送
+                Pocket48SenderMessage senderMessage = future.get(
+                    delayConfig.getTextProcessingTimeout(), java.util.concurrent.TimeUnit.SECONDS);
+                
+                if (senderMessage != null) {
+                    // 立即发送消息
+                    sendSingleMessage(senderMessage, group);
+                    
+                    // 添加发送间隔（除了最后一条消息）
+                    if (i < textMessages.size() - 1) {
+                        Thread.sleep(baseInterval);
+                    }
+                }
+                
+            } catch (Exception e) {
+                // 静默处理单条消息的错误，继续处理下一条
+                System.err.println("[警告] 处理文本消息失败: " + e.getMessage());
+            }
+        }
+    }
+    
+    /**
+     * 同步发送媒体消息（备用方案）
+     * @param mediaMessages 媒体消息列表
+     * @param group 目标群组
+     */
+    private void sendMediaMessagesSync(List<Pocket48Message> mediaMessages, Group group) {
+        int baseInterval = calculateSendInterval(mediaMessages.size());
+        
+        for (int i = 0; i < mediaMessages.size(); i++) {
+            try {
+                Pocket48Message message = mediaMessages.get(i);
+                
+                // 异步处理单条消息
+                CompletableFuture<Pocket48SenderMessage> future = 
+                    asyncProcessor.processMessageAsync(message, group);
+                
+                // 等待处理完成并立即发送
+                Pocket48SenderMessage senderMessage = future.get(
+                    delayConfig.getMediaProcessingTimeout(), java.util.concurrent.TimeUnit.SECONDS);
+                
+                if (senderMessage != null) {
+                    // 立即发送消息
+                    sendSingleMessage(senderMessage, group);
+                    
+                    // 添加发送间隔（除了最后一条消息）
+                    if (i < mediaMessages.size() - 1) {
+                        Thread.sleep(baseInterval);
+                    }
+                }
+                
+            } catch (Exception e) {
+                // 静默处理单条消息的错误，继续处理下一条
+                System.err.println("[警告] 处理媒体消息失败: " + e.getMessage());
+            }
+        }
+    }
+    
+    /**
+     * 计算消息发送间隔
+     * @param messageCount 消息数量
+     * @return 发送间隔（毫秒）
+     */
+    private int calculateSendInterval(int messageCount) {
+        // 基础间隔：500ms
+        int baseInterval = 500;
+        
+        // 根据消息数量调整间隔：消息越多，间隔越短，但不低于200ms
+        if (messageCount > 10) {
+            baseInterval = Math.max(200, 500 - (messageCount - 10) * 20);
+        } else if (messageCount > 5) {
+            baseInterval = Math.max(300, 500 - (messageCount - 5) * 40);
+        }
+        
+        // 应用CPU负载调整
+        return loadBalancer.getDynamicDelay(baseInterval);
+    }
+    
+    /**
+     * 发送单条处理后的消息
+     * @param senderMessage 处理后的消息
+     * @param group 目标群组
+     */
+    public void sendSingleMessage(Pocket48SenderMessage senderMessage, Group group) {
+        try {
+            Message[] unjointMessages = senderMessage.getUnjointMessage();
+            for (int i = 0; i < unjointMessages.length; i++) {
+                group.sendMessage(unjointMessages[i]);
+                // 同一消息的多个部分之间的短间隔
+                if (i < unjointMessages.length - 1) {
+                    Thread.sleep(100); // 100ms间隔
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("[错误] 发送消息失败: " + e.getMessage());
+        }
+    }
+
+    /**
      * 关闭发送器，释放资源
      */
     public void shutdown() {
         if (asyncProcessor != null) {
             asyncProcessor.shutdown();
         }
-        if (resourceOptimizer != null) {
-            resourceOptimizer.shutdown();
+        if (unifiedResourceManager != null) {
+            unifiedResourceManager.shutdown();
+        }
+        if (mediaQueue != null) {
+            mediaQueue.shutdown();
         }
     }
 

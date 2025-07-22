@@ -63,5 +63,7 @@ public class Properties {
     public int message_delay_processing_timeout;
     public double message_delay_high_load_multiplier;
     public double message_delay_critical_load_multiplier;
+    
+    // 口袋48异步处理队列配置已迁移到 Pocket48ResourceManager
 
 }

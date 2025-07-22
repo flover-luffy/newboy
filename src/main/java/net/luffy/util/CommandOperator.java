@@ -267,7 +267,7 @@ public class CommandOperator extends AsyncWebHandlerBase {
                                 String out = "";
                                 int count = 1;
                                 for (Object liveRoom : Newboy.INSTANCE.getHandlerPocket48().getLiveList()) {
-                                    JSONObject liveRoom1 = JSONUtil.parseObj(liveRoom);
+                                    JSONObject liveRoom1 = UnifiedJsonParser.getInstance().parseObj(liveRoom.toString());
                                     JSONObject userInfo = liveRoom1.getJSONObject("userInfo");
 
                                     String title = liveRoom1.getStr("title");
@@ -282,7 +282,7 @@ public class CommandOperator extends AsyncWebHandlerBase {
                                 String out = "";
                                 int count = 1;
                                 for (Object liveRoom : Newboy.INSTANCE.getHandlerPocket48().getRecordList()) {
-                                    JSONObject liveRoom1 = JSONUtil.parseObj(liveRoom);
+                                    JSONObject liveRoom1 = UnifiedJsonParser.getInstance().parseObj(liveRoom.toString());
                                     JSONObject userInfo = liveRoom1.getJSONObject("userInfo");
 
                                     String title = liveRoom1.getStr("title");
@@ -310,7 +310,7 @@ public class CommandOperator extends AsyncWebHandlerBase {
 
                                 int count = 1;
                                 for (Object server_ : servers) {
-                                    JSONObject server = JSONUtil.parseObj(server_);
+                                    JSONObject server = UnifiedJsonParser.getInstance().parseObj(server_.toString());
                                     String name = server.getStr("serverDefaultName");
                                     String serverName = server.getStr("serverName");
                                     long starId = server.getLong("serverOwner");
@@ -410,7 +410,7 @@ public class CommandOperator extends AsyncWebHandlerBase {
                                     if (archives != null) {
                                         Object[] fans = archives.getJSONArray("fansRank").stream().toArray();
                                         for (int i = 0; i < Math.min(fans.length, 5); i++) { // 只显示前5名
-                                            fan.append("\n").append(i + 1).append(". ").append(JSONUtil.parseObj(fans[i]).getStr("nickName"));
+                                            fan.append("\n").append(i + 1).append(". ").append(UnifiedJsonParser.getInstance().parseObj(fans[i].toString()).getStr("nickName"));
                                         }
                                         if (fans.length > 5) {
                                             fan.append("\n...");
@@ -1460,7 +1460,7 @@ public class CommandOperator extends AsyncWebHandlerBase {
 
         int count = 1;
         for (Object server_ : servers) {
-            JSONObject server = JSONUtil.parseObj(server_);
+            JSONObject server = UnifiedJsonParser.getInstance().parseObj(server_.toString());
             String name = server.getStr("serverDefaultName");
             String serverName = server.getStr("serverName");
             long starId = server.getLong("serverOwner");

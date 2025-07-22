@@ -4,7 +4,7 @@ import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import net.luffy.Newboy;
-import okhttp3.Headers;
+import net.luffy.util.UnifiedJsonParser;
 
 import java.util.HashMap;
 
@@ -19,6 +19,7 @@ public class WeiboHandler extends AsyncWebHandlerBase {
     private static final String APIUserBlog = "https://weibo.com/ajax/statuses/mymblog?uid=%d&page=1&feature=0";
     private static String cookie = "";
     private final HashMap<Long, String> name = new HashMap<>();
+    private final UnifiedJsonParser jsonParser = UnifiedJsonParser.getInstance();
 
     public WeiboHandler() {
         super();
@@ -35,10 +36,10 @@ public class WeiboHandler extends AsyncWebHandlerBase {
         //更新cookie
         try {
             updateLoginToSuccess();
-            Newboy.INSTANCE.getLogger().info("微博Cookie更新成功");
+            // 微博Cookie更新成功
 
         } catch (Exception e) {
-            Newboy.INSTANCE.getLogger().info("微博Cookie更新失败");
+            Newboy.INSTANCE.getLogger().error("微博Cookie更新失败");
         }
         return null;
 
@@ -61,7 +62,7 @@ public class WeiboHandler extends AsyncWebHandlerBase {
         if (!cookie.equals("")) {
             String ret = get(String.format(APIUserProfile, id), getHeadersWithCookie());
             if (!ret.equals("")) {
-                JSONObject o = JSONUtil.parseObj(ret);
+                JSONObject o = jsonParser.parseObj(ret);
                 if (o.getInt("ok") == 1) {
                     return o.getJSONObject("data");
                 } else
@@ -71,10 +72,10 @@ public class WeiboHandler extends AsyncWebHandlerBase {
 
         try {
             updateLoginToSuccess();
-            Newboy.INSTANCE.getLogger().info("微博Cookie更新成功");
+            // 微博Cookie更新成功
 
         } catch (Exception e) {
-            Newboy.INSTANCE.getLogger().info("微博Cookie更新失败");
+            Newboy.INSTANCE.getLogger().error("微博Cookie更新失败");
         }
         return null;
     }
@@ -83,7 +84,7 @@ public class WeiboHandler extends AsyncWebHandlerBase {
         if (!cookie.equals("")) {
             String ret = get(String.format(APIUserBlog, id), getHeadersWithCookie());
             if (!ret.equals("")) {
-                JSONObject o = JSONUtil.parseObj(ret);
+                JSONObject o = jsonParser.parseObj(ret);
                 if (o != null) {
                     if (o.getInt("ok") == 1) {
                         return o.getJSONObject("data").getJSONArray("list").toArray(new Object[0]);
@@ -95,11 +96,11 @@ public class WeiboHandler extends AsyncWebHandlerBase {
 
         try {
             updateLoginToSuccess();
-            Newboy.INSTANCE.getLogger().info("微博Cookie更新成功");
+            // 微博Cookie更新成功
             return getUserBlog(id);
 
         } catch (Exception e) {
-            Newboy.INSTANCE.getLogger().info("微博Cookie更新失败");
+            Newboy.INSTANCE.getLogger().error("微博Cookie更新失败");
             return null;
         }
     }
@@ -130,26 +131,26 @@ public class WeiboHandler extends AsyncWebHandlerBase {
         }
     }
 
-    public Headers getDefaultHeaders() {
-        return new Headers.Builder()
-                .add("authority", "weibo.com")
-                .add("sec-ch-ua", "\"Chromium\";v=\"94\", \"Google Chrome\";v=\"94\", \";Not A Brand\";v=\"99\"")
-                .add("content-type", "application/x-www-form-urlencoded")
-                .add("x-requested-with", "XMLHttpRequest")
-                .add("sec-ch-ua-mobile", "?0")
-                .add("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.71 Safari/537.36")
-                .add("sec-ch-ua-platform", "\"Windows\"")
-                .add("accept", "*/*")
-                .add("sec-fetch-site", "same-origin")
-                .add("sec-fetch-mode", "cors")
-                .add("sec-fetch-dest", "empty")
-                .build();
+    public java.util.Map<String, String> getDefaultHeaders() {
+        java.util.Map<String, String> headers = new java.util.HashMap<>();
+        headers.put("authority", "weibo.com");
+        headers.put("sec-ch-ua", "\"Chromium\";v=\"94\", \"Google Chrome\";v=\"94\", \";Not A Brand\";v=\"99\"");
+        headers.put("content-type", "application/x-www-form-urlencoded");
+        headers.put("x-requested-with", "XMLHttpRequest");
+        headers.put("sec-ch-ua-mobile", "?0");
+        headers.put("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.71 Safari/537.36");
+        headers.put("sec-ch-ua-platform", "\"Windows\"");
+        headers.put("accept", "*/*");
+        headers.put("sec-fetch-site", "same-origin");
+        headers.put("sec-fetch-mode", "cors");
+        headers.put("sec-fetch-dest", "empty");
+        return headers;
     }
 
-    public Headers getHeadersWithCookie() {
-        return getDefaultHeaders().newBuilder()
-                .add("cookie", cookie)
-                .build();
+    public java.util.Map<String, String> getHeadersWithCookie() {
+        java.util.Map<String, String> headers = new java.util.HashMap<>(getDefaultHeaders());
+        headers.put("cookie", cookie);
+        return headers;
     }
 
     protected String getWithDefaultHeader(String url) {

@@ -4,7 +4,8 @@ import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import net.luffy.Newboy;
 import net.luffy.util.AsyncOnlineStatusMonitor;
-import okhttp3.Request;
+import net.luffy.util.UnifiedJsonParser;
+// okhttp3导入已移除，已迁移到统一HTTP客户端
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -51,6 +52,9 @@ public class Xox48Handler extends AsyncWebHandlerBase {
     // 自动清理计数器（优化：减少清理频率）
     private final AtomicLong queryCounter = new AtomicLong(0);
     private static final long CLEANUP_THRESHOLD = 200; // 每200次查询清理一次，减少频率
+    
+    // 统一JSON解析器
+    private final UnifiedJsonParser jsonParser = UnifiedJsonParser.getInstance();
 
     public Xox48Handler() {
         super();
@@ -67,24 +71,24 @@ public class Xox48Handler extends AsyncWebHandlerBase {
     }
 
     /**
-     * 获取默认请求头（使用随机UA）
+     * 获取默认请求头（使用随机UA）- 已迁移到统一HTTP客户端格式
      */
-    private okhttp3.Headers getDefaultHeaders() {
+    private java.util.Map<String, String> getDefaultHeaders() {
         String randomUserAgent = getRandomUserAgent();
-        return new okhttp3.Headers.Builder()
-                .add("Accept", "application/json, text/plain, */*")
-                .add("Content-Type", "application/x-www-form-urlencoded")
-                .add("Sec-Fetch-Site", "same-origin")
-                .add("Origin", "https://xox48.top")
-                .add("Sec-Fetch-Mode", "cors")
-                .add("User-Agent", randomUserAgent)
-                .add("Referer", "https://xox48.top/v2024/")
-                .add("Sec-Fetch-Dest", "empty")
-                .add("Accept-Language", "zh-SG,zh-CN;q=0.9,zh-Hans;q=0.8")
-                .add("Priority", "u=3, i")
-                .add("Accept-Encoding", "gzip, deflate, br, zstd")
-                .add("Connection", "keep-alive")
-                .build();
+        java.util.Map<String, String> headers = new java.util.HashMap<>();
+        headers.put("Accept", "application/json, text/plain, */*");
+        headers.put("Content-Type", "application/x-www-form-urlencoded");
+        headers.put("Sec-Fetch-Site", "same-origin");
+        headers.put("Origin", "https://xox48.top");
+        headers.put("Sec-Fetch-Mode", "cors");
+        headers.put("User-Agent", randomUserAgent);
+        headers.put("Referer", "https://xox48.top/v2024/");
+        headers.put("Sec-Fetch-Dest", "empty");
+        headers.put("Accept-Language", "zh-SG,zh-CN;q=0.9,zh-Hans;q=0.8");
+        headers.put("Priority", "u=3, i");
+        headers.put("Accept-Encoding", "gzip, deflate, br, zstd");
+        headers.put("Connection", "keep-alive");
+        return headers;
     }
     
     /**
@@ -119,7 +123,7 @@ public class Xox48Handler extends AsyncWebHandlerBase {
                     if (batchResult.isSuccess()) {
                         try {
                             // 解析批量查询结果为OnlineStatusResult
-                            JSONObject jsonResponse = JSONUtil.parseObj(batchResult.getRawResponse());
+                            JSONObject jsonResponse = jsonParser.parseObj(batchResult.getRawResponse());
                             return parseOnlineStatusResponse(jsonResponse, normalizedName);
                         } catch (Exception e) {
                             return new OnlineStatusResult(false, "解析响应失败: " + e.getMessage(), 
@@ -170,75 +174,7 @@ public class Xox48Handler extends AsyncWebHandlerBase {
         }
     }
     
-    /**
-     * 查询成员在线状态 - 原始同步实现（已弃用，保留用于紧急回退）
-     * @deprecated 请使用 queryMemberOnlineStatusAsync 或 queryMemberOnlineStatus
-     */
-    @Deprecated
-    public OnlineStatusResult queryMemberOnlineStatusSync(String name) {
-        if (name == null || name.trim().isEmpty()) {
-            return new OnlineStatusResult(false, "成员名称不能为空", name, -1, null, null, null);
-        }
-        
-        String normalizedName = name.trim();
-        long currentTime = System.currentTimeMillis();
-        
-        // 1. 检查缓存
-        CachedResult cached = resultCache.get(normalizedName);
-        if (cached != null && (currentTime - cached.timestamp) < config.getCacheExpireTime()) {
-            logInfo(String.format("使用缓存结果查询成员 %s 状态", normalizedName));
-            return cached.result;
-        }
-        
-        // 2. 检查失败统计，是否在冷却期
-        FailureStats stats = failureStats.get(normalizedName);
-        if (stats != null && stats.isInCooldown(currentTime)) {
-            String cooldownMsg = String.format("成员 %s 查询失败次数过多，冷却中 (剩余 %d 秒)", 
-                normalizedName, (stats.cooldownUntil - currentTime) / 1000);
-            logWarning(cooldownMsg);
-            return new OnlineStatusResult(false, cooldownMsg, normalizedName, -1, null, null, null);
-        }
-        
-        // 3. 执行查询
-        long startTime = System.currentTimeMillis();
-        try {
-            String requestBody = "name=" + normalizedName;
-            
-            okhttp3.Headers headers = getDefaultHeaders();
-            
-            String response = post(API_MEMBER_ONLINE, headers, requestBody);
-            
-            JSONObject jsonResponse = JSONUtil.parseObj(response);
-            OnlineStatusResult result = parseOnlineStatusResponse(jsonResponse, normalizedName);
-            
-            long queryTime = System.currentTimeMillis() - startTime;
-            
-            if (result.isSuccess()) {
-                // 查询成功，缓存结果并重置失败统计
-                resultCache.put(normalizedName, new CachedResult(result, currentTime));
-                failureStats.remove(normalizedName);
-                
-                logInfo(String.format("成功查询成员 %s 状态，耗时 %d ms", normalizedName, queryTime));
-            } else {
-                // 查询失败，更新失败统计
-                updateFailureStats(normalizedName, currentTime);
-                logWarning(String.format("查询成员 %s 状态失败: %s，耗时 %d ms", 
-                    normalizedName, result.getMessage(), queryTime));
-            }
-            
-            return result;
-            
-        } catch (Exception e) {
-            long queryTime = System.currentTimeMillis() - startTime;
-            updateFailureStats(normalizedName, currentTime);
-            
-            String errorMsg = String.format("查询异常: %s", e.getMessage());
-            logError(String.format("查询成员 %s 状态异常: %s，耗时 %d ms", 
-                normalizedName, e.getMessage(), queryTime));
-            
-            return new OnlineStatusResult(false, errorMsg, normalizedName, -1, null, null, null);
-        }
-    }
+
     
     /**
      * 批量异步查询成员在线状态
@@ -256,7 +192,7 @@ public class Xox48Handler extends AsyncWebHandlerBase {
                             .map(batchResult -> {
                                 if (batchResult.isSuccess()) {
                                     try {
-                                        JSONObject jsonResponse = JSONUtil.parseObj(batchResult.getRawResponse());
+                                        JSONObject jsonResponse = jsonParser.parseObj(batchResult.getRawResponse());
                                         return parseOnlineStatusResponse(jsonResponse, batchResult.getMemberName());
                                     } catch (Exception e) {
                                         return new OnlineStatusResult(false, "解析响应失败: " + e.getMessage(), 
@@ -330,9 +266,12 @@ public class Xox48Handler extends AsyncWebHandlerBase {
                 return new OnlineStatusResult(false, errorMsg, queryName, -1, null, null, null);
             }
             
-            // 使用流式解析提取关键字段，避免完整JSON解析
-            java.util.Map<String, Object> fields = net.luffy.util.HighPerformanceJsonParser.streamParseFields(
-                responseStr, "data", "msg", "error");
+            // 使用统一解析器提取关键字段
+            JSONObject tempResponse = net.luffy.util.UnifiedJsonParser.getInstance().parseObj(responseStr);
+            java.util.Map<String, Object> fields = new java.util.HashMap<>();
+            fields.put("data", tempResponse.get("data"));
+            fields.put("msg", tempResponse.get("msg"));
+            fields.put("error", tempResponse.get("error"));
             
             // 处理嵌套的data字段
             Object dataObj = fields.get("data");

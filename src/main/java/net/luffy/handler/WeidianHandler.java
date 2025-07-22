@@ -1,11 +1,15 @@
 package net.luffy.handler;
 
 import cn.hutool.core.date.DateUtil;
-import cn.hutool.http.HttpRequest;
 import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import net.luffy.model.*;
+import net.luffy.util.UnifiedJsonParser;
+import net.luffy.util.UnifiedHttpClient;
+
+import java.util.HashMap;
+import java.util.Map;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -18,29 +22,66 @@ public class WeidianHandler extends SyncWebHandler {
     private static final String APIItemList = "https://thor.weidian.com/wditem/itemList.pcListItems/1.0?param=%7B%22pageSize%22%3A5%2C%22pageNum%22%3A0%2C%22listStatus%22%3A%222%22%2C%22sorts%22%3A%5B%7B%22field%22%3A%22add_time%22%2C%22mode%22%3A%22desc%22%7D%5D%2C%22shopId%22%3A%22%22%7D&wdtoken=";
     //无需cookie
     private static final String APISkuInfo = "https://thor.weidian.com/detail/getItemSkuInfo/1.0?param=%7B%22itemId%22%3A%22%d%22%7D";
+    
+    private final UnifiedJsonParser jsonParser = UnifiedJsonParser.getInstance();
 
-    //setDefaultHeader
-    protected HttpRequest setHeader(HttpRequest request) {
-        return request.header("Host", "thor.weidian.com").header("Connection", "keep-alive").header("sec-ch-ua", "\"Google Chrome\";v=\"107\", \"Chromium\";v=\"107\", \"Not=A?Brand\";v=\"24\"").header("Accept", "application/json, */*").header("sec-ch-ua-mobile", "?0").header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36").header("Sec-Fetch-Site", "same-site").header("Sec-Fetch-Mode", "cors").header("Sec-Fetch-Dest", "empty").header("Accept-Encoding", "gzip, deflate, br").header("Accept-Language", "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7,zh-TW;q=0.6");
+    private final UnifiedHttpClient httpClient = UnifiedHttpClient.getInstance();
+    
+    //创建默认请求头
+    protected Map<String, String> createDefaultHeaders() {
+        Map<String, String> headers = new HashMap<>();
+        headers.put("Host", "thor.weidian.com");
+        headers.put("Connection", "keep-alive");
+        headers.put("sec-ch-ua", "\"Google Chrome\";v=\"107\", \"Chromium\";v=\"107\", \"Not=A?Brand\";v=\"24\"");
+        headers.put("Accept", "application/json, */*");
+        headers.put("sec-ch-ua-mobile", "?0");
+        headers.put("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36");
+        headers.put("Sec-Fetch-Site", "same-site");
+        headers.put("Sec-Fetch-Mode", "cors");
+        headers.put("Sec-Fetch-Dest", "empty");
+        headers.put("Accept-Encoding", "gzip, deflate, br");
+        headers.put("Accept-Language", "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7,zh-TW;q=0.6");
+        return headers;
     }
 
-    protected HttpRequest setHeader(HttpRequest request, WeidianCookie cookie) {
-        return setHeader(request).header("Cookie", cookie.cookie);
+    protected Map<String, String> createHeaders(WeidianCookie cookie) {
+        Map<String, String> headers = createDefaultHeaders();
+        headers.put("Cookie", cookie.cookie);
+        return headers;
     }
 
     protected String post(String url, String body, WeidianCookie cookie) {
-        return setHeader(HttpRequest.post(url).header("Referer", "https://d.weidian.com/"), cookie)
-                .body(body).execute().body();
+        try {
+            Map<String, String> headers = createHeaders(cookie);
+            headers.put("Referer", "https://d.weidian.com/");
+            return httpClient.post(url, body, headers);
+        } catch (Exception e) {
+            throw new RuntimeException("POST请求失败: " + e.getMessage(), e);
+        }
     }
 
     protected String get(String url, WeidianCookie cookie) {
-        return setHeader(HttpRequest.get(url), cookie).execute().body();
+        try {
+            Map<String, String> headers = createHeaders(cookie);
+            return httpClient.get(url, headers);
+        } catch (Exception e) {
+            throw new RuntimeException("GET请求失败: " + e.getMessage(), e);
+        }
+    }
+    
+    protected String get(String url) {
+        try {
+            Map<String, String> headers = createDefaultHeaders();
+            return httpClient.get(url, headers);
+        } catch (Exception e) {
+            throw new RuntimeException("GET请求失败: " + e.getMessage(), e);
+        }
     }
 
     private JSONArray getOriOrderList(WeidianCookie cookie) {
         //获取【待发货】列表中的订单
         String s = post(APIOrderList, "param={\"listType\":0,\"pageNum\":0,\"pageSize\":40,\"statusList\":[\"paid\"],\"refundStatusList\":[],\"channel\":\"pc\",\"shipRole\":0,\"orderIdList\":\"\",\"itemTitle\":\"\",\"buyerName\":\"\",\"timeSearch\":{},\"orderBizType\":\"\",\"promotionType\":\"\",\"shipType\":\"\",\"newGhSearchSellerRole\":7,\"memberLevel\":\"all\",\"repayStatus\":2,\"bSellerId\":\"\",\"itemSource\":\"\",\"shipper\":\"\",\"nSellerName\":\"\",\"partnerName\":\"\",\"noteSearchCondition\":{\"buyerNote\":\"\"},\"specialOrderSearchCondition\":{\"notShowGroupUnsuccess\":0,\"notShowFxOrder\":0,\"notShowUnRepayOrder\":0,\"notShowBuyerRepayOrder\":0,\"showAllPeriodOrder\":0,\"notShowTencentShopOrder\":0,\"notShowWithoutTimelinessOrder\":0},\"orderType\":4}&wdtoken=" + cookie.wdtoken, cookie);
-        JSONObject object = JSONUtil.parseObj(s);
+        JSONObject object = jsonParser.parseObj(s);
         if (object.getJSONObject("status").getInt("code") == 0) {
             JSONObject result = object.getJSONObject("result");
             return result.getJSONArray("orderList");
@@ -58,7 +99,7 @@ public class WeidianHandler extends SyncWebHandler {
 
         List<WeidianOrder> orders = new ArrayList<>();
         for (Object object : objectList.toArray(new Object[0])) {
-            JSONObject order = JSONUtil.parseObj(object);
+            JSONObject order = jsonParser.parseObj(object.toString());
             String payTime = order.getStr("payTime");
 
             JSONObject receiver = order.getJSONObject("receiver");
@@ -68,7 +109,7 @@ public class WeidianHandler extends SyncWebHandler {
             JSONArray itemList = order.getJSONArray("itemList");
             boolean contains_shielded_item = false;
             for (Object itemObject : itemList.toArray(new Object[0])) {
-                JSONObject item = JSONUtil.parseObj(itemObject);
+                JSONObject item = jsonParser.parseObj(itemObject.toString());
                 long itemId = item.getLong("itemId");
                 if (cookie.shieldedItem.contains(itemId)) {
                     contains_shielded_item = true;
@@ -110,7 +151,7 @@ public class WeidianHandler extends SyncWebHandler {
         //复合订单
         int newOrderCount = 0;
         for (Object object : objectList.toArray(new Object[0])) {
-            JSONObject order = JSONUtil.parseObj(object);
+            JSONObject order = jsonParser.parseObj(object.toString());
             String payTime = order.getStr("payTime");
             long time = DateUtil.parse(payTime).getTime();
             if (time <= endTime.time) {
@@ -129,7 +170,7 @@ public class WeidianHandler extends SyncWebHandler {
             boolean contains_shielded_item = false;
             JSONArray itemList = order.getJSONArray("itemList");
             for (Object itemObject : itemList.toArray(new Object[0])) {
-                JSONObject item = JSONUtil.parseObj(itemObject);
+                JSONObject item = jsonParser.parseObj(itemObject.toString());
                 long itemId = item.getLong("itemId");
                 if (cookie.shieldedItem.contains(itemId)) {
                     contains_shielded_item = true;
@@ -158,7 +199,7 @@ public class WeidianHandler extends SyncWebHandler {
 
     public boolean deliver(String orderId, WeidianCookie cookie) throws RuntimeException {
         String s = post(APIDeliver, "param={\"from\":\"pc\",\"orderId\":\"" + orderId + "\",\"expressNo\":\"\",\"expressType\":0,\"expressCustom\":\"\",\"fullDeliver\":true}&wdtoken=" + cookie.cookie, cookie);
-        JSONObject object = JSONUtil.parseObj(s);
+        JSONObject object = jsonParser.parseObj(s);
         if (object.getJSONObject("status").getInt("code") == 0) {
             JSONObject result = object.getJSONObject("result");
             return result.getBool("success");
@@ -169,7 +210,7 @@ public class WeidianHandler extends SyncWebHandler {
     private JSONArray getItemOriOrderList(WeidianCookie cookie, long itemId) {
         //获取【全部】列表中单个商品的订单（不保证付款）
         String s = post(APIOrderList, "param={\"listType\":0,\"pageNum\":0,\"pageSize\":20,\"statusList\":[\"all\"],\"refundStatusList\":[],\"channel\":\"pc\",\"shipRole\":0,\"orderIdList\":\"\",\"itemId\":\"" + itemId + "\",\"buyerName\":\"\",\"timeSearch\":{},\"orderBizType\":\"\",\"promotionType\":\"\",\"shipType\":\"\",\"newGhSearchSellerRole\":7,\"memberLevel\":\"all\",\"repayStatus\":2,\"bSellerId\":\"\",\"itemSource\":\"\",\"shipper\":\"\",\"nSellerName\":\"\",\"partnerName\":\"\",\"noteSearchCondition\":{\"buyerNote\":\"\"},\"specialOrderSearchCondition\":{\"notShowGroupUnsuccess\":0,\"notShowFxOrder\":0,\"notShowUnRepayOrder\":0,\"notShowBuyerRepayOrder\":0,\"showAllPeriodOrder\":0,\"notShowTencentShopOrder\":0,\"notShowWithoutTimelinessOrder\":0},\"orderType\":2}&wdtoken=" + cookie.wdtoken, cookie);
-        JSONObject object = JSONUtil.parseObj(s);
+        JSONObject object = jsonParser.parseObj(s);
         if (object.getJSONObject("status").getInt("code") == 0) {
             JSONObject result = object.getJSONObject("result");
             int totalNum = result.getInt("total");
@@ -185,7 +226,7 @@ public class WeidianHandler extends SyncWebHandler {
                     pagei = pagei.substring(1, pagei.length() - 1);
                     page0 += "," + pagei;
                 }
-                return JSONUtil.parseArray(page0 + "]");
+                return jsonParser.parseArray(page0 + "]");
             }
         }
         return null;
@@ -193,7 +234,7 @@ public class WeidianHandler extends SyncWebHandler {
 
     private JSONArray getItemOriOrderList(WeidianCookie cookie, long itemId, int page) {
         String s = post(APIOrderList, "param={\"listType\":0,\"pageNum\":" + page + ",\"pageSize\":20,\"statusList\":[\"all\"],\"refundStatusList\":[],\"channel\":\"pc\",\"shipRole\":0,\"orderIdList\":\"\",\"itemId\":\"" + itemId + "\",\"buyerName\":\"\",\"timeSearch\":{},\"orderBizType\":\"\",\"promotionType\":\"\",\"shipType\":\"\",\"newGhSearchSellerRole\":7,\"memberLevel\":\"all\",\"repayStatus\":2,\"bSellerId\":\"\",\"itemSource\":\"\",\"shipper\":\"\",\"nSellerName\":\"\",\"partnerName\":\"\",\"noteSearchCondition\":{\"buyerNote\":\"\"},\"specialOrderSearchCondition\":{\"notShowGroupUnsuccess\":0,\"notShowFxOrder\":0,\"notShowUnRepayOrder\":0,\"notShowBuyerRepayOrder\":0,\"showAllPeriodOrder\":0,\"notShowTencentShopOrder\":0,\"notShowWithoutTimelinessOrder\":0},\"orderType\":2}&wdtoken=" + cookie.wdtoken, cookie);
-        JSONObject object = JSONUtil.parseObj(s);
+        JSONObject object = jsonParser.parseObj(s);
         if (object.getJSONObject("status").getInt("code") == 0) {
             JSONObject result = object.getJSONObject("result");
             return result.getJSONArray("orderList");
@@ -211,7 +252,7 @@ public class WeidianHandler extends SyncWebHandler {
 
         List<WeidianBuyer> buyers = new ArrayList<>();
         for (Object object : objectList.toArray(new Object[0])) {
-            JSONObject order = JSONUtil.parseObj(object);
+            JSONObject order = jsonParser.parseObj(object.toString());
             if (order.getStr("statusDesc").equals("已关闭")
                     || order.getStr("statusDesc").equals("待付款"))
                 continue;
@@ -239,7 +280,7 @@ public class WeidianHandler extends SyncWebHandler {
 
     public WeidianItem getItemWithSkus(long itemId) {
         String s = get(String.format(APISkuInfo, itemId));
-        JSONObject object = JSONUtil.parseObj(s);
+        JSONObject object = jsonParser.parseObj(s);
         if (object.getJSONObject("status").getInt("code") == 0) {
             JSONObject result = object.getJSONObject("result");
             String name = result.getStr("itemTitle");
@@ -248,7 +289,7 @@ public class WeidianHandler extends SyncWebHandler {
 
             JSONArray skus = result.getJSONArray("skuInfos");
             for (Object sku_ : skus.toArray(new Object[0])) {
-                JSONObject sku = JSONUtil.parseObj(sku_);
+                JSONObject sku = jsonParser.parseObj(sku_.toString());
                 item.addSkus(
                         sku.getLong("id"),
                         sku.getStr("title"),
@@ -266,13 +307,13 @@ public class WeidianHandler extends SyncWebHandler {
         //【出售中】 仅提取pageSize=5个
         String s = get(APIItemList + cookie.wdtoken, cookie);
 
-        JSONObject object = JSONUtil.parseObj(s);
+        JSONObject object = jsonParser.parseObj(s);
         if (object.getJSONObject("status").getInt("code") == 0) {
             JSONObject result = object.getJSONObject("result");
             JSONArray data = result.getJSONArray("dataList");
             List<WeidianItem> items = new ArrayList<>();
             for (Object item_ : data.toArray(new Object[0])) {
-                JSONObject item = JSONUtil.parseObj(item_);
+                JSONObject item = jsonParser.parseObj(item_.toString());
                 long id = item.getLong("itemId");
                 String name = item.getStr("itemName");
                 String pic = item.getStr("imgHead");

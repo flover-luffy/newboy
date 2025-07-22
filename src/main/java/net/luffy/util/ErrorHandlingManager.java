@@ -193,8 +193,7 @@ public class ErrorHandlingManager {
     public void registerRecoveryStrategy(Class<? extends Exception> exceptionType, 
                                         RecoveryStrategy strategy) {
         recoveryStrategies.put(exceptionType, strategy);
-        Newboy.INSTANCE.getLogger().info(
-            String.format("[错误处理] 注册恢复策略: %s", exceptionType.getSimpleName()));
+        // 注册恢复策略
     }
     
     /**
@@ -216,8 +215,7 @@ public class ErrorHandlingManager {
                 results.put(entry.getKey(), healthy);
                 
                 if (!healthy) {
-                    Newboy.INSTANCE.getLogger().info(
-                        String.format("[健康检查] %s 检查失败", entry.getKey()));
+                    // 健康检查失败
                 }
             } catch (Exception e) {
                 results.put(entry.getKey(), false);
@@ -311,7 +309,7 @@ public class ErrorHandlingManager {
     private void initializeDefaultRecoveryStrategies() {
         // 网络连接异常恢复策略
         registerRecoveryStrategy(java.net.ConnectException.class, (exception) -> {
-            Newboy.INSTANCE.getLogger().info("[恢复策略] 尝试重新建立网络连接");
+            // 尝试重新建立网络连接
             try {
                 Thread.sleep(2000); // 等待2秒
                 return true;
@@ -324,7 +322,7 @@ public class ErrorHandlingManager {
         // 内存不足恢复策略
         registerRecoveryStrategy(RuntimeException.class, (exception) -> {
             if (exception.getCause() instanceof OutOfMemoryError) {
-                Newboy.INSTANCE.getLogger().info("[恢复策略] 检测到内存不足，尝试清理缓存");
+                // 检测到内存不足，尝试清理缓存
                 try {
                     // 触发缓存清理
                     SmartCacheManager.getInstance().performMemoryPressureCleanup();
@@ -349,8 +347,7 @@ public class ErrorHandlingManager {
     }
     
     private void recordSuccessAfterRetry(String operationName, int attempts) {
-        Newboy.INSTANCE.getLogger().info(
-            String.format("[错误处理] 操作 '%s' 在第 %d 次重试后成功", operationName, attempts));
+        // 操作重试成功
     }
     
     private void recordFinalFailure(String operationName, Exception exception, int maxRetries) {
@@ -385,7 +382,7 @@ public class ErrorHandlingManager {
             callback.onErrorAlert(alertType, message);
         }
         
-        Newboy.INSTANCE.getLogger().info(String.format("[错误告警] %s: %s", alertType, message));
+        Newboy.INSTANCE.getLogger().error(String.format("[错误告警] %s: %s", alertType, message));
     }
     
     // 内部类：错误统计

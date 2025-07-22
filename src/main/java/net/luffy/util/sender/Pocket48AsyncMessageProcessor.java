@@ -23,24 +23,20 @@ import java.io.IOException;
  */
 public class Pocket48AsyncMessageProcessor {
     
-    private final ExecutorService mediaProcessorPool;
-    private final ExecutorService messageProcessorPool;
+    private final ExecutorService messageProcessorPool; // 专门处理文本消息
     private final Pocket48Sender sender;
     private final AdaptiveThreadPoolManager adaptivePoolManager;
     private final CpuLoadBalancer loadBalancer;
     private final MessageDelayConfig delayConfig;
     
-    // 媒体处理线程池：用于处理音频、视频、图片等资源密集型任务
+    // 文本消息处理线程池：专门处理文本消息等轻量级任务
     private static final int CPU_CORES;
-    private static final int MEDIA_THREAD_POOL_SIZE;
     private static final int MESSAGE_THREAD_POOL_SIZE;
     
     static {
         int cores = Runtime.getRuntime().availableProcessors();
         CPU_CORES = Math.max(1, cores); // 确保至少为1
-        // 进一步优化：大幅减少线程数，降低CPU占用和上下文切换开销
-        MEDIA_THREAD_POOL_SIZE = Math.max(1, Math.min(CPU_CORES + 1, 4)); // 最多4个线程，最少1个
-        // 消息处理线程池：用于处理文本消息等轻量级任务
+        // 文本消息处理线程池：用于处理文本消息等轻量级任务
         MESSAGE_THREAD_POOL_SIZE = Math.max(1, Math.min(CPU_CORES / 2 + 1, 3)); // 最多3个线程，最少1个
         
         // 静态初始化完成，不输出调试信息
@@ -53,26 +49,14 @@ public class Pocket48AsyncMessageProcessor {
         this.delayConfig = MessageDelayConfig.getInstance();
         
         // 验证线程池参数
-        if (MEDIA_THREAD_POOL_SIZE <= 0) {
-            throw new IllegalStateException("MEDIA_THREAD_POOL_SIZE must be positive, got: " + MEDIA_THREAD_POOL_SIZE);
-        }
         if (MESSAGE_THREAD_POOL_SIZE <= 0) {
             throw new IllegalStateException("MESSAGE_THREAD_POOL_SIZE must be positive, got: " + MESSAGE_THREAD_POOL_SIZE);
         }
-        
-        // 创建媒体处理线程池（优化：降低线程优先级，减少CPU竞争）
-        this.mediaProcessorPool = Executors.newFixedThreadPool(MEDIA_THREAD_POOL_SIZE, 
-            r -> {
-                Thread t = new Thread(r, "Pocket48-Media-Processor");
-                t.setDaemon(true);
-                t.setPriority(Thread.NORM_PRIORITY - 1); // 降低优先级
-                return t;
-            });
             
-        // 创建消息处理线程池（优化：降低线程优先级）
+        // 创建文本消息处理线程池（优化：降低线程优先级）
         this.messageProcessorPool = Executors.newFixedThreadPool(MESSAGE_THREAD_POOL_SIZE,
             r -> {
-                Thread t = new Thread(r, "Pocket48-Message-Processor");
+                Thread t = new Thread(r, "Pocket48-Text-Processor");
                 t.setDaemon(true);
                 t.setPriority(Thread.NORM_PRIORITY - 1); // 降低优先级
                 return t;
@@ -102,7 +86,7 @@ public class Pocket48AsyncMessageProcessor {
     }
     
     /**
-     * 异步处理单条消息
+     * 异步处理单条消息（专注于文本消息，媒体消息由Pocket48MediaQueue处理）
      * @param message 待处理的消息
      * @param group 目标群组
      * @return 处理结果的Future
@@ -110,7 +94,13 @@ public class Pocket48AsyncMessageProcessor {
     public CompletableFuture<Pocket48SenderMessage> processMessageAsync(
             Pocket48Message message, Group group) {
         
-        // 根据CPU负载选择处理策略
+        // 媒体消息交给专门的媒体队列处理，这里只处理文本消息
+        if (isMediaMessage(message)) {
+            // 返回一个立即完成的Future，表示媒体消息已交给媒体队列处理
+            return CompletableFuture.completedFuture(null);
+        }
+        
+        // 根据CPU负载选择处理策略（仅处理文本消息）
         CpuLoadBalancer.LoadLevel loadLevel = loadBalancer.getCurrentLoadLevel();
         
         // 高负载时优先使用自适应线程池
@@ -133,9 +123,7 @@ public class Pocket48AsyncMessageProcessor {
                 }
             });
         } else {
-            // 正常负载时使用专用线程池
-            ExecutorService executor = isMediaMessage(message) ? mediaProcessorPool : messageProcessorPool;
-            
+            // 正常负载时使用消息处理线程池（专门处理文本消息）
             return CompletableFuture.supplyAsync(() -> {
                 try {
                     long startTime = System.currentTimeMillis();
@@ -152,7 +140,7 @@ public class Pocket48AsyncMessageProcessor {
                     // 静默处理错误
                     return null;
                 }
-            }, executor);
+            }, messageProcessorPool);
         }
     }
     
@@ -409,13 +397,10 @@ public class Pocket48AsyncMessageProcessor {
      */
     public String getProcessorStatus() {
         return String.format(
-            "异步消息处理器状态:\n" +
-            "媒体处理线程池 - 活跃: %d, 队列: %d\n" +
-            "消息处理线程池 - 活跃: %d, 队列: %d\n" +
+            "异步文本消息处理器状态:\n" +
+            "文本消息处理线程池 - 活跃: %d, 队列: %d\n" +
             "当前负载级别: %s\n" +
             "CPU使用率: %.1f%%",
-            ((ThreadPoolExecutor) mediaProcessorPool).getActiveCount(),
-            ((ThreadPoolExecutor) mediaProcessorPool).getQueue().size(),
             ((ThreadPoolExecutor) messageProcessorPool).getActiveCount(),
             ((ThreadPoolExecutor) messageProcessorPool).getQueue().size(),
             loadBalancer.getCurrentLoadLevel(),
@@ -427,18 +412,13 @@ public class Pocket48AsyncMessageProcessor {
      * 关闭线程池
      */
     public void shutdown() {
-        mediaProcessorPool.shutdown();
         messageProcessorPool.shutdown();
         
         try {
-            if (!mediaProcessorPool.awaitTermination(5, TimeUnit.SECONDS)) {
-                mediaProcessorPool.shutdownNow();
-            }
             if (!messageProcessorPool.awaitTermination(5, TimeUnit.SECONDS)) {
                 messageProcessorPool.shutdownNow();
             }
         } catch (InterruptedException e) {
-            mediaProcessorPool.shutdownNow();
             messageProcessorPool.shutdownNow();
             Thread.currentThread().interrupt();
         }

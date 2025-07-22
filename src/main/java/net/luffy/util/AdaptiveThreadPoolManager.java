@@ -115,7 +115,7 @@ public class AdaptiveThreadPoolManager {
             if (adjusted) {
                 lastAdjustTime.set(System.currentTimeMillis());
                 adjustmentCount.incrementAndGet();
-                Newboy.INSTANCE.getLogger().info("[自适应线程池] " + adjustmentReason);
+                // 线程池调整完成
             }
             
         } catch (Exception e) {
@@ -195,8 +195,7 @@ public class AdaptiveThreadPoolManager {
         int oldSize = adaptivePool.getCorePoolSize();
         adaptivePool.setCorePoolSize(newSize);
         
-        Newboy.INSTANCE.getLogger().info(
-            String.format("[自适应线程池] 手动调整线程池大小: %d -> %d", oldSize, newSize));
+        // 手动调整线程池大小完成
         
         return true;
     }

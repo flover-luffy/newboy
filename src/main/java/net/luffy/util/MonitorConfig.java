@@ -144,9 +144,9 @@ public class MonitorConfig {
         try (InputStream input = getClass().getClassLoader().getResourceAsStream("monitor-config.properties")) {
             if (input != null) {
                 properties.load(input);
-                Newboy.INSTANCE.getLogger().info("监控配置文件加载成功: monitor-config.properties");
+                // 监控配置文件加载成功
             } else {
-                Newboy.INSTANCE.getLogger().warning("未找到monitor-config.properties文件，使用默认配置");
+                // 未找到monitor-config.properties文件，使用默认配置
             }
         } catch (IOException e) {
             Newboy.INSTANCE.getLogger().error("加载监控配置文件失败: " + e.getMessage(), e);
@@ -157,12 +157,7 @@ public class MonitorConfig {
      * 记录配置摘要
      */
     private void logConfigurationSummary() {
-        if (verboseLogging) {
-            Newboy.INSTANCE.getLogger().info(
-                String.format("监控配置加载完成 - 网络超时: %d/%dms, 重试: %d次, 健康检查: %dmin, 缓存: %ds",
-                    connectTimeout, readTimeout, maxRetries, 
-                    healthCheckInterval / 60000, cacheExpireTime / 1000));
-        }
+        // 监控配置加载完成，静默处理
     }
     
     // 配置获取辅助方法
@@ -172,7 +167,7 @@ public class MonitorConfig {
             try {
                 return Integer.parseInt(value.trim());
             } catch (NumberFormatException e) {
-                Newboy.INSTANCE.getLogger().warning("配置项 " + key + " 格式错误，使用默认值: " + defaultValue);
+                Newboy.INSTANCE.getLogger().error("配置项 " + key + " 格式错误，使用默认值: " + defaultValue);
             }
         }
         return defaultValue;
@@ -184,7 +179,7 @@ public class MonitorConfig {
             try {
                 return Long.parseLong(value.trim());
             } catch (NumberFormatException e) {
-                Newboy.INSTANCE.getLogger().warning("配置项 " + key + " 格式错误，使用默认值: " + defaultValue);
+                Newboy.INSTANCE.getLogger().error("配置项 " + key + " 格式错误，使用默认值: " + defaultValue);
             }
         }
         return defaultValue;
@@ -196,7 +191,7 @@ public class MonitorConfig {
             try {
                 return Double.parseDouble(value.trim());
             } catch (NumberFormatException e) {
-                Newboy.INSTANCE.getLogger().warning("配置项 " + key + " 格式错误，使用默认值: " + defaultValue);
+                Newboy.INSTANCE.getLogger().error("配置项 " + key + " 格式错误，使用默认值: " + defaultValue);
             }
         }
         return defaultValue;

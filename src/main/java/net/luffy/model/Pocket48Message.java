@@ -4,6 +4,7 @@ import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import net.luffy.Newboy;
 import net.luffy.handler.Pocket48Handler;
+import net.luffy.util.UnifiedJsonParser;
 
 public class Pocket48Message {
     private final Pocket48RoomInfo room;
@@ -12,6 +13,7 @@ public class Pocket48Message {
     private final Pocket48MessageType type;
     private final String body;
     private final long time;
+    private static final UnifiedJsonParser jsonParser = UnifiedJsonParser.getInstance();
 
     public Pocket48Message(Pocket48RoomInfo room, String nickName, String starName, String type, String body, long time) {
         this.room = room;
@@ -23,8 +25,8 @@ public class Pocket48Message {
     }
 
     public static final Pocket48Message construct(Pocket48RoomInfo roomInfo, JSONObject m) {
-        JSONObject extInfo = JSONUtil.parseObj(m.getObj("extInfo"));
-        JSONObject user = JSONUtil.parseObj(extInfo.getObj("user"));
+        JSONObject extInfo = jsonParser.parseObj(m.getObj("extInfo").toString());
+        JSONObject user = jsonParser.parseObj(extInfo.getObj("user").toString());
         return new Pocket48Message(
                 roomInfo.setStarId(user.getInt("userId")),
                 user.getStr("nickName"),
@@ -56,7 +58,7 @@ public class Pocket48Message {
 
     public String getText() {
         if (getType() == Pocket48MessageType.GIFT_TEXT) {
-            JSONObject info = JSONUtil.parseObj(JSONUtil.parseObj(getBody()).getObj("giftInfo"));
+            JSONObject info = jsonParser.parseObj(jsonParser.parseObj(getBody()).getObj("giftInfo").toString());
             return "送给 " + info.getStr("userName") + " " + info.getInt("giftNum") + "个" + info.getStr("giftName");
         }
         return getBody();
@@ -73,11 +75,11 @@ public class Pocket48Message {
     //IMAGE,EXPRESSIMAGE,AUDIO,VIDEO
     public String getResLoc() {
         if (getType() == Pocket48MessageType.EXPRESSIMAGE) {
-            return JSONUtil.parseObj(JSONUtil.parseObj(getBody()).getObj("expressImgInfo")).getStr("emotionRemote");
+            return jsonParser.parseObj(jsonParser.parseObj(getBody()).getObj("expressImgInfo").toString()).getStr("emotionRemote");
         }
         if (getType() == Pocket48MessageType.IMAGE || getType() == Pocket48MessageType.AUDIO
                 || getType() == Pocket48MessageType.VIDEO) {
-            return JSONUtil.parseObj(getBody()).getStr("url");
+            return jsonParser.parseObj(getBody()).getStr("url");
         }
 
         return null;
@@ -87,7 +89,7 @@ public class Pocket48Message {
     public String getExt() {
         if (getType() == Pocket48MessageType.IMAGE || getType() == Pocket48MessageType.AUDIO
                 || getType() == Pocket48MessageType.VIDEO) {
-            return JSONUtil.parseObj(getBody()).getStr("ext");
+            return jsonParser.parseObj(getBody()).getStr("ext");
         }
         return null;
     }
@@ -95,7 +97,7 @@ public class Pocket48Message {
     public long getDuration() {
         if (getType() == Pocket48MessageType.AUDIO
                 || getType() == Pocket48MessageType.VIDEO) {
-            return JSONUtil.parseObj(getBody()).getLong("dur");
+            return jsonParser.parseObj(getBody()).getLong("dur");
         }
         return 0;
     }
@@ -106,9 +108,9 @@ public class Pocket48Message {
         if (!isGift && getType() != Pocket48MessageType.REPLY)//非回复消息
             return null;
 
-        JSONObject object = JSONUtil.parseObj(getBody());
-        JSONObject content = JSONUtil.parseObj(object.getObj(
-                isGift ? "giftReplyInfo" : "replyInfo"));
+        JSONObject object = jsonParser.parseObj(getBody());
+        JSONObject content = jsonParser.parseObj(object.getObj(
+                isGift ? "giftReplyInfo" : "replyInfo").toString());
         return new Pocket48Reply(
                 content.getStr("replyName"),
                 content.getStr("replyText"),
@@ -121,9 +123,9 @@ public class Pocket48Message {
         if (getType() != Pocket48MessageType.LIVEPUSH)
             return null;
 
-        JSONObject object = JSONUtil.parseObj(getBody());
-        JSONObject content = JSONUtil.parseObj(object.getObj(
-                "livePushInfo"));
+        JSONObject object = jsonParser.parseObj(getBody());
+        JSONObject content = jsonParser.parseObj(object.getObj(
+                "livePushInfo").toString());
         return new Pocket48LivePush(
                 Pocket48Handler.SOURCEROOT + content.getStr("liveCover").substring(1),
                 content.getStr("liveTitle"),
@@ -137,9 +139,9 @@ public class Pocket48Message {
                 && getType() != Pocket48MessageType.FLIPCARD_VIDEO)
             return null;
 
-        JSONObject object = JSONUtil.parseObj(getBody());
-        JSONObject content = JSONUtil.parseObj(object.getObj(
-                "filpCardInfo"));
+        JSONObject object = jsonParser.parseObj(getBody());
+        JSONObject content = jsonParser.parseObj(object.getObj(
+                "filpCardInfo").toString());
         return new Pocket48Answer(
                 content.getStr("question"),
                 content.getStr("answer"),

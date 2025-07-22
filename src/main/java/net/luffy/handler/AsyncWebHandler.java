@@ -1,27 +1,26 @@
 package net.luffy.handler;
 
 import net.luffy.util.MonitorConfig;
-import okhttp3.*;
-import org.jetbrains.annotations.NotNull;
-
-import java.io.IOException;
-import java.util.HashMap;
+import net.luffy.util.UnifiedHttpClient;
+import net.luffy.util.UnifiedJsonParser;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 /**
  * 异步Web处理器
- * 使用OkHttp和CompletableFuture实现高性能异步HTTP请求
+ * 使用统一HTTP客户端和JSON解析器实现高性能异步HTTP请求
  * 支持批量查询、连接池管理、请求统计等功能
  */
 public class AsyncWebHandler {
     
-    private final OkHttpClient client;
+    private static volatile AsyncWebHandler instance;
+    
+    private final UnifiedHttpClient unifiedClient;
+    private final UnifiedJsonParser jsonParser;
+    // OkHttpClient已迁移到UnifiedHttpClient，不再需要直接实例
     private final MonitorConfig config;
     
     // 性能统计
@@ -31,45 +30,75 @@ public class AsyncWebHandler {
     private final AtomicLong totalResponseTime = new AtomicLong(0);
     private volatile long lastRequestTime = 0;
     
-    public AsyncWebHandler() {
+    private AsyncWebHandler() {
         this.config = MonitorConfig.getInstance();
-        this.client = createHttpClient();
+        this.unifiedClient = UnifiedHttpClient.getInstance();
+        this.jsonParser = UnifiedJsonParser.getInstance();
+        // HTTP客户端已统一到UnifiedHttpClient
     }
     
     /**
-     * 创建配置化的OkHttp客户端
+     * 获取单例实例
      */
-    private OkHttpClient createHttpClient() {
-        return new OkHttpClient.Builder()
-                .connectTimeout(config.getConnectTimeout(), TimeUnit.MILLISECONDS)
-                .readTimeout(config.getReadTimeout(), TimeUnit.MILLISECONDS)
-                .writeTimeout(config.getReadTimeout(), TimeUnit.MILLISECONDS)
-                .connectionPool(new ConnectionPool(10, 5, TimeUnit.MINUTES))
-                .retryOnConnectionFailure(true)
-                .build();
+    public static AsyncWebHandler getInstance() {
+        if (instance == null) {
+            synchronized (AsyncWebHandler.class) {
+                if (instance == null) {
+                    instance = new AsyncWebHandler();
+                }
+            }
+        }
+        return instance;
     }
     
+    // HTTP客户端创建已迁移到UnifiedHttpClient
+    
     /**
-     * 异步GET请求
+     * 异步GET请求 - 使用统一HTTP客户端
      */
     public CompletableFuture<String> getAsync(String url) {
-        return executeAsync(url, "GET", null);
+        // 统计由UnifiedHttpClient处理，避免重复计数
+        lastRequestTime = System.currentTimeMillis();
+        
+        return unifiedClient.getAsync(url)
+                .whenComplete((result, throwable) -> {
+                    // 记录到全局性能监控器
+                    try {
+                        long responseTime = System.currentTimeMillis() - lastRequestTime;
+                        net.luffy.util.PerformanceMonitor.getInstance().recordQuery(responseTime);
+                    } catch (Exception e) {
+                        // 忽略性能监控记录失败
+                    }
+                });
     }
     
     /**
-     * 异步POST请求 - JSON格式
+     * 异步POST请求 - JSON格式，使用统一HTTP客户端
      */
     public CompletableFuture<String> postAsync(String url, String jsonBody) {
-        RequestBody body = RequestBody.create(jsonBody, MediaType.get("application/json; charset=utf-8"));
-        return executeAsync(url, "POST", body);
+        // 统计由UnifiedHttpClient处理，避免重复计数
+        lastRequestTime = System.currentTimeMillis();
+        
+        return unifiedClient.postAsync(url, jsonBody);
     }
     
     /**
-     * 异步POST请求 - Form格式（用于Xox48 API）
+     * 异步POST请求 - Form格式（用于Xox48 API）- 使用统一HTTP客户端
      */
     public CompletableFuture<String> postFormAsync(String url, String formBody) {
-        RequestBody body = RequestBody.create(formBody, MediaType.get("application/x-www-form-urlencoded; charset=utf-8"));
-        return executeAsyncWithHeaders(url, "POST", body, getXox48Headers());
+        // 统计由UnifiedHttpClient处理，避免重复计数
+        lastRequestTime = System.currentTimeMillis();
+        
+        return unifiedClient.postAsync(url, formBody, getXox48Headers())
+                .whenComplete((result, throwable) -> {
+                    // 记录到全局性能监控器
+                    try {
+                        long responseTime = System.currentTimeMillis() - lastRequestTime;
+                        net.luffy.util.PerformanceMonitor.getInstance().recordQuery(responseTime);
+                    } catch (Exception e) {
+                        // 忽略性能监控记录失败
+                    }
+                });
     }
     
     /**
@@ -121,78 +150,7 @@ public class AsyncWebHandler {
                         .collect(Collectors.toList()));
     }
     
-    /**
-     * 执行异步HTTP请求
-     */
-    private CompletableFuture<String> executeAsync(String url, String method, RequestBody body) {
-        return executeAsyncWithHeaders(url, method, body, null);
-    }
-    
-    /**
-     * 执行带自定义请求头的异步HTTP请求
-     */
-    private CompletableFuture<String> executeAsyncWithHeaders(String url, String method, RequestBody body, java.util.Map<String, String> headers) {
-        CompletableFuture<String> future = new CompletableFuture<>();
-        
-        Request.Builder requestBuilder = new Request.Builder().url(url);
-        
-        // 添加自定义请求头
-        if (headers != null) {
-            for (java.util.Map.Entry<String, String> header : headers.entrySet()) {
-                requestBuilder.addHeader(header.getKey(), header.getValue());
-            }
-        }
-        
-        // 设置请求方法
-        switch (method.toUpperCase()) {
-            case "GET":
-                requestBuilder.get();
-                break;
-            case "POST":
-                requestBuilder.post(body != null ? body : RequestBody.create("", null));
-                break;
-            default:
-                future.completeExceptionally(new IllegalArgumentException("不支持的HTTP方法: " + method));
-                return future;
-        }
-        
-        Request request = requestBuilder.build();
-        long startTime = System.currentTimeMillis();
-        
-        totalRequests.incrementAndGet();
-        lastRequestTime = startTime;
-        
-        client.newCall(request).enqueue(new Callback() {
-            @Override
-            public void onFailure(@NotNull Call call, @NotNull IOException e) {
-                failedRequests.incrementAndGet();
-                totalResponseTime.addAndGet(System.currentTimeMillis() - startTime);
-                future.completeExceptionally(e);
-            }
-            
-            @Override
-            public void onResponse(@NotNull Call call, @NotNull Response response) throws IOException {
-                long responseTime = System.currentTimeMillis() - startTime;
-                totalResponseTime.addAndGet(responseTime);
-                
-                try {
-                    if (response.isSuccessful()) {
-                        successfulRequests.incrementAndGet();
-                        String responseBody = response.body() != null ? response.body().string() : "";
-                        future.complete(responseBody);
-                    } else {
-                        failedRequests.incrementAndGet();
-                        future.completeExceptionally(new IOException(
-                                String.format("HTTP请求失败 [%d]: %s", response.code(), url)));
-                    }
-                } finally {
-                    response.close();
-                }
-            }
-        });
-        
-        return future;
-    }
+    // HTTP请求执行已迁移到UnifiedHttpClient
     
     /**
      * 获取Xox48 API专用请求头
@@ -207,12 +165,12 @@ public class AsyncWebHandler {
     }
     
     /**
-     * 解析成员状态响应
+     * 解析成员状态响应 - 使用统一JSON解析器
      */
     private BatchMemberStatusResult parseMemberStatusResponse(String memberName, String response) {
         try {
-            // 使用Hutool的JSONUtil解析响应
-            cn.hutool.json.JSONObject jsonResponse = cn.hutool.json.JSONUtil.parseObj(response);
+            // 使用统一JSON解析器解析响应
+            cn.hutool.json.JSONObject jsonResponse = jsonParser.parseObj(response);
             
             // 检查API响应状态
             String msg = jsonResponse.getStr("msg");
@@ -294,25 +252,17 @@ public class AsyncWebHandler {
     }
     
     /**
-     * 获取性能统计信息
+     * 获取性能统计信息 - 整合统一客户端统计
      */
     public String getPerformanceStats() {
-        int total = totalRequests.get();
-        int success = successfulRequests.get();
-        int failed = failedRequests.get();
-        long avgResponseTime = total > 0 ? totalResponseTime.get() / total : 0;
-        double successRate = total > 0 ? (double) success / total * 100 : 0;
-        
         return String.format(
                 "异步HTTP性能统计:\n" +
-                "总请求数: %d\n" +
-                "成功请求: %d\n" +
-                "失败请求: %d\n" +
-                "成功率: %.2f%%\n" +
-                "平均响应时间: %dms\n" +
-                "最后请求时间: %s",
-                total, success, failed, successRate, avgResponseTime,
-                lastRequestTime > 0 ? new java.util.Date(lastRequestTime).toString() : "无"
+                "最后请求时间: %s\n" +
+                "\n统一客户端统计:\n%s\n" +
+                "\n统一JSON解析器统计:\n%s",
+                lastRequestTime > 0 ? new java.util.Date(lastRequestTime).toString() : "无",
+                unifiedClient.getPerformanceStats(),
+                jsonParser.getPerformanceStats()
         );
     }
     
@@ -325,16 +275,19 @@ public class AsyncWebHandler {
         failedRequests.set(0);
         totalResponseTime.set(0);
         lastRequestTime = 0;
+        
+        // 重置统一客户端和JSON解析器的统计数据
+        unifiedClient.resetStats();
+        jsonParser.resetStats();
     }
     
     /**
      * 关闭客户端
      */
     public void shutdown() {
-        if (client != null) {
-            client.dispatcher().executorService().shutdown();
-            client.connectionPool().evictAll();
-        }
+        // 统一客户端由单例管理，不需要手动关闭
+        // 重置本地统计数据
+        resetStats();
     }
     
     /**

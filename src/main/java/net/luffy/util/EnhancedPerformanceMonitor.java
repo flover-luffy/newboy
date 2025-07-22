@@ -347,7 +347,7 @@ public class EnhancedPerformanceMonitor {
         }
         
         // 记录告警
-        Newboy.INSTANCE.getLogger().info(String.format("[性能告警] %s: %s", alertType, message));
+        Newboy.INSTANCE.getLogger().error(String.format("[性能告警] %s: %s", alertType, message));
         incrementCounter("alerts_triggered");
     }
     

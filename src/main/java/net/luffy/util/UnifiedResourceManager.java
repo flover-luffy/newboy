@@ -69,7 +69,7 @@ public class UnifiedResourceManager {
      */
     public void initialize() {
         if (initialized.compareAndSet(false, true)) {
-            Newboy.INSTANCE.getLogger().info("[统一资源管理器] 正在初始化...");
+            // 正在初始化统一资源管理器
             
             // 初始化核心组件
             initializeCoreComponents();
@@ -80,7 +80,7 @@ public class UnifiedResourceManager {
             // 启动资源监控
             resourceMonitor.start();
             
-            Newboy.INSTANCE.getLogger().info("[统一资源管理器] 初始化完成");
+            // 统一资源管理器初始化完成
         }
     }
     
@@ -110,7 +110,7 @@ public class UnifiedResourceManager {
             // 初始化错误处理管理器
             errorManager = ErrorHandlingManager.getInstance();
             
-            Newboy.INSTANCE.getLogger().info("[统一资源管理器] 核心组件初始化完成");
+            // 核心组件初始化完成
         } catch (Exception e) {
             Newboy.INSTANCE.getLogger().error("[统一资源管理器] 核心组件初始化失败", e);
             throw new RuntimeException("资源管理器初始化失败", e);
@@ -221,8 +221,7 @@ public class UnifiedResourceManager {
         resourceLock.writeLock().lock();
         try {
             resources.put(id, resource);
-            Newboy.INSTANCE.getLogger().info(
-                String.format("[统一资源管理器] 注册资源: %s (%s)", id, resource.getName()));
+            // 注册资源: " + id + " (" + resource.getName() + ")
         } finally {
             resourceLock.writeLock().unlock();
         }
@@ -272,8 +271,7 @@ public class UnifiedResourceManager {
             return;
         }
         
-        Newboy.INSTANCE.getLogger().info(
-            String.format("[统一资源管理器] 开始资源清理 (强制: %s)", force));
+        // 开始资源清理 (强制: " + force + ")
         
         resourceLock.readLock().lock();
         try {
@@ -281,8 +279,7 @@ public class UnifiedResourceManager {
                 try {
                     if (force || shouldCleanupResource(entry.getValue())) {
                         entry.getValue().cleanup();
-                        Newboy.INSTANCE.getLogger().info(
-                            String.format("[统一资源管理器] 清理资源: %s", entry.getKey()));
+                        // 清理资源: " + entry.getKey()
                     }
                 } catch (Exception e) {
                     Newboy.INSTANCE.getLogger().error(
@@ -299,7 +296,7 @@ public class UnifiedResourceManager {
      */
     public void shutdown() {
         if (shutdownInProgress.compareAndSet(false, true)) {
-            Newboy.INSTANCE.getLogger().info("[统一资源管理器] 正在关闭...");
+            // 正在关闭统一资源管理器
             
             // 停止资源监控
             resourceMonitor.stop();
@@ -320,7 +317,7 @@ public class UnifiedResourceManager {
                 resourceLock.writeLock().unlock();
             }
             
-            Newboy.INSTANCE.getLogger().info("[统一资源管理器] 已关闭");
+            // 统一资源管理器已关闭
         }
     }
     
@@ -349,7 +346,7 @@ public class UnifiedResourceManager {
                  concurrencyUtils.cleanup();
              }
              
-             Newboy.INSTANCE.getLogger().info("[统一资源管理器] 核心组件关闭完成");
+             // 核心组件关闭完成
          } catch (Exception e) {
              Newboy.INSTANCE.getLogger().error("[统一资源管理器] 核心组件关闭失败", e);
          }

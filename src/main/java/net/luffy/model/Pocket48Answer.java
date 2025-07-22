@@ -1,6 +1,7 @@
 package net.luffy.model;
 
 import cn.hutool.json.JSONUtil;
+import net.luffy.util.UnifiedJsonParser;
 
 public class Pocket48Answer {
     private final static String ROOT = "https://mp4.48.cn";
@@ -33,7 +34,7 @@ public class Pocket48Answer {
 
     public String getResInfo() {
         if (type == Pocket48MessageType.FLIPCARD_AUDIO || type == Pocket48MessageType.FLIPCARD_VIDEO)
-            return ROOT + JSONUtil.parseObj(getBodyFrom()).getStr("url");
+            return ROOT + UnifiedJsonParser.getInstance().parseObj(getBodyFrom()).getStr("url");
         return null;
     }
 
@@ -44,13 +45,13 @@ public class Pocket48Answer {
 
     public long getDuration() {
         if (type == Pocket48MessageType.FLIPCARD_AUDIO || type == Pocket48MessageType.FLIPCARD_VIDEO)
-            JSONUtil.parseObj(getBodyFrom()).getLong("duration");
+            UnifiedJsonParser.getInstance().parseObj(getBodyFrom()).getLong("duration");
         return 0;
     }
 
     public String getPreviewImg() {
         if (type == Pocket48MessageType.FLIPCARD_VIDEO)
-            return ROOT_SOURCE + JSONUtil.parseObj(getBodyFrom()).getStr("previewImg");
+            return ROOT_SOURCE + UnifiedJsonParser.getInstance().parseObj(getBodyFrom()).getStr("previewImg");
         return null;
     }
 
