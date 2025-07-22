@@ -13,7 +13,14 @@ public class Pocket48Message {
     private final Pocket48MessageType type;
     private final String body;
     private final long time;
-    private static final UnifiedJsonParser jsonParser = UnifiedJsonParser.getInstance();
+    private static UnifiedJsonParser jsonParser;
+
+    private static UnifiedJsonParser getJsonParser() {
+        if (jsonParser == null) {
+            jsonParser = UnifiedJsonParser.getInstance();
+        }
+        return jsonParser;
+    }
 
     public Pocket48Message(Pocket48RoomInfo room, String nickName, String starName, String type, String body, long time) {
         this.room = room;
@@ -25,8 +32,8 @@ public class Pocket48Message {
     }
 
     public static final Pocket48Message construct(Pocket48RoomInfo roomInfo, JSONObject m) {
-        JSONObject extInfo = jsonParser.parseObj(m.getObj("extInfo").toString());
-        JSONObject user = jsonParser.parseObj(extInfo.getObj("user").toString());
+        JSONObject extInfo = getJsonParser().parseObj(m.getObj("extInfo").toString());
+        JSONObject user = getJsonParser().parseObj(extInfo.getObj("user").toString());
         return new Pocket48Message(
                 roomInfo.setStarId(user.getInt("userId")),
                 user.getStr("nickName"),
@@ -58,7 +65,7 @@ public class Pocket48Message {
 
     public String getText() {
         if (getType() == Pocket48MessageType.GIFT_TEXT) {
-            JSONObject info = jsonParser.parseObj(jsonParser.parseObj(getBody()).getObj("giftInfo").toString());
+            JSONObject info = getJsonParser().parseObj(getJsonParser().parseObj(getBody()).getObj("giftInfo").toString());
             return "送给 " + info.getStr("userName") + " " + info.getInt("giftNum") + "个" + info.getStr("giftName");
         }
         return getBody();

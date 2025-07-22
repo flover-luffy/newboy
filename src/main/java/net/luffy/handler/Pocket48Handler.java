@@ -127,21 +127,14 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
         super.logError(msg);
     }
 
-    // 获取Pocket48专用请求头
+    // 获取Pocket48专用请求头（优化版）
     protected java.util.Map<String, String> getPocket48Headers() {
-        java.util.Map<String, String> headers = new java.util.HashMap<>();
-        headers.put("Content-Type", "application/json;charset=utf-8");
-        headers.put("Host", "pocketapi.48.cn");
-        headers.put("pa", "MTc1MTg5NTgzMjAwMCwzODMzLEQ3ODVBRENBM0U3QTkzRDVFNTJCMjVDQUJDRUY4NDczLA==");
-        headers.put("User-Agent", "PocketFans201807/7.1.34 (iPhone; iOS 19.0; Scale/2.00)");
-        headers.put("appInfo", "{\"vendor\":\"apple\",\"deviceId\":\"8D6DDD0B-2233-4622-89AA-AABB14D4F37B\",\"appVersion\":\"7.1.34\",\"appBuild\":\"25060602\",\"osVersion\":\"19.0\",\"osType\":\"ios\",\"deviceName\":\"iPhone 11\",\"os\":\"ios\"}");
-        
-        // 如果已登录，添加token头
+        // 直接使用header类的方法，避免重复设置
         if (header.getToken() != null) {
-            headers.put("token", header.getToken());
+            return header.getHeaders();
+        } else {
+            return header.getLoginHeaders();
         }
-        
-        return headers;
     }
 
     public String getBalance() {
@@ -398,15 +391,26 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
         return new Pocket48Message[0];
     }
 
-    //获取未整理的消息
+    //获取未整理的消息（优化版）
     private List<Object> getOriMessages(long roomID, long serverID) {
-        String s = post(APIMsgOwner, String.format("{\"nextTime\":0,\"serverId\":%d,\"channelId\":%d,\"limit\":100}", serverID, roomID), getPocket48Headers());
+        // 优化：添加更多请求参数以提高API响应速度
+        String requestBody = String.format(
+            "{\"nextTime\":0,\"serverId\":%d,\"channelId\":%d,\"limit\":30,\"order\":1,\"needTop\":false}", 
+            serverID, roomID
+        );
+        
+        String s = post(APIMsgOwner, requestBody, getPocket48Headers());
         JSONObject object = jsonParser.parseObj(s);
 
         if (object.getInt("status") == 200) {
             JSONObject content = jsonParser.parseObj(object.getObj("content").toString());
             List<Object> out = content.getBeanList("message", Object.class);
-            out.sort((a, b) -> jsonParser.parseObj(b.toString()).getLong("msgTime") - jsonParser.parseObj(a.toString()).getLong("msgTime") > 0 ? 1 : 0);//口袋消息好像会乱（？）
+            // 优化：使用更高效的排序方式
+            out.sort((a, b) -> {
+                long timeA = jsonParser.parseObj(a.toString()).getLong("msgTime");
+                long timeB = jsonParser.parseObj(b.toString()).getLong("msgTime");
+                return Long.compare(timeB, timeA);
+            });
             return out;
 
         } else {

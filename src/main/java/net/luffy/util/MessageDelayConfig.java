@@ -76,9 +76,9 @@ public class MessageDelayConfig {
         groupLowPriorityDelay = properties.message_delay_group_low_priority;
         processingTimeout = properties.message_delay_processing_timeout;
         
-        // 智能超时配置：文本消息快速处理，媒体消息允许更长时间
-        textProcessingTimeout = Math.max(3, processingTimeout / 3);  // 文本消息超时为总超时的1/3，最少3秒
-        mediaProcessingTimeout = Math.max(processingTimeout, 30);    // 媒体消息超时至少30秒
+        // 智能超时配置：文本消息快速处理，媒体消息允许更长时间（优化版）
+        textProcessingTimeout = Math.max(2, processingTimeout / 4);  // 文本消息超时为总超时的1/4，最少2秒
+        mediaProcessingTimeout = Math.max(processingTimeout, 25);    // 媒体消息超时至少25秒
         
         highLoadMultiplier = (int) properties.message_delay_high_load_multiplier;
         criticalLoadMultiplier = (int) properties.message_delay_critical_load_multiplier;

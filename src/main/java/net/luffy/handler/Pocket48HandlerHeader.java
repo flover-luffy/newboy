@@ -30,6 +30,15 @@ public class Pocket48HandlerHeader {
         headers.put("pa", pa);
         headers.put("User-Agent", "PocketFans201807/7.1.34 (iPhone; iOS 19.0; Scale/2.00)");
         headers.put("appInfo", String.format("{\"vendor\":\"apple\",\"deviceId\":\"8D6DDD0B-2233-4622-89AA-AABB14D4F37B\",\"appVersion\":\"%s\",\"appBuild\":\"25060602\",\"osVersion\":\"19.0\",\"osType\":\"ios\",\"deviceName\":\"iPhone 11\",\"os\":\"ios\"}", version));
+        
+        // 添加缺少的重要请求头以提高API响应速度
+        headers.put("Accept", "application/json, text/plain, */*");
+        headers.put("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
+        headers.put("Accept-Encoding", "gzip, deflate, br");
+        headers.put("Connection", "keep-alive");
+        headers.put("Cache-Control", "no-cache");
+        headers.put("Pragma", "no-cache");
+        
         return headers;
     }
 

@@ -757,7 +757,8 @@ public class Pocket48Sender extends Sender {
     }
 
     /**
-     * 发送消息列表（优化版）
+     * 发送消息列表（流式处理版）- 解决批量等待导致的延迟问题
+     * 改为流式处理：处理完一条立即发送一条，而不是等待所有消息处理完毕
      * @param messages 消息列表
      * @param group 目标群组
      */
@@ -768,41 +769,22 @@ public class Pocket48Sender extends Sender {
         
         long startTime = System.currentTimeMillis();
         
-        // 预处理：按消息类型分组优化
-        List<Pocket48Message> optimizedMessages = preprocessMessages(messages);
-        
-        // 启动资源预加载（异步）
-        List<CompletableFuture<Void>> preloadFutures = 
-            unifiedResourceManager.preloadMessageResources(optimizedMessages);
-        
-        // 使用异步处理器并行处理消息
-        List<CompletableFuture<Pocket48SenderMessage>> futures = 
-            asyncProcessor.processMessagesAsync(optimizedMessages.toArray(new Pocket48Message[0]), group);
-        
-        // 等待处理完成并发送 - 使用智能超时处理
-        asyncProcessor.waitAndSendMessagesWithSmartTimeout(futures, group, 
-            delayConfig.getTextProcessingTimeout(), delayConfig.getMediaProcessingTimeout());
+        // 直接按时间顺序流式处理，避免批量等待
+        sendMessagesInTimeOrder(messages, group);
         
         long endTime = System.currentTimeMillis();
-        // 移除控制台输出，改为内部记录
         PerformanceMonitor.getInstance().recordQuery(endTime - startTime);
         
-        // 智能缓存清理：使用性能监控器进行动态清理
+        // 智能缓存清理：减少清理频率
         if (messages.size() > 30) {
             PerformanceMonitor monitor = PerformanceMonitor.getInstance();
-            monitor.recordQuery(endTime - startTime);
             
-            // 优化：减少清理频率，只在必要时清理
             if (monitor.shouldForceCleanup()) {
-                // 内存使用率过高，强制清理
                 unifiedResourceManager.cleanupExpiredCache(5);
                 System.gc();
-                // 内存清理完成
             } else if (monitor.shouldCleanup() && monitor.getTotalQueries() % 50 == 0) {
-                // 内存使用率较高且每50次查询才清理一次
                 unifiedResourceManager.cleanupExpiredCache(30);
             } else if (monitor.getTotalQueries() % 100 == 0) {
-                // 正常情况，每100次查询清理一次过期缓存
                 unifiedResourceManager.cleanupExpiredCache(60);
             }
         }
@@ -889,8 +871,8 @@ public class Pocket48Sender extends Sender {
     }
 
     /**
-     * 按时间顺序发送消息（优化版）- 解决短时间内批量发送导致的延迟问题
-     * 文本消息优先发送，媒体消息异步处理
+     * 按时间顺序发送消息（流式处理版）- 彻底解决批量等待导致的延迟问题
+     * 逐条处理并立即发送，最大化降低延迟
      * @param messages 按时间排序的消息列表
      * @param group 目标群组
      */
@@ -899,37 +881,31 @@ public class Pocket48Sender extends Sender {
             return;
         }
         
-        long startTime = System.currentTimeMillis();
+        int baseInterval = calculateSendInterval(messages.size());
         
-        // 分离文本消息和媒体消息
-        List<Pocket48Message> textMessages = new ArrayList<>();
-        List<Pocket48Message> mediaMessages = new ArrayList<>();
-        
-        for (Pocket48Message message : messages) {
-            if (isTextMessage(message)) {
-                textMessages.add(message);
-            } else {
-                mediaMessages.add(message);
+        // 流式处理：逐条处理并立即发送
+        for (int i = 0; i < messages.size(); i++) {
+            Pocket48Message message = messages.get(i);
+            
+            try {
+                // 立即处理当前消息
+                Pocket48SenderMessage senderMessage = pharseMessage(message, group, false);
+                
+                if (senderMessage != null) {
+                    // 立即发送处理后的消息
+                    sendSingleMessage(senderMessage, group);
+                }
+                
+                // 添加发送间隔（除了最后一条消息）
+                if (i < messages.size() - 1) {
+                    Thread.sleep(baseInterval);
+                }
+                
+            } catch (Exception e) {
+                // 静默处理单条消息的错误，继续处理下一条
+                System.err.println("[警告] 处理消息失败: " + e.getMessage());
             }
         }
-        
-        // 优先处理文本消息（同步发送）
-        if (!textMessages.isEmpty()) {
-            sendTextMessagesSync(textMessages, group);
-        }
-        
-        // 异步处理媒体消息
-        if (!mediaMessages.isEmpty() && unifiedResourceManager.isMediaQueueEnabled()) {
-            for (Pocket48Message mediaMessage : mediaMessages) {
-                mediaQueue.submitMediaMessage(mediaMessage, group, this);
-            }
-        } else if (!mediaMessages.isEmpty()) {
-            // 如果异步队列未启用，使用原有的同步处理方式
-            sendMediaMessagesSync(mediaMessages, group);
-        }
-        
-        long endTime = System.currentTimeMillis();
-        PerformanceMonitor.getInstance().recordQuery(endTime - startTime);
         
         // 清理缓存
         if (messages.size() > 10) {

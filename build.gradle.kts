@@ -2,9 +2,8 @@ plugins {
     val kotlinVersion = "2.0.21"
     kotlin("jvm") version kotlinVersion
     kotlin("plugin.serialization") version kotlinVersion
-
     id("net.mamoe.mirai-console") version "2.16.0"
-    java
+    id("com.github.johnrengelman.shadow") version "7.1.2"
 }
 
 java {

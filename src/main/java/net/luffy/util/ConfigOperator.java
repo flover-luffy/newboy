@@ -143,14 +143,14 @@ public class ConfigOperator {
         properties.async_monitor_schedule_pattern = setting.getStr("async_monitor", "schedule_pattern", "*/30 * * * * *");
         
         // 消息延迟优化配置
-        properties.message_delay_optimization_mode = setting.getStr("message_delay", "optimization_mode", "BALANCED");
-        properties.message_delay_text = setting.getInt("message_delay", "text", 12);
-        properties.message_delay_media = setting.getInt("message_delay", "media", 25);
-        properties.message_delay_group_high_priority = setting.getInt("message_delay", "group_high_priority", 15);
-        properties.message_delay_group_low_priority = setting.getInt("message_delay", "group_low_priority", 25);
-        properties.message_delay_processing_timeout = setting.getInt("message_delay", "processing_timeout", 15);
+        properties.message_delay_optimization_mode = setting.getStr("message_delay", "optimization_mode", "AGGRESSIVE");
+        properties.message_delay_text = setting.getInt("message_delay", "text", 8);  // 减少文本消息延迟
+        properties.message_delay_media = setting.getInt("message_delay", "media", 15);  // 减少媒体消息延迟
+        properties.message_delay_group_high_priority = setting.getInt("message_delay", "group_high_priority", 10);  // 减少高优先级延迟
+        properties.message_delay_group_low_priority = setting.getInt("message_delay", "group_low_priority", 18);  // 减少低优先级延迟
+        properties.message_delay_processing_timeout = setting.getInt("message_delay", "processing_timeout", 12);  // 减少处理超时
         properties.message_delay_high_load_multiplier = setting.getDouble("message_delay", "high_load_multiplier", 1.0);
-        properties.message_delay_critical_load_multiplier = setting.getDouble("message_delay", "critical_load_multiplier", 2.0);
+        properties.message_delay_critical_load_multiplier = setting.getDouble("message_delay", "critical_load_multiplier", 1.5);  // 减少临界负载倍数
         
         // 口袋48异步处理队列配置已迁移到 Pocket48ResourceManager
 
@@ -250,6 +250,7 @@ public class ConfigOperator {
 
         //微店 - 添加JSON格式验证
         String weidianJson = setting.getByGroup("shops", "weidian");
+        
         if (weidianJson == null || weidianJson.trim().isEmpty() || 
             !weidianJson.trim().startsWith("[") || !weidianJson.trim().endsWith("]")) {
             // 微店配置格式无效，重置为空数组
@@ -260,6 +261,7 @@ public class ConfigOperator {
         
         try {
             Object[] weidianArray = jsonParser.parseArray(weidianJson).toArray();
+            
             for (Object a : weidianArray) {
                 JSONObject shop = (a instanceof JSONObject) ? (JSONObject) a : jsonParser.parseObj(a.toString());
 
@@ -269,12 +271,19 @@ public class ConfigOperator {
                 boolean doBroadCast = shop.getBool("doBroadCast", true);
                 List<Long> highlight = shop.getBeanList("highlight", Long.class);
                 List<Long> shielded = shop.getBeanList("shielded", Long.class);
-                properties.weidian_cookie.put(g, WeidianCookie.construct(cookie, autoDeliver, doBroadCast,
+                
+                WeidianCookie weidianCookie = WeidianCookie.construct(cookie, autoDeliver, doBroadCast,
                         highlight == null ? new ArrayList<>() : highlight,
-                        shielded == null ? new ArrayList<>() : shielded));
+                        shielded == null ? new ArrayList<>() : shielded);
+                        
+                if (weidianCookie == null) {
+                    continue; // 跳过无效的cookie
+                }
+                
+                properties.weidian_cookie.put(g, weidianCookie);
             }
         } catch (Exception e) {
-            Newboy.INSTANCE.getLogger().error("解析微店配置时发生错误: " + e.getMessage());
+            Newboy.INSTANCE.getLogger().error("解析微店配置时发生错误: " + e.getMessage(), e);
             setting.setByGroup("shops", "weidian", "[]");
             safeStoreConfig("修复微店配置错误");
         }
@@ -448,7 +457,18 @@ public class ConfigOperator {
             highlightItem = properties.weidian_cookie.get(group).highlightItem;
             shieldItem = properties.weidian_cookie.get(group).shieldedItem;
         }
-        properties.weidian_cookie.put(group, WeidianCookie.construct(cookie, autoDeliver, doBroadcast, highlightItem, shieldItem));
+        
+        WeidianCookie weidianCookie = WeidianCookie.construct(cookie, autoDeliver, doBroadcast, highlightItem, shieldItem);
+        if (weidianCookie == null) {
+            Newboy.INSTANCE.getLogger().warning("[微店配置] Cookie构建失败，可能缺少wdtoken: " + cookie.substring(0, Math.min(50, cookie.length())) + "...");
+            return false;
+        }
+        
+        // 重置invalid标志
+        weidianCookie.invalid = false;
+        Newboy.INSTANCE.getLogger().info("[微店配置] Cookie设置成功，wdtoken=" + weidianCookie.wdtoken + ", invalid=" + weidianCookie.invalid);
+        
+        properties.weidian_cookie.put(group, weidianCookie);
         saveWeidianConfig();
         return true;
     }
@@ -566,7 +586,9 @@ public class ConfigOperator {
             object.set("qqGroup", group);
             object.set("cookie", properties.weidian_cookie.get(group).cookie);
             object.set("autoDeliver", properties.weidian_cookie.get(group).autoDeliver);
-            object.set("highlight", properties.weidian_cookie.get(group).highlightItem.toString());
+            object.set("doBroadCast", properties.weidian_cookie.get(group).doBroadcast);
+            object.set("highlight", properties.weidian_cookie.get(group).highlightItem);
+            object.set("shielded", properties.weidian_cookie.get(group).shieldedItem);
             a += object + ",";
         }
         setting.setByGroup("shops", "weidian", (a.length() > 1 ? a.substring(0, a.length() - 1) : a) + "]");
