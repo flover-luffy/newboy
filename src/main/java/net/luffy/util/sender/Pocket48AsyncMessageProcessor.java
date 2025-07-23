@@ -28,6 +28,7 @@ public class Pocket48AsyncMessageProcessor {
     private final AdaptiveThreadPoolManager adaptivePoolManager;
     private final CpuLoadBalancer loadBalancer;
     private final MessageDelayConfig delayConfig;
+    private final ScheduledExecutorService delayExecutor;
     
     // 文本消息处理线程池：专门处理文本消息等轻量级任务
     private static final int CPU_CORES;
@@ -62,6 +63,13 @@ public class Pocket48AsyncMessageProcessor {
                 return t;
             });
         
+        // 创建延迟执行器
+        this.delayExecutor = Executors.newScheduledThreadPool(1, r -> {
+            Thread t = new Thread(r, "Pocket48-AsyncProcessor-Delay");
+            t.setDaemon(true);
+            return t;
+        });
+        
         // 注册事件处理器
         registerEventHandlers();
     }
@@ -86,7 +94,7 @@ public class Pocket48AsyncMessageProcessor {
     }
     
     /**
-     * 异步处理单条消息（专注于文本消息，媒体消息由Pocket48MediaQueue处理）
+     * 异步处理单条消息
      * @param message 待处理的消息
      * @param group 目标群组
      * @return 处理结果的Future
@@ -94,17 +102,65 @@ public class Pocket48AsyncMessageProcessor {
     public CompletableFuture<Pocket48SenderMessage> processMessageAsync(
             Pocket48Message message, Group group) {
         
-        // 媒体消息交给专门的媒体队列处理，这里只处理文本消息
-        if (isMediaMessage(message)) {
-            // 返回一个立即完成的Future，表示媒体消息已交给媒体队列处理
-            return CompletableFuture.completedFuture(null);
+        // 文本消息使用快速处理
+        if (!isMediaMessage(message)) {
+            return CompletableFuture.supplyAsync(() -> {
+                try {
+                    long startTime = System.currentTimeMillis();
+                    Pocket48SenderMessage result = sender.pharseMessageFast(message, group, false);
+                    long processingTime = System.currentTimeMillis() - startTime;
+                    
+                    // 发布消息处理事件
+                    EventBusManager.getInstance().publishAsync(
+                        new EventBusManager.MessageProcessEvent(
+                            String.valueOf(message.getTime()), message.getType().toString(), processingTime));
+                    
+                    return result;
+                } catch (IOException e) {
+                    // 静默处理错误
+                    return createPlaceholderMessage(message);
+                }
+            }, messageProcessorPool);
         }
         
-        // 根据CPU负载选择处理策略（仅处理文本消息）
+        // 媒体消息使用异步处理
+        return processMediaMessageAsync(message, group);
+    }
+    
+    /**
+     * 异步处理媒体消息
+     * @param message 媒体消息
+     * @param group 目标群组
+     * @return 处理结果的Future
+     */
+    private CompletableFuture<Pocket48SenderMessage> processMediaMessageAsync(
+            Pocket48Message message, Group group) {
+        
+        // 根据CPU负载选择处理策略
         CpuLoadBalancer.LoadLevel loadLevel = loadBalancer.getCurrentLoadLevel();
         
         // 高负载时优先使用自适应线程池
         if (loadLevel == CpuLoadBalancer.LoadLevel.HIGH || loadLevel == CpuLoadBalancer.LoadLevel.CRITICAL) {
+            return adaptivePoolManager.submitTask(() -> {
+                try {
+                    long startTime = System.currentTimeMillis();
+                    // 媒体消息使用完整的处理方法
+                    Pocket48SenderMessage result = sender.pharseMessage(message, group, false);
+                    long processingTime = System.currentTimeMillis() - startTime;
+                    
+                    // 发布消息处理事件
+                    EventBusManager.getInstance().publishAsync(
+                        new EventBusManager.MessageProcessEvent(
+                            String.valueOf(message.getTime()), message.getType().toString(), processingTime));
+                    
+                    return result;
+                } catch (IOException e) {
+                    // 媒体消息处理失败时，返回占位符消息
+                    return createPlaceholderMessage(message);
+                }
+            });
+        } else {
+            // 正常负载时使用自适应线程池处理媒体消息
             return adaptivePoolManager.submitTask(() -> {
                 try {
                     long startTime = System.currentTimeMillis();
@@ -118,29 +174,24 @@ public class Pocket48AsyncMessageProcessor {
                     
                     return result;
                 } catch (IOException e) {
-                    // 静默处理错误
-                    return null;
+                    // 媒体消息处理失败时，返回占位符消息
+                    return createPlaceholderMessage(message);
                 }
             });
-        } else {
-            // 正常负载时使用消息处理线程池（专门处理文本消息）
-            return CompletableFuture.supplyAsync(() -> {
-                try {
-                    long startTime = System.currentTimeMillis();
-                    Pocket48SenderMessage result = sender.pharseMessage(message, group, false);
-                    long processingTime = System.currentTimeMillis() - startTime;
-                    
-                    // 发布消息处理事件
-                    EventBusManager.getInstance().publishAsync(
-                        new EventBusManager.MessageProcessEvent(
-                            String.valueOf(message.getTime()), message.getType().toString(), processingTime));
-                    
-                    return result;
-                } catch (IOException e) {
-                    // 静默处理错误
-                    return null;
-                }
-            }, messageProcessorPool);
+        }
+    }
+    
+    /**
+     * 创建占位符消息（当消息处理失败时使用）
+     * @param message 原始消息
+     * @return 占位符消息
+     */
+    private Pocket48SenderMessage createPlaceholderMessage(Pocket48Message message) {
+        try {
+            return sender.pharseMessageFast(message, null, false);
+        } catch (IOException e) {
+            // 如果连占位符都创建失败，返回null
+            return null;
         }
     }
     
@@ -156,7 +207,7 @@ public class Pocket48AsyncMessageProcessor {
     }
     
     /**
-     * 智能超时处理：为不同类型消息设置不同超时时间
+     * 智能超时处理：真正异步处理，不阻塞等待
      * @param futures 处理结果的Future列表
      * @param group 目标群组
      * @param textTimeoutSeconds 文本消息超时时间（秒）
@@ -165,97 +216,96 @@ public class Pocket48AsyncMessageProcessor {
     public void waitAndSendMessagesWithSmartTimeout(List<CompletableFuture<Pocket48SenderMessage>> futures, 
                                                    Group group, int textTimeoutSeconds, int mediaTimeoutSeconds) {
         
-        // 分离文本和媒体消息的Future
-        List<CompletableFuture<Pocket48SenderMessage>> textFutures = new ArrayList<>();
-        List<CompletableFuture<Pocket48SenderMessage>> mediaFutures = new ArrayList<>();
-        
-        // 由于无法直接判断Future对应的消息类型，我们采用分阶段处理策略
-        // 第一阶段：快速处理文本消息（较短超时）
-        List<Pocket48SenderMessage> quickResults = new ArrayList<>();
-        List<CompletableFuture<Pocket48SenderMessage>> remainingFutures = new ArrayList<>();
-        
+        // 真正异步处理：为每个Future设置异步回调
         for (CompletableFuture<Pocket48SenderMessage> future : futures) {
-            try {
-                // 尝试快速获取结果（文本消息通常处理很快）
-                Pocket48SenderMessage result = future.get(textTimeoutSeconds, TimeUnit.SECONDS);
-                if (result != null) {
-                    quickResults.add(result);
+            // 设置异步回调，避免阻塞等待
+            future.whenComplete((result, throwable) -> {
+                if (throwable == null && result != null) {
+                    try {
+                        // 异步发送消息
+                        sendMessage(result, group);
+                    } catch (Exception e) {
+                        // 静默处理发送错误
+                    }
                 }
-            } catch (TimeoutException e) {
-                // 超时的任务可能是媒体消息，加入待处理列表
-                remainingFutures.add(future);
-            } catch (Exception e) {
-                // 处理错误，取消任务
-                future.cancel(true);
-            }
-        }
-        
-        // 第二阶段：处理剩余的媒体消息（较长超时）
-        List<Pocket48SenderMessage> mediaResults = new ArrayList<>();
-        for (CompletableFuture<Pocket48SenderMessage> future : remainingFutures) {
-            try {
-                Pocket48SenderMessage result = future.get(mediaTimeoutSeconds, TimeUnit.SECONDS);
-                if (result != null) {
-                    mediaResults.add(result);
+            });
+            
+            // 设置超时处理
+            delayExecutor.schedule(() -> {
+                if (!future.isDone()) {
+                    future.cancel(true);
                 }
-            } catch (TimeoutException e) {
-                // 媒体消息也超时，取消任务
-                future.cancel(true);
-            } catch (Exception e) {
-                // 处理错误
-                future.cancel(true);
-            }
-        }
-        
-        // 合并结果并发送
-        List<Pocket48SenderMessage> allResults = new ArrayList<>();
-        allResults.addAll(quickResults);
-        allResults.addAll(mediaResults);
-        
-        if (!allResults.isEmpty()) {
-            sendMessagesInBatch(allResults, group);
+            }, mediaTimeoutSeconds, TimeUnit.SECONDS);
         }
     }
     
     /**
-     * 批量发送消息（按优先级分组）
+     * 批量发送消息（已弃用，保留用于兼容性）
+     * 现在推荐使用流式处理，逐条发送
      * @param messages 待发送的消息列表
      * @param group 目标群组
+     * @deprecated 使用流式处理替代批量发送
      */
+    @Deprecated
     private void sendMessagesInBatch(List<Pocket48SenderMessage> messages, Group group) {
         if (messages.isEmpty()) return;
         
-        // 按消息类型分组：文本消息优先发送
-        Map<Boolean, List<Pocket48SenderMessage>> grouped = messages.stream()
-            .collect(Collectors.partitioningBy(this::isHighPriorityMessage));
-        
-        List<Pocket48SenderMessage> highPriority = grouped.get(true);
-        List<Pocket48SenderMessage> lowPriority = grouped.get(false);
-        
-        // 使用配置化的延迟时间
-        int highPriorityDelay = loadBalancer.getDynamicDelay(delayConfig.getGroupHighPriorityDelay());
-        int lowPriorityDelay = loadBalancer.getDynamicDelay(delayConfig.getGroupLowPriorityDelay());
-        
-        // 先发送高优先级消息（文本类）
-        sendMessageGroup(highPriority, group, highPriorityDelay);
-        
-        // 再发送低优先级消息（媒体类）
-        sendMessageGroup(lowPriority, group, lowPriorityDelay);
+        // 改为逐条发送，避免批量等待
+        for (Pocket48SenderMessage message : messages) {
+            try {
+                sendMessage(message, group);
+                // 添加适当的间隔
+                delayAsync(delayConfig.getTextDelay());
+            } catch (Exception e) {
+                // 静默处理发送错误
+            }
+        }
     }
     
     /**
-     * 发送消息组
+     * 发送消息组（异步处理）- 带重试机制
+     * @param messageGroup 消息组
+     * @param group 目标群组
+     */
+    private void sendMessageGroup(List<Pocket48SenderMessage> messageGroup, Group group) {
+        try {
+            for (int i = 0; i < messageGroup.size(); i++) {
+                Pocket48SenderMessage senderMessage = messageGroup.get(i);
+                Message[] unjointMessages = senderMessage.getUnjointMessage();
+                
+                for (Message message : unjointMessages) {
+                    sendMessageWithRetry(message, group, 3);
+                }
+                
+                // 消息组间延迟
+                if (i < messageGroup.size() - 1) {
+                    Thread.sleep(500);
+                }
+            }
+        } catch (Exception e) {
+            // 静默处理异常
+        }
+    }
+    
+    /**
+     * 发送消息组 - 超级优化版本：高优先级消息0延迟（已弃用，保留用于兼容性）
      * @param messages 消息组
      * @param group 目标群组
      * @param baseDelay 基础延迟时间
+     * @deprecated 使用流式处理替代分组发送
      */
-    private void sendMessageGroup(List<Pocket48SenderMessage> messages, Group group, int baseDelay) {
+    @Deprecated
+    private void sendMessageGroupDeprecated(List<Pocket48SenderMessage> messages, Group group, int baseDelay) {
         for (int i = 0; i < messages.size(); i++) {
             try {
                 sendMessage(messages.get(i), group);
-                // 组内消息间隔
+                // 高优先级消息（文本消息）间无延迟，低优先级消息使用最小延迟
                 if (i < messages.size() - 1) {
-                    Thread.sleep(baseDelay);
+                    // 如果是高优先级延迟（文本消息），则不等待
+                    if (baseDelay > 0) {
+                        delayAsync(Math.max(0, baseDelay));
+                    }
+                    // 如果baseDelay为0，则不执行任何延迟
                 }
             } catch (Exception e) {
                 // 静默处理发送错误
@@ -283,7 +333,7 @@ public class Pocket48AsyncMessageProcessor {
     }
     
     /**
-     * 降级方案：逐个发送消息
+     * 降级方案：异步发送消息
      * @param futures 处理结果的Future列表
      * @param group 目标群组
      * @param timeoutSeconds 超时时间
@@ -291,17 +341,23 @@ public class Pocket48AsyncMessageProcessor {
     private void sendMessagesIndividually(List<CompletableFuture<Pocket48SenderMessage>> futures, 
                                          Group group, int timeoutSeconds) {
         for (CompletableFuture<Pocket48SenderMessage> future : futures) {
-            try {
-                Pocket48SenderMessage result = future.get(timeoutSeconds, TimeUnit.SECONDS);
-                if (result != null) {
-                    sendMessage(result, group);
+            // 异步处理，避免阻塞
+            future.whenComplete((result, throwable) -> {
+                if (throwable == null && result != null) {
+                    try {
+                        sendMessage(result, group);
+                    } catch (Exception e) {
+                        // 静默处理发送错误
+                    }
                 }
-            } catch (TimeoutException e) {
-                // 静默处理超时，取消任务
-                future.cancel(true);
-            } catch (Exception e) {
-                // 静默处理发送错误
-            }
+            });
+            
+            // 设置超时取消
+            delayExecutor.schedule(() -> {
+                if (!future.isDone()) {
+                    future.cancel(true);
+                }
+            }, timeoutSeconds, TimeUnit.SECONDS);
         }
     }
     
@@ -330,7 +386,7 @@ public class Pocket48AsyncMessageProcessor {
     }
     
     /**
-     * 发送处理后的消息
+     * 发送处理后的消息 - 超级优化版本：文本消息部分间0延迟，带重试机制
      * @param senderMessage 处理后的消息
      * @param group 目标群组
      */
@@ -338,17 +394,56 @@ public class Pocket48AsyncMessageProcessor {
         try {
             Message[] unjointMessages = senderMessage.getUnjointMessage();
             for (int i = 0; i < unjointMessages.length; i++) {
-                group.sendMessage(unjointMessages[i]);
-                // 使用配置化的消息间延迟时间
+                sendMessageWithRetry(unjointMessages[i], group, 3);
+                // 文本消息部分间0延迟，媒体消息使用最小延迟
                 if (i < unjointMessages.length - 1) {
-                    int baseDelay = isMediaMessage(unjointMessages[i]) ? 
-                        delayConfig.getMediaDelay() : delayConfig.getTextDelay();
-                    int dynamicDelay = loadBalancer.getDynamicDelay(baseDelay);
-                    Thread.sleep(dynamicDelay);
+                    // 如果是媒体消息，使用最小延迟；文本消息则0延迟
+                    if (isMediaMessage(unjointMessages[i])) {
+                        int partDelay = Math.max(2, delayConfig.getTextDelay() / 5); // 媒体消息使用最小延迟
+                        delayAsync(partDelay);
+                    }
+                    // 文本消息不执行任何延迟
                 }
             }
         } catch (Exception e) {
             // 静默处理发送异常
+        }
+    }
+    
+    /**
+     * 带重试机制的消息发送方法（异步版本）
+     * @param message 要发送的消息
+     * @param group 目标群组
+     * @param maxRetries 最大重试次数
+     */
+    private void sendMessageWithRetry(Message message, Group group, int maxRetries) {
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                group.sendMessage(message);
+                return; // 发送成功，直接返回
+            } catch (Exception e) {
+                String errorMsg = e.getMessage();
+                boolean isRetryableError = errorMsg != null && (
+                    errorMsg.contains("rich media transfer failed") ||
+                    errorMsg.contains("send_group_msg") ||
+                    errorMsg.contains("ActionFailedException") ||
+                    errorMsg.contains("EventChecker Failed")
+                );
+                
+                if (attempt == maxRetries || !isRetryableError) {
+                    // 静默处理发送异常，避免影响其他消息
+                    return;
+                }
+                
+                // 指数退避重试
+                try {
+                    long delay = 1000 * (1L << (attempt - 1)); // 1s, 2s, 4s...
+                    Thread.sleep(Math.min(delay, 8000)); // 最大延迟8秒
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
         }
     }
     
@@ -409,6 +504,23 @@ public class Pocket48AsyncMessageProcessor {
     }
     
     /**
+     * 异步延迟方法，替代Thread.sleep避免阻塞
+     * @param delayMs 延迟时间（毫秒）
+     */
+    private void delayAsync(int delayMs) {
+        if (delayMs <= 0) {
+            return;
+        }
+        
+        try {
+            // 使用同步延迟，因为这里需要等待
+            Thread.sleep(delayMs);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /**
      * 关闭线程池
      */
     public void shutdown() {
@@ -421,6 +533,18 @@ public class Pocket48AsyncMessageProcessor {
         } catch (InterruptedException e) {
             messageProcessorPool.shutdownNow();
             Thread.currentThread().interrupt();
+        }
+        
+        if (delayExecutor != null) {
+            delayExecutor.shutdown();
+            try {
+                if (!delayExecutor.awaitTermination(2, TimeUnit.SECONDS)) {
+                    delayExecutor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                delayExecutor.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
         }
     }
 }

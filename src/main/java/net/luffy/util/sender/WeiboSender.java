@@ -205,7 +205,7 @@ public class WeiboSender extends Sender {
 
         ms.sort((a, b) -> a.time - b.time > 0 ? 1 : -1); //按时间由小到大排序
         for (messageWithTime m : ms) {
-            group.sendMessage(toNotification(m.message));
+            sendMessageWithRetry(toNotification(m.message), group, 3);
         }
     }
 
@@ -295,6 +295,44 @@ public class WeiboSender extends Sender {
         return oriText.replaceAll("&#xe627;", "▼")
                 .replaceAll("<br>", "\n")
                 .replaceAll("<.*?>", "");
+    }
+
+    /**
+     * 带重试机制的消息发送方法（微博版本）
+     * @param message 要发送的消息
+     * @param group 目标群组
+     * @param maxRetries 最大重试次数
+     */
+    private void sendMessageWithRetry(Message message, net.mamoe.mirai.contact.Group group, int maxRetries) {
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                group.sendMessage(message);
+                return; // 发送成功，直接返回
+            } catch (Exception e) {
+                String errorMsg = e.getMessage();
+                boolean isRetryableError = errorMsg != null && (
+                    errorMsg.contains("rich media transfer failed") ||
+                    errorMsg.contains("send_group_msg") ||
+                    errorMsg.contains("ActionFailedException") ||
+                    errorMsg.contains("EventChecker Failed")
+                );
+                
+                if (attempt == maxRetries || !isRetryableError) {
+                    Newboy.INSTANCE.getLogger().error("微博消息发送失败（已重试" + attempt + "次）: " + errorMsg);
+                    return; // 达到最大重试次数或不可重试的错误，停止重试
+                }
+                
+                // 指数退避重试
+                try {
+                    long delay = 1000 * (1L << (attempt - 1)); // 1s, 2s, 4s...
+                    Thread.sleep(Math.min(delay, 8000)); // 最大延迟8秒
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    Newboy.INSTANCE.getLogger().error("微博消息发送重试被中断: " + errorMsg);
+                    return;
+                }
+            }
+        }
     }
 
     private class messageWithTime {

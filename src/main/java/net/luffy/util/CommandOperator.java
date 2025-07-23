@@ -12,6 +12,9 @@ import net.luffy.handler.WeidianSenderHandler;
 import net.luffy.handler.Xox48Handler;
 import net.luffy.util.AsyncOnlineStatusMonitor;
 import net.luffy.util.DouyinMonitorService;
+import net.luffy.util.sender.Pocket48ResourceCache;
+import net.luffy.util.SmartCacheManager;
+import net.luffy.util.JsonOptimizer;
 import net.luffy.model.Pocket48RoomInfo;
 import net.luffy.model.WeidianBuyer;
 import net.luffy.model.WeidianCookie;
@@ -84,7 +87,9 @@ public class CommandOperator extends AsyncWebHandlerBase {
             monitorService.startMonitoring(10); // 默认10分钟检查间隔
             return new PlainText("✅ 抖音监控服务已启动");
         } catch (Exception e) {
-            return new PlainText("❌ 启动抖音监控服务失败: " + e.getMessage());
+            // 静默处理错误，不向群组推送错误消息
+            Newboy.INSTANCE.getLogger().error("启动抖音监控服务失败: " + e.getMessage());
+            return null;
         }
     }
 
@@ -113,7 +118,9 @@ public class CommandOperator extends AsyncWebHandlerBase {
             DouyinMonitorService monitorService = DouyinMonitorService.getInstance();
             return new PlainText(monitorService.getStatus());
         } catch (Exception e) {
-            return new PlainText("❌ 获取抖音监控服务状态失败: " + e.getMessage());
+            // 静默处理错误，不向群组推送错误消息
+            Newboy.INSTANCE.getLogger().error("获取抖音监控服务状态失败: " + e.getMessage());
+            return null;
         }
     }
 
@@ -123,7 +130,9 @@ public class CommandOperator extends AsyncWebHandlerBase {
             DouyinMonitorService monitorService = DouyinMonitorService.getInstance();
             return new PlainText(monitorService.getMonitoredUsersList());
         } catch (Exception e) {
-            return new PlainText("❌ 获取抖音监控用户列表失败: " + e.getMessage());
+            // 静默处理错误，不向群组推送错误消息
+            Newboy.INSTANCE.getLogger().error("获取抖音监控用户列表失败: " + e.getMessage());
+            return null;
         }
     }
 
@@ -195,9 +204,15 @@ public class CommandOperator extends AsyncWebHandlerBase {
         try {
             DouyinMonitorService monitorService = DouyinMonitorService.getInstance();
             monitorService.stopMonitoring();
-            Thread.sleep(1000); // 等待1秒
-            monitorService.startMonitoring(10); // 默认10分钟检查间隔
-            return new PlainText("✅ 抖音监控服务已重启");
+            // 使用异步延迟替代Thread.sleep，避免阻塞
+            delayAsync(1000).thenRun(() -> {
+                try {
+                    monitorService.startMonitoring(10); // 默认10分钟检查间隔
+                } catch (Exception e) {
+                    System.err.println("启动抖音监控服务失败: " + e.getMessage());
+                }
+            });
+            return new PlainText("✅ 抖音监控服务重启中...");
         } catch (Exception e) {
             return new PlainText("❌ 重启抖音监控服务失败: " + e.getMessage());
         }
@@ -303,9 +318,9 @@ public class CommandOperator extends AsyncWebHandlerBase {
                     
 
                                 if (servers.length == 0) {
-                                    out.append("❌ 未找到相关结果\n");
-                                    out.append("💡 提示：仅支持搜索在团小偶像/队伍名");
-                                    return new PlainText(out.toString());
+                                    // 静默处理搜索无结果的情况，不向群组推送
+                                    Newboy.INSTANCE.getLogger().info("搜索无结果: " + args[2]);
+                                    return null;
                                 }
 
                                 int count = 1;
@@ -357,8 +372,11 @@ public class CommandOperator extends AsyncWebHandlerBase {
                             case "查询": {
                                 long star_ID = Long.valueOf(args[2]);
                                 JSONObject info = Newboy.INSTANCE.getHandlerPocket48().getUserInfo(star_ID);
-                                if (info == null)
-                                    return new PlainText("❌ 用户不存在");
+                                if (info == null) {
+                                    // 静默处理用户不存在的情况，不向群组推送错误消息
+                                    Newboy.INSTANCE.getLogger().info("用户不存在: " + star_ID);
+                                    return null;
+                                }
 
                                 boolean star = info.getBool("isStar");
                                 int followers = info.getInt("followers");
@@ -455,10 +473,14 @@ public class CommandOperator extends AsyncWebHandlerBase {
                                         }
                                         return new PlainText(out.toString());
                                     } catch (Exception e) {
-                                        return new PlainText("❌ Server_id不存在或房间信息获取失败");
+                                        // 静默处理Server_id错误，不向群组推送错误消息
+                                        Newboy.INSTANCE.getLogger().info("Server_id不存在或房间信息获取失败: " + args[2]);
+                                        return null;
                                     }
                                 }
-                                return new PlainText("❌ 请输入合法的Server_id");
+                                // 静默处理非法Server_id，不向群组推送错误消息
+                                Newboy.INSTANCE.getLogger().info("非法Server_id: " + args[2]);
+                                return null;
                             }
                             case "关注": {
                                 if (!Newboy.INSTANCE.getConfig().isAdmin(g, senderID))
@@ -515,8 +537,11 @@ public class CommandOperator extends AsyncWebHandlerBase {
                                 } else {
                                     return new PlainText("✅ 连接已存在，房间已在关注列表中\n🔒 加密房间现在可以正常接收消息");
                                 }
-                            } else
-                                return new PlainText("❌ 您输入的ServerId并不包含此RoomId\n💡 请检查ServerId和RoomId是否正确");
+                            } else {
+                                // 静默处理ServerId不包含RoomId的错误，不向群组推送错误消息
+                                Newboy.INSTANCE.getLogger().info("ServerId不包含RoomId: " + args[2] + ", " + args[3]);
+                                return null;
+                            }
                         }
                     default:
                         return getCategorizedHelp(-1);
@@ -563,8 +588,11 @@ public class CommandOperator extends AsyncWebHandlerBase {
                                     return new PlainText("权限不足喵");
 
                                 String a = Newboy.INSTANCE.getHandlerWeibo().getSuperTopicRes(args[2]);
-                                if (a == null)
-                                    return new PlainText("超话id不存在。");
+                                if (a == null) {
+                                    // 静默处理超话id不存在的情况，不向群组推送错误消息
+                                    Newboy.INSTANCE.getLogger().info("超话id不存在: " + args[2]);
+                                    return null;
+                                }
                                 else {
                                     if (Newboy.INSTANCE.getConfig().addWeiboSTopicSubscribe(args[2], group)) {
                                         a = a.substring(a.indexOf("onick']='") + "onick']='".length());
@@ -612,10 +640,33 @@ public class CommandOperator extends AsyncWebHandlerBase {
                             }
 
                             int count = 1;
+                            net.luffy.util.WeiboMonitorService weiboMonitor = net.luffy.util.WeiboMonitorService.getInstance();
+                            
                             for (long id : Newboy.INSTANCE.getProperties().weibo_user_subscribe.get(group)) {
-                                String name = Newboy.INSTANCE.getHandlerWeibo().getUserName(id);
+                                // 确保用户在监控服务中
+                                weiboMonitor.addMonitorUser(id);
+                                
+                                // 使用getMonitoredUserInfo方法获取用户信息
+                                WeiboMonitorService.UserMonitorInfo userInfo = weiboMonitor.getMonitoredUserInfo(id);
+                                String name = "未知用户";
+                                String lastUpdateTime = "未知";
+                                
+                                if (userInfo != null) {
+                                    if (userInfo.nickname != null && !userInfo.nickname.isEmpty()) {
+                                        name = userInfo.nickname;
+                                    }
+                                    if (userInfo.lastUpdateTime > 0) {
+                                        lastUpdateTime = cn.hutool.core.date.DateUtil.formatDateTime(new java.util.Date(userInfo.lastUpdateTime));
+                                    }
+                                } else {
+                                    // 如果没有监控信息，尝试直接获取
+                                    name = weiboMonitor.getUserNickname(id);
+                                    lastUpdateTime = weiboMonitor.getFormattedLastUpdateTime(id);
+                                }
+                                
                                 out.append(count).append(". ").append(name).append("\n");
                                 out.append("   用户ID：").append(id).append("\n");
+                                out.append("   最后更新：").append(lastUpdateTime).append("\n");
                                 
                                 if (count < Newboy.INSTANCE.getProperties().weibo_user_subscribe.get(group).size()) {
                                     out.append("\n");
@@ -660,7 +711,9 @@ public class CommandOperator extends AsyncWebHandlerBase {
             case "/监控添加":
             case "/monitor_add": {
                 if (args.length < 2 || args[1] == null || args[1].trim().isEmpty()) {
-                    return new PlainText("❌ 请输入成员名称\n💡 使用方法：/监控添加 成员名称");
+                    // 静默处理参数不足的情况，不向群组推送错误消息
+                    Newboy.INSTANCE.getLogger().info("监控添加参数不足");
+                    return null;
                 }
                 
                 String memberName = args[1].trim();
@@ -692,14 +745,28 @@ public class CommandOperator extends AsyncWebHandlerBase {
 
                             int count = 1;
                             for (String secUserId : Newboy.INSTANCE.getProperties().douyin_user_subscribe.get(group)) {
-                                // 尝试从监控服务获取用户昵称
+                                // 尝试从监控服务获取用户昵称和最后更新时间
                                 String name = "抖音用户";
+                                String lastUpdateTime = "未知";
                                 try {
                                     DouyinMonitorService monitorService = DouyinMonitorService.getInstance();
                                     if (monitorService != null) {
+                                        // 确保用户在监控服务中
+                                        monitorService.addMonitorUser(secUserId);
+                                        
                                         String nickname = monitorService.getMonitoredUserNickname(secUserId);
                                         if (nickname != null && !nickname.isEmpty() && !nickname.equals("未知用户")) {
                                             name = nickname;
+                                        }
+                                        
+                                        // 获取最后更新时间
+                                        DouyinMonitorService.UserMonitorInfo userInfo = monitorService.getMonitoredUserInfo(secUserId);
+                                        if (userInfo != null) {
+                                            if (userInfo.lastUpdateTime > 0) {
+                                                lastUpdateTime = cn.hutool.core.date.DateUtil.formatDateTime(new java.util.Date(userInfo.lastUpdateTime));
+                                            } else {
+                                                lastUpdateTime = "暂无作品";
+                                            }
                                         }
                                     }
                                 } catch (Exception e) {
@@ -708,6 +775,7 @@ public class CommandOperator extends AsyncWebHandlerBase {
                                 
                                 out.append(count).append(". ").append(name).append("\n");
                                 out.append("   用户ID：").append(secUserId).append("\n");
+                                out.append("   最后更新：").append(lastUpdateTime).append("\n");
                                 
                                 if (count < Newboy.INSTANCE.getProperties().douyin_user_subscribe.get(group).size()) {
                                     out.append("\n");
@@ -876,6 +944,13 @@ public class CommandOperator extends AsyncWebHandlerBase {
             case "/抖音":
             case "/douyin":
                 return handlePrivateDouyinCommand(args, event);
+            case "/抖音监控":
+            case "/抖音用户":
+            case "/抖音状态":
+            case "/抖音添加":
+            case "/抖音删除":
+            case "/抖音重启":
+                return handleDouyinMonitorCommand(args, event);
 
             case "/微店":
             case "/weidian": {
@@ -888,7 +963,20 @@ public class CommandOperator extends AsyncWebHandlerBase {
 
                 if (args[2].startsWith("cookie")) {
                     String cookie;
-                    if (args[2].contains(" ")) {
+                    if (args[2].equals("cookie") && args.length > 3) {
+                        // 格式：/微店 群号 cookie <实际cookie内容>
+                        // 将第4个参数开始的所有内容重新组合成完整cookie
+                        StringBuilder cookieBuilder = new StringBuilder();
+                        for (int i = 3; i < args.length; i++) {
+                            if (args[i] != null && !args[i].trim().isEmpty()) {
+                                if (cookieBuilder.length() > 0) {
+                                    cookieBuilder.append(" ");
+                                }
+                                cookieBuilder.append(args[i]);
+                            }
+                        }
+                        cookie = cookieBuilder.toString();
+                    } else if (args[2].contains(" ")) {
                         // 传统格式：cookie <实际cookie内容>
                         cookie = args[2].substring(args[2].indexOf(" ") + 1);
                     } else if (args[2].length() > 6) {
@@ -916,9 +1004,21 @@ public class CommandOperator extends AsyncWebHandlerBase {
                 }
                 
                 // 支持直接输入完整cookie（不以cookie开头但包含wdtoken）
-                if (args[2].contains("wdtoken=") && args[2].contains(";")) {
+                // 检查是否包含wdtoken，如果包含则重新组合所有参数为完整cookie
+                StringBuilder fullCommand = new StringBuilder();
+                for (int i = 2; i < args.length; i++) {
+                    if (args[i] != null && !args[i].trim().isEmpty()) {
+                        if (fullCommand.length() > 0) {
+                            fullCommand.append(" ");
+                        }
+                        fullCommand.append(args[i]);
+                    }
+                }
+                String potentialCookie = fullCommand.toString();
+                
+                if (potentialCookie.contains("wdtoken=") && potentialCookie.contains(";")) {
                     try {
-                        Newboy.INSTANCE.getConfig().setWeidianCookie(args[2], groupId);
+                        Newboy.INSTANCE.getConfig().setWeidianCookie(potentialCookie, groupId);
                         WeidianCookie cookie1 = Newboy.INSTANCE.getProperties().weidian_cookie.get(groupId);
                         if (cookie1 == null) {
                             return new PlainText("❌ Cookie设置失败\n💡 请检查Cookie格式是否正确");
@@ -937,7 +1037,12 @@ public class CommandOperator extends AsyncWebHandlerBase {
                         return new PlainText("❌ 请输入操作命令\n💡 使用方法：/微店 " + groupId + " <操作>\n📋 可用操作：全部、关闭、自动发货、群播报、全部发货、# <商品ID>、屏蔽 <商品ID>、查 <商品ID>");
                     }
                     
-                    String[] argsIn = args[2].split(" ");
+                    // 将第三个参数及后续参数组合起来再分割
+                    StringBuilder commandBuilder = new StringBuilder(args[2]);
+                    for (int i = 3; i < args.length; i++) {
+                        commandBuilder.append(" ").append(args[i]);
+                    }
+                    String[] argsIn = commandBuilder.toString().split(" ");
                     switch (argsIn.length) {
                         case 1:
                             switch (argsIn[0]) {
@@ -947,7 +1052,7 @@ public class CommandOperator extends AsyncWebHandlerBase {
 
                                     StringBuilder o = new StringBuilder();
                                     o.append("📊 微店状态\n");
-                        
+        
                                     o.append("群播报：").append(cookie.doBroadcast ? "✅ 开启" : "❌ 关闭").append("\n");
                                     o.append("自动发货：").append(cookie.autoDeliver ? "✅ 开启" : "❌ 关闭").append("\n");
 
@@ -959,9 +1064,9 @@ public class CommandOperator extends AsyncWebHandlerBase {
                                         return new PlainText(o + "\n---------\n获取商品列表错误，请重新提交Cookie");
                                     }
 
-                        
+        
                                     o.append("📦 商品列表 (共").append(items.length).append("个)\n");
-                        
+        
                                     for (int i = 0; i < items.length; i++) {
                                         String status = cookie.shieldedItem.contains(items[i].id) ? "🚫 屏蔽" :
                                                 (cookie.highlightItem.contains(items[i].id) ? "🔗 特殊链" : "🔗 普链");
@@ -975,7 +1080,7 @@ public class CommandOperator extends AsyncWebHandlerBase {
 
                                     if (cookie.invalid) {
                                         cookie.invalid = false;
-                            
+            
                                         o.append("✅ Cookie状态：有效，无需更换");
                                     }
                                     return new PlainText(o.toString());
@@ -1055,7 +1160,9 @@ public class CommandOperator extends AsyncWebHandlerBase {
                                     return new PlainText(status.toString());
                                 }
                                 default:
-                                    return new PlainText("❌ 未知操作\n💡 使用方法：/微店 " + groupId + " <操作>\n📋 可用操作：全部、关闭、自动发货、群播报、全部发货、状态");
+                                    // 静默处理未知操作，不向群组推送错误消息
+                                    Newboy.INSTANCE.getLogger().info("微店未知操作(case 1): " + argsIn[0]);
+                                    return null;
                             }
                         case 2:
                             switch (argsIn[0]) {
@@ -1084,11 +1191,15 @@ public class CommandOperator extends AsyncWebHandlerBase {
                                 case "查": {
                                     WeidianHandler weidian = Newboy.INSTANCE.getHandlerWeidian();
                                     WeidianCookie cookie = Newboy.INSTANCE.getProperties().weidian_cookie.get(groupId);
+                                    
+                                    if (cookie == null) {
+                                        return new PlainText("❌ 该群未设置微店Cookie");
+                                    }
 
                                     long id = Long.valueOf(argsIn[1]);
                                     WeidianItem item = weidian.searchItem(cookie, id);
                                     if (item == null) {
-                                        return new PlainText("❌ 未找到该商品\n\n💡 提示：您可以使用 \"/微店 " + groupId + " 全部\" 获取商品列表");
+                                        return new PlainText("❌ 未找到商品ID: " + id + "\n可能原因：\n1. 商品ID不存在\n2. Cookie已失效\n3. 网络连接问题");
                                     } else {
                                         // 获取购买者信息和统计数据
                                         WeidianBuyer[] buyers = weidian.getItemBuyer(cookie, id);
@@ -1157,10 +1268,14 @@ public class CommandOperator extends AsyncWebHandlerBase {
                                     }
                                 }
                                 default:
-                                    return new PlainText("未知操作\n使用方法：/微店 " + groupId + " <操作> <参数>\n可用操作：# <商品ID>、屏蔽 <商品ID>、查 <商品ID>");
+                                    // 静默处理未知操作，不向群组推送错误消息
+                                    Newboy.INSTANCE.getLogger().info("微店未知操作(case 2): " + argsIn[0]);
+                                    return null;
                             }
                         default:
-                            return new PlainText("未知操作\n使用方法：/微店 " + groupId + " <操作>\n可用操作：全部、关闭、自动发货、群播报、全部发货、# <商品ID>、屏蔽 <商品ID>、查 <商品ID>");
+                            // 静默处理未知操作，不向群组推送错误消息
+                            Newboy.INSTANCE.getLogger().info("微店未知操作参数数量(default): " + argsIn.length);
+                            return null;
                     }
                 }
             }
@@ -1219,6 +1334,40 @@ public class CommandOperator extends AsyncWebHandlerBase {
                     return new PlainText("权限不足喵");
                 }
             }
+            case "/清理缓存":
+            case "/clearcache": {
+                if (testPermission(event) == null) {
+                    try {
+                        // 清理智能缓存管理器
+                        SmartCacheManager.getInstance().clearAllCaches();
+                        
+                        // 清理口袋48资源缓存
+                        Pocket48ResourceCache.getInstance().clearAll();
+                        
+                        // 清理JSON优化器缓存
+                        JsonOptimizer.clearCache();
+                        
+                        // 清理Xox48Handler缓存
+                        Newboy.INSTANCE.getHandlerXox48().resetCache();
+                        
+                        // 口袋48资源优化器缓存已通过其他组件清理
+                        
+                        // 强制垃圾回收
+                        System.gc();
+                        
+                        return new PlainText("🧹 缓存清理完成\n" +
+                                           "✅ 智能缓存管理器已清理\n" +
+                                           "✅ 口袋48资源缓存已清理\n" +
+                                           "✅ JSON优化器缓存已清理\n" +
+                                           "✅ Xox48Handler缓存已清理\n" +
+                                           "♻️ 已建议JVM进行垃圾回收");
+                    } catch (Exception e) {
+                        return new PlainText("❌ 清理缓存时发生错误: " + e.getMessage());
+                    }
+                } else {
+                    return new PlainText("权限不足喵");
+                }
+            }
 
         }
         return null;
@@ -1229,23 +1378,20 @@ public class CommandOperator extends AsyncWebHandlerBase {
 
 
     private String[] splitPrivateCommand(String command) {
-        String[] out = new String[3];
-        int i = 0;
-        for (; i < 2; i++) {
-            if (command.contains(" ")) {
-                out[i] = command.substring(0, command.indexOf(" "));
-                command = command.substring(command.indexOf(" ") + 1);
-            } else {
-                break;
-            }
+        // 使用空格分割命令，支持更多参数
+        String[] parts = command.trim().split("\\s+");
+        
+        // 确保至少有4个元素来支持跨群管理命令
+        String[] out = new String[Math.max(4, parts.length)];
+        
+        // 复制分割后的参数
+        for (int i = 0; i < parts.length; i++) {
+            out[i] = parts[i];
         }
-        out[i] = command;
         
         // 确保数组中的空位置为空字符串而不是null
-        for (int j = 0; j < out.length; j++) {
-            if (out[j] == null) {
-                out[j] = "";
-            }
+        for (int j = parts.length; j < out.length; j++) {
+            out[j] = "";
         }
         
         return out;
@@ -1306,7 +1452,9 @@ public class CommandOperator extends AsyncWebHandlerBase {
     // 私聊微博订阅管理
     private Message handlePrivateWeiboCommand(String[] args, UserMessageEvent event) {
         if (args.length < 2) {
-            return new PlainText("❌ 参数不足\n💡 使用方法：/微博 <操作> [参数]\n📋 可用操作：关注、取消关注、关注列表");
+            // 静默处理参数不足的情况，不向群组推送错误消息
+            Newboy.INSTANCE.getLogger().info("微博命令参数不足");
+            return null;
         }
 
         switch (args[1]) {
@@ -1315,25 +1463,33 @@ public class CommandOperator extends AsyncWebHandlerBase {
             }
             case "关注": {
                 if (args.length < 4) {
-                    return new PlainText("❌ 参数不足\n💡 使用方法：/微博 关注 <用户UID> <群号>\n📝 示例：/微博 关注 1234567890 987654321");
+                    // 静默处理参数不足的情况，不向群组推送错误消息
+                    Newboy.INSTANCE.getLogger().info("微博关注参数不足");
+                    return null;
                 }
                 return addPrivateWeiboSubscribe(args[2], args[3], event);
             }
             case "取消关注": {
                 if (args.length < 4) {
-                    return new PlainText("❌ 参数不足\n💡 使用方法：/微博 取消关注 <用户UID> <群号>\n📝 示例：/微博 取消关注 1234567890 987654321");
+                    // 静默处理参数不足的情况，不向群组推送错误消息
+                    Newboy.INSTANCE.getLogger().info("微博取消关注参数不足");
+                    return null;
                 }
                 return removePrivateWeiboSubscribe(args[2], args[3], event);
             }
             default:
-                return new PlainText("❌ 未知操作\n📋 可用操作：关注、取消关注、关注列表");
+                // 静默处理未知操作，不向群组推送错误消息
+                Newboy.INSTANCE.getLogger().info("微博未知操作: " + args[1]);
+                return null;
         }
     }
 
     // 私聊超话订阅管理
     private Message handlePrivateSuperTopicCommand(String[] args, UserMessageEvent event) {
         if (args.length < 2) {
-            return new PlainText("❌ 参数不足\n💡 使用方法：/超话 <操作> [参数]\n📋 可用操作：关注、取消关注、关注列表");
+            // 静默处理参数不足的情况，不向群组推送错误消息
+            Newboy.INSTANCE.getLogger().info("超话命令参数不足");
+            return null;
         }
 
         switch (args[1]) {
@@ -1342,18 +1498,24 @@ public class CommandOperator extends AsyncWebHandlerBase {
             }
             case "关注": {
                 if (args.length < 4) {
-                    return new PlainText("❌ 参数不足\n💡 使用方法：/超话 关注 <超话ID> <群号>\n📝 示例：/超话 关注 abc123 987654321");
+                    // 静默处理参数不足的情况，不向群组推送错误消息
+                    Newboy.INSTANCE.getLogger().info("超话关注参数不足");
+                    return null;
                 }
                 return addPrivateSuperTopicSubscribe(args[2], args[3], event);
             }
             case "取消关注": {
                 if (args.length < 4) {
-                    return new PlainText("❌ 参数不足\n💡 使用方法：/超话 取消关注 <超话ID> <群号>\n📝 示例：/超话 取消关注 abc123 987654321");
+                    // 静默处理参数不足的情况，不向群组推送错误消息
+                    Newboy.INSTANCE.getLogger().info("超话取消关注参数不足");
+                    return null;
                 }
                 return removePrivateSuperTopicSubscribe(args[2], args[3], event);
             }
             default:
-                return new PlainText("❌ 未知操作\n📋 可用操作：关注、取消关注、关注列表");
+                // 静默处理未知操作，不向群组推送错误消息
+                Newboy.INSTANCE.getLogger().info("超话未知操作: " + args[1]);
+                return null;
         }
     }
 
@@ -1366,24 +1528,24 @@ public class CommandOperator extends AsyncWebHandlerBase {
                 "  • /口袋 关注列表 - 查看订阅列表\n" +
                 "  • /口袋 搜索 <关键词> - 搜索成员/团体\n" +
                 "  • /口袋 查询 <用户ID> - 查询用户信息\n" +
-                "  • /口袋 关注 <房间ID> - 添加订阅\n" +
-                "  • /口袋 取消关注 <房间ID> - 取消订阅\n\n" +
+                "  • /口袋 关注 <房间ID> <群号> - 为群组添加订阅\n" +
+                "  • /口袋 取消关注 <房间ID> <群号> - 为群组取消订阅\n\n" +
                 "📱 /微博 - 微博监控功能\n" +
                 "  • /微博 关注列表 - 查看关注的微博用户\n" +
-                "  • /微博 关注 <用户ID> - 关注微博用户\n" +
-                "  • /微博 取消关注 <用户ID> - 取消关注\n\n" +
+                "  • /微博 关注 <用户UID> <群号> - 为群组关注微博用户\n" +
+                "  • /微博 取消关注 <用户UID> <群号> - 为群组取消关注\n\n" +
                 "🎭 /超话 - 微博超话功能\n" +
                 "  • /超话 关注列表 - 查看关注的超话\n" +
-                "  • /超话 关注 <超话ID> - 关注超话\n" +
-                "  • /超话 取消关注 <超话ID> - 取消关注\n\n" +
+                "  • /超话 关注 <超话ID> <群号> - 为群组关注超话\n" +
+                "  • /超话 取消关注 <超话ID> <群号> - 为群组取消关注\n\n" +
                 "🛒 /微店 - 微店管理功能\n" +
                 "  • /微店 <群号> 全部 - 查看所有商品\n" +
                 "  • /微店 <群号> # <商品ID> - 查看商品详情\n" +
                 "  • /微店 <群号> 屏蔽 <商品ID> - 屏蔽商品\n\n" +
                 "🎵 /抖音 - 抖音用户关注功能\n" +
                 "  • /抖音 关注列表 - 查看关注的抖音用户\n" +
-                "  • /抖音 关注 <用户ID> - 关注抖音用户\n" +
-                "  • /抖音 取消关注 <用户ID> - 取消关注\n\n" +
+                "  • /抖音 关注 <用户ID> <群号> - 为群组关注抖音用户\n" +
+                "  • /抖音 取消关注 <用户ID> <群号> - 为群组取消关注\n\n" +
                 "🎵 /抖音监控 - 抖音监控服务管理\n" +
                 "  • /抖音监控 启动 - 启动监控服务\n" +
                 "  • /抖音监控 停止 - 停止监控服务\n" +
@@ -1393,14 +1555,19 @@ public class CommandOperator extends AsyncWebHandlerBase {
                 "  • /抖音删除 <用户ID> - 删除监控用户\n" +
                 "  • /抖音重启 - 重启监控服务\n\n" +
                 "📊 /监控 - 在线状态监控\n" +
-                "  • /监控列表 - 查看监控列表\n" +
-                "  • /监控开关 - 切换监控状态\n" +
-                "  • /监控查询 <成员名> - 查询成员状态\n\n" +
+                "  • /监控 列表 - 查看监控列表\n" +
+                "  • /监控 添加 <成员名> <群号> - 为群组添加成员监控\n" +
+                "  • /监控 移除 <成员名> <群号> - 为群组移除成员监控\n\n" +
+                "🧹 /清理缓存 - 系统缓存管理\n" +
+                "  • /清理缓存 - 清理所有系统缓存\n" +
+                "  • /clearcache - 清理缓存（英文别名）\n\n" +
                 "❓ /帮助 - 显示此帮助信息\n\n" +
                 "💡 提示:\n" +
                 "  • 使用 !newboy help 查看系统级帮助\n" +
                 "  • 大部分命令支持中英文别名\n" +
-                "  • 管理员权限命令需要相应权限");
+                "  • 管理员权限命令需要相应权限\n" +
+                "  • 支持通过私聊为指定群组管理订阅\n" +
+                "  • 跨群管理需要相应群组的管理员权限");
     }
 
     // 获取私聊口袋48订阅列表
@@ -1453,9 +1620,9 @@ public class CommandOperator extends AsyncWebHandlerBase {
         out.append("━━━━━━━━━━━━━━━━━━━━\n");
 
         if (servers.length == 0) {
-            out.append("\n❌ 未找到相关结果\n");
-            out.append("💡 提示：仅支持搜索在团小偶像/队伍名");
-            return new PlainText(out.toString());
+            // 静默处理搜索无结果的情况，不向群组推送
+            Newboy.INSTANCE.getLogger().info("私聊搜索无结果: " + keyword);
+            return null;
         }
 
         int count = 1;
@@ -1534,7 +1701,9 @@ public class CommandOperator extends AsyncWebHandlerBase {
 
             return new PlainText(result.toString());
         } catch (NumberFormatException e) {
-            return new PlainText("❌ 用户ID格式错误，请输入数字");
+            // 静默处理格式错误，不向群组推送错误消息
+            Newboy.INSTANCE.getLogger().info("用户ID格式错误: " + userIdStr);
+            return null;
         }
     }
 
@@ -1567,7 +1736,9 @@ public class CommandOperator extends AsyncWebHandlerBase {
                 return new PlainText(String.format("❌ 群 %d 已订阅房间 %d", groupId, roomId));
             }
         } catch (NumberFormatException e) {
-            return new PlainText("❌ 参数格式错误，房间ID和群号必须是数字");
+            // 静默处理参数格式错误，不向群组推送错误消息
+            Newboy.INSTANCE.getLogger().info("参数格式错误: " + roomIdStr + ", " + groupIdStr);
+            return null;
         }
     }
 
@@ -1610,7 +1781,46 @@ public class CommandOperator extends AsyncWebHandlerBase {
                 
                 int count = 1;
                 for (long uid : properties.weibo_user_subscribe.get(groupId)) {
-                    result.append("  ").append(count).append(". 用户UID: ").append(uid).append("\n");
+                    // 尝试从监控服务获取用户昵称和最后更新时间
+                    String name = "微博用户";
+                    String lastUpdateTime = "未知";
+                    try {
+                        WeiboMonitorService weiboMonitor = WeiboMonitorService.getInstance();
+                        if (weiboMonitor != null) {
+                            // 确保用户在监控服务中
+                            weiboMonitor.addMonitorUser(uid);
+                            
+                            WeiboMonitorService.UserMonitorInfo userInfo = weiboMonitor.getMonitoredUserInfo(uid);
+                            if (userInfo != null) {
+                                if (userInfo.nickname != null && !userInfo.nickname.isEmpty()) {
+                                    name = userInfo.nickname;
+                                }
+                                if (userInfo.lastUpdateTime > 0) {
+                                    lastUpdateTime = cn.hutool.core.date.DateUtil.formatDateTime(new java.util.Date(userInfo.lastUpdateTime));
+                                }
+                            } else {
+                                // 如果没有监控信息，尝试直接获取
+                                String nickname = weiboMonitor.getUserNickname(uid);
+                                if (nickname != null && !nickname.equals("未知用户")) {
+                                    name = nickname;
+                                }
+                                String formattedTime = weiboMonitor.getFormattedLastUpdateTime(uid);
+                                if (formattedTime != null && !formattedTime.equals("未知")) {
+                                    lastUpdateTime = formattedTime;
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                        // 如果获取失败，使用默认名称
+                    }
+                    
+                    result.append("  ").append(count).append(". ").append(name).append("\n");
+                    result.append("     用户UID：").append(uid).append("\n");
+                    result.append("     最后更新：").append(lastUpdateTime).append("\n");
+                    
+                    if (count < properties.weibo_user_subscribe.get(groupId).size()) {
+                        result.append("\n");
+                    }
                     count++;
                 }
             }
@@ -1643,7 +1853,9 @@ public class CommandOperator extends AsyncWebHandlerBase {
                 return new PlainText(String.format("❌ 群 %d 已订阅用户 %d", groupId, uid));
             }
         } catch (NumberFormatException e) {
-            return new PlainText("❌ 参数格式错误，用户UID和群号必须是数字");
+            // 静默处理参数格式错误，不向群组推送错误消息
+            Newboy.INSTANCE.getLogger().info("微博订阅参数格式错误: " + uidStr + ", " + groupIdStr);
+            return null;
         }
     }
 
@@ -1666,7 +1878,9 @@ public class CommandOperator extends AsyncWebHandlerBase {
                 return new PlainText(String.format("❌ 群 %d 未订阅用户 %d", groupId, uid));
             }
         } catch (NumberFormatException e) {
-            return new PlainText("❌ 参数格式错误，用户UID和群号必须是数字");
+            // 静默处理参数格式错误，不向群组推送错误消息
+            Newboy.INSTANCE.getLogger().info("微博取消订阅参数格式错误: " + uidStr + ", " + groupIdStr);
+            return null;
         }
     }
 
@@ -1718,7 +1932,9 @@ public class CommandOperator extends AsyncWebHandlerBase {
                 return new PlainText(String.format("❌ 群 %d 已订阅超话 %s", groupId, topicId));
             }
         } catch (NumberFormatException e) {
-            return new PlainText("❌ 群号格式错误，必须是数字");
+            // 静默处理群号格式错误，不向群组推送错误消息
+            Newboy.INSTANCE.getLogger().info("超话订阅群号格式错误: " + groupIdStr);
+            return null;
         }
     }
 
@@ -1740,7 +1956,9 @@ public class CommandOperator extends AsyncWebHandlerBase {
                 return new PlainText(String.format("❌ 群 %d 未订阅超话 %s", groupId, topicId));
             }
         } catch (NumberFormatException e) {
-            return new PlainText("❌ 群号格式错误，必须是数字");
+            // 静默处理群号格式错误，不向群组推送错误消息
+            Newboy.INSTANCE.getLogger().info("超话取消订阅群号格式错误: " + groupIdStr);
+            return null;
         }
     }
 
@@ -1854,6 +2072,149 @@ public class CommandOperator extends AsyncWebHandlerBase {
         return null;
     }
 
+    // 私聊抖音监控命令处理
+    private Message handleDouyinMonitorCommand(String[] args, UserMessageEvent event) {
+        // 权限检查
+        if (!Newboy.INSTANCE.getConfig().isAdmin(event.getSender().getId())) {
+            return new PlainText("权限不足喵");
+        }
+
+        switch (args[0]) {
+            case "/抖音监控":
+                if (args.length < 2) {
+                    return new PlainText("🎵 抖音监控功能\n" +
+                            "━━━━━━━━━━━━━━━━━━━━\n" +
+                            "📋 可用命令:\n" +
+                            "• /抖音监控 启动 - 启动监控服务\n" +
+                            "• /抖音监控 停止 - 停止监控服务\n" +
+                            "• /抖音状态 - 查看监控状态\n" +
+                            "• /抖音用户 - 查看监控用户列表\n" +
+                            "• /抖音添加 <用户链接> - 添加监控用户\n" +
+                            "• /抖音删除 <用户ID> - 删除监控用户\n" +
+                            "• /抖音重启 - 重启监控服务\n\n" +
+                            "💡 提示: 使用 /抖音 命令管理群组关注列表");
+                }
+                switch (args[1]) {
+                    case "启动":
+                    case "start":
+                        return startDouyinMonitoringPrivate();
+                    case "停止":
+                    case "stop":
+                        return stopDouyinMonitoringPrivate();
+                    default:
+                        return new PlainText("❌ 未知操作\n💡 可用操作: 启动、停止");
+                }
+            case "/抖音状态":
+                return getDouyinMonitoringStatus();
+            case "/抖音用户":
+                return getDouyinMonitoredUsersList();
+            case "/抖音添加":
+                if (args.length < 2) {
+                    return new PlainText("❌ 请提供用户链接或用户ID\n💡 使用方法: /抖音添加 <用户链接或用户ID>");
+                }
+                return handleDouyinAddCommandPrivate(args[1]);
+            case "/抖音删除":
+                if (args.length < 2) {
+                    return new PlainText("❌ 请提供用户ID\n💡 使用方法: /抖音删除 <用户ID>");
+                }
+                return handleDouyinRemoveCommandPrivate(args[1]);
+            case "/抖音重启":
+                return handleDouyinRestartCommandPrivate();
+            default:
+                return new PlainText("❌ 未知的抖音监控命令");
+        }
+    }
+
+    // 私聊启动抖音监控服务
+    private Message startDouyinMonitoringPrivate() {
+        try {
+            DouyinMonitorService monitorService = DouyinMonitorService.getInstance();
+            if (monitorService.isRunning()) {
+                return new PlainText("✅ 抖音监控服务已在运行中");
+            }
+
+            monitorService.startMonitoring(10); // 默认10分钟检查间隔
+            return new PlainText("✅ 抖音监控服务已启动");
+        } catch (Exception e) {
+            return new PlainText("❌ 启动抖音监控服务失败: " + e.getMessage());
+        }
+    }
+
+    // 私聊停止抖音监控服务
+    private Message stopDouyinMonitoringPrivate() {
+        try {
+            DouyinMonitorService monitorService = DouyinMonitorService.getInstance();
+            if (!monitorService.isRunning()) {
+                return new PlainText("⚠️ 抖音监控服务未运行");
+            }
+
+            monitorService.stopMonitoring();
+            return new PlainText("✅ 抖音监控服务已停止");
+        } catch (Exception e) {
+            return new PlainText("❌ 停止抖音监控服务失败: " + e.getMessage());
+        }
+    }
+
+    // 私聊添加抖音监控用户
+    private Message handleDouyinAddCommandPrivate(String userInput) {
+        try {
+            DouyinMonitorService monitorService = DouyinMonitorService.getInstance();
+            
+            // 提取用户ID
+            String secUserId;
+            if (userInput.contains("douyin.com")) {
+                // 从分享链接提取用户ID的逻辑需要实现
+                return new PlainText("❌ 暂不支持从分享链接提取用户ID，请直接使用用户ID");
+            } else {
+                secUserId = userInput;
+            }
+
+            boolean success = monitorService.addMonitorUser(secUserId);
+            if (success) {
+                String nickname = monitorService.getMonitoredUserNickname(secUserId);
+                return new PlainText("✅ 成功添加抖音监控用户\n👤 用户: " + (nickname != null ? nickname : "未知用户") + "\n🆔 用户ID: " + secUserId);
+            } else {
+                return new PlainText("❌ 添加失败，用户可能已在监控列表中");
+            }
+        } catch (Exception e) {
+            return new PlainText("❌ 添加抖音监控用户失败: " + e.getMessage());
+        }
+    }
+
+    // 私聊删除抖音监控用户
+    private Message handleDouyinRemoveCommandPrivate(String secUserId) {
+        try {
+            DouyinMonitorService monitorService = DouyinMonitorService.getInstance();
+            boolean success = monitorService.removeMonitorUser(secUserId);
+            if (success) {
+                return new PlainText("✅ 成功删除抖音监控用户\n🆔 用户ID: " + secUserId);
+            } else {
+                return new PlainText("❌ 删除失败，用户不在监控列表中");
+            }
+        } catch (Exception e) {
+            return new PlainText("❌ 删除抖音监控用户失败: " + e.getMessage());
+        }
+    }
+
+    // 私聊重启抖音监控服务
+    private Message handleDouyinRestartCommandPrivate() {
+        try {
+            DouyinMonitorService monitorService = DouyinMonitorService.getInstance();
+            monitorService.stopMonitoring();
+            // 使用异步延迟替代Thread.sleep，避免阻塞
+            delayAsync(1000).thenRun(() -> {
+                try {
+                    monitorService.startMonitoring(10); // 默认10分钟检查间隔
+                } catch (Exception e) {
+                    System.err.println("启动抖音监控服务失败: " + e.getMessage());
+                }
+            });
+            return new PlainText("✅ 抖音监控服务重启中...");
+        } catch (Exception e) {
+            return new PlainText("❌ 重启抖音监控服务失败: " + e.getMessage());
+        }
+    }
+
     // 私聊抖音订阅管理
     private Message handlePrivateDouyinCommand(String[] args, UserMessageEvent event) {
         if (args.length < 2) {
@@ -1897,7 +2258,41 @@ public class CommandOperator extends AsyncWebHandlerBase {
                 
                 int count = 1;
                 for (String secUserId : properties.douyin_user_subscribe.get(groupId)) {
-                    result.append("  ").append(count).append(". 用户ID: ").append(secUserId).append("\n");
+                    // 尝试从监控服务获取用户昵称和最后更新时间
+                    String name = "抖音用户";
+                    String lastUpdateTime = "未知";
+                    try {
+                        DouyinMonitorService monitorService = DouyinMonitorService.getInstance();
+                        if (monitorService != null) {
+                            // 确保用户在监控服务中
+                            monitorService.addMonitorUser(secUserId);
+                            
+                            String nickname = monitorService.getMonitoredUserNickname(secUserId);
+                            if (nickname != null && !nickname.isEmpty() && !nickname.equals("未知用户")) {
+                                name = nickname;
+                            }
+                            
+                            // 获取最后更新时间
+                            DouyinMonitorService.UserMonitorInfo userInfo = monitorService.getMonitoredUserInfo(secUserId);
+                            if (userInfo != null) {
+                                if (userInfo.lastUpdateTime > 0) {
+                                    lastUpdateTime = cn.hutool.core.date.DateUtil.formatDateTime(new java.util.Date(userInfo.lastUpdateTime));
+                                } else {
+                                    lastUpdateTime = "暂无作品";
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                        // 如果获取失败，使用默认名称
+                    }
+                    
+                    result.append("  ").append(count).append(". ").append(name).append("\n");
+                    result.append("     用户ID：").append(secUserId).append("\n");
+                    result.append("     最后更新：").append(lastUpdateTime).append("\n");
+                    
+                    if (count < properties.douyin_user_subscribe.get(groupId).size()) {
+                        result.append("\n");
+                    }
                     count++;
                 }
             }
@@ -1989,6 +2384,33 @@ public class CommandOperator extends AsyncWebHandlerBase {
                 }
             }
             return out;
+        }
+    }
+    
+    /**
+     * 异步延迟方法，替代Thread.sleep避免阻塞
+     * @param delayMs 延迟毫秒数
+     * @return CompletableFuture用于异步处理
+     */
+    private java.util.concurrent.CompletableFuture<Void> delayAsync(long delayMs) {
+        try {
+            // 使用统一调度器进行真正的异步延迟
+            java.util.concurrent.CompletableFuture<Void> delayFuture = new java.util.concurrent.CompletableFuture<>();
+            
+            net.luffy.util.UnifiedSchedulerManager.getInstance().getExecutor().execute(() -> {
+                try {
+                    Thread.sleep(delayMs);
+                    delayFuture.complete(null);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    delayFuture.completeExceptionally(e);
+                }
+            });
+            
+            return delayFuture;
+        } catch (Exception e) {
+            // 如果异步延迟失败，返回立即完成的Future
+            return java.util.concurrent.CompletableFuture.completedFuture(null);
         }
     }
 }

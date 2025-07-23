@@ -47,7 +47,9 @@ public class Pocket48ResourceOptimizer {
             if (url != null && !resourceCache.containsKey(url)) {
                 CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
                     try {
-                        File cachedFile = resourceHandler.downloadToTempFile(url, ".tmp");
+                        // 根据URL推断文件扩展名，避免使用.tmp后缀
+                        String fileExtension = getFileExtensionFromUrl(url);
+                        File cachedFile = resourceHandler.downloadToTempFile(url, fileExtension);
                         if (cachedFile != null && cachedFile.exists()) {
                             resourceCache.put(url, cachedFile);
                             // 预加载成功
@@ -92,7 +94,9 @@ public class Pocket48ResourceOptimizer {
         
         // 缓存未命中，下载资源
         try {
-            File downloadedFile = resourceHandler.downloadToTempFile(resourceUrl, ".tmp");
+            // 根据URL推断文件扩展名，避免使用.tmp后缀
+            String fileExtension = getFileExtensionFromUrl(resourceUrl);
+            File downloadedFile = resourceHandler.downloadToTempFile(resourceUrl, fileExtension);
             if (downloadedFile != null && downloadedFile.exists()) {
                 // 添加到缓存
                 resourceCache.put(resourceUrl, downloadedFile);
@@ -103,6 +107,43 @@ public class Pocket48ResourceOptimizer {
         }
         
         return null;
+    }
+    
+    /**
+     * 从URL推断文件扩展名
+     * @param url 资源URL
+     * @return 文件扩展名
+     */
+    private String getFileExtensionFromUrl(String url) {
+        if (url == null || url.isEmpty()) {
+            return ".dat";
+        }
+        
+        // 移除查询参数
+        String cleanUrl = url.split("\\?")[0];
+        
+        // 获取文件名部分
+        int lastSlash = cleanUrl.lastIndexOf('/');
+        if (lastSlash >= 0 && lastSlash < cleanUrl.length() - 1) {
+            String fileName = cleanUrl.substring(lastSlash + 1);
+            int lastDot = fileName.lastIndexOf('.');
+            if (lastDot > 0 && lastDot < fileName.length() - 1) {
+                return fileName.substring(lastDot);
+            }
+        }
+        
+        // 根据URL路径推断类型
+        String lowerUrl = url.toLowerCase();
+        if (lowerUrl.contains("/image/") || lowerUrl.contains("/img/") || lowerUrl.contains("/cover/")) {
+            return ".jpg";
+        } else if (lowerUrl.contains("/video/") || lowerUrl.contains("/mp4/")) {
+            return ".mp4";
+        } else if (lowerUrl.contains("/audio/") || lowerUrl.contains("/voice/")) {
+            return ".amr";
+        }
+        
+        // 默认扩展名
+        return ".dat";
     }
     
     /**

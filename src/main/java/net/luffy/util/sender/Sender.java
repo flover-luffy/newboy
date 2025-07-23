@@ -47,7 +47,8 @@ public class Sender extends AsyncWebHandlerBase implements Runnable { //异步�
     }
 
     public Message toNotification(Message m) {
-        if (this.group.getBotAsMember().getPermission() == MemberPermission.ADMINISTRATOR)
+        MemberPermission permission = this.group.getBotAsMember().getPermission();
+        if (permission == MemberPermission.ADMINISTRATOR || permission == MemberPermission.OWNER)
             return AtAll.INSTANCE.plus("\n").plus(m);
         return m;
     }

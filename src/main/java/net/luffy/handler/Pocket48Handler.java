@@ -269,24 +269,28 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
     }
 
     public Pocket48RoomInfo getRoomInfoByChannelID(long roomID) {
-        String s = post(APIChannel2Server, String.format("{\"channelId\":\"%d\"}", roomID), getPocket48Headers());
-        JSONObject object = jsonParser.parseObj(s);
+        try {
+            String requestBody = String.format("{\"channelId\":\"%d\"}", roomID);
+            String s = post(APIChannel2Server, requestBody, getPocket48Headers());
+            JSONObject object = jsonParser.parseObj(s);
 
-        if (object.getInt("status") == 200) {
-            JSONObject content = jsonParser.parseObj(object.getObj("content").toString());
-            JSONObject roomInfo = jsonParser.parseObj(content.getObj("channelInfo").toString());
-            return new Pocket48RoomInfo(roomInfo);
+            if (object.getInt("status") == 200) {
+                JSONObject content = jsonParser.parseObj(object.getObj("content").toString());
+                JSONObject roomInfo = jsonParser.parseObj(content.getObj("channelInfo").toString());
+                return new Pocket48RoomInfo(roomInfo);
 
-        } else if (object.getInt("status") == 2001
-                && object.getStr("message").indexOf("question") != -1) { //只有配置中存有severID的加密房间会被解析
-            JSONObject message = jsonParser.parseObj(object.getObj("message").toString());
-            return new Pocket48RoomInfo.LockedRoomInfo(message.getStr("question") + "？",
-                    properties.pocket48_serverID.get(roomID), roomID);
-        } else {
-            logError(roomID + object.getStr("message"));
+            } else if (object.getInt("status") == 2001
+                    && object.getStr("message").indexOf("question") != -1) { //只有配置中存有severID的加密房间会被解析
+                JSONObject message = jsonParser.parseObj(object.getObj("message").toString());
+                return new Pocket48RoomInfo.LockedRoomInfo(message.getStr("question") + "？",
+                        properties.pocket48_serverID.get(roomID), roomID);
+            } else {
+                logError("[API错误] 房间ID: " + roomID + ", 状态码: " + object.getInt("status") + ", 错误信息: " + object.getStr("message"));
+            }
+        } catch (Exception e) {
+            logError("[网络异常] 获取房间信息失败，房间ID: " + roomID + ", 异常: " + e.getMessage());
         }
         return null;
-
     }
 
     public Object[] search(String content_) {
@@ -393,56 +397,66 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
 
     //获取未整理的消息（优化版）
     private List<Object> getOriMessages(long roomID, long serverID) {
-        // 优化：添加更多请求参数以提高API响应速度
-        String requestBody = String.format(
-            "{\"nextTime\":0,\"serverId\":%d,\"channelId\":%d,\"limit\":30,\"order\":1,\"needTop\":false}", 
-            serverID, roomID
-        );
-        
-        String s = post(APIMsgOwner, requestBody, getPocket48Headers());
-        JSONObject object = jsonParser.parseObj(s);
+        try {
+            // 优化：添加更多请求参数以提高API响应速度
+            String requestBody = String.format(
+                "{\"nextTime\":0,\"serverId\":%d,\"channelId\":%d,\"limit\":30,\"order\":1,\"needTop\":false}", 
+                serverID, roomID
+            );
+            
+            String s = post(APIMsgOwner, requestBody, getPocket48Headers());
+            JSONObject object = jsonParser.parseObj(s);
 
-        if (object.getInt("status") == 200) {
-            JSONObject content = jsonParser.parseObj(object.getObj("content").toString());
-            List<Object> out = content.getBeanList("message", Object.class);
-            // 优化：使用更高效的排序方式
-            out.sort((a, b) -> {
-                long timeA = jsonParser.parseObj(a.toString()).getLong("msgTime");
-                long timeB = jsonParser.parseObj(b.toString()).getLong("msgTime");
-                return Long.compare(timeB, timeA);
-            });
-            return out;
+            if (object.getInt("status") == 200) {
+                JSONObject content = jsonParser.parseObj(object.getObj("content").toString());
+                List<Object> out = content.getBeanList("message", Object.class);
+                // 优化：使用更高效的排序方式
+                out.sort((a, b) -> {
+                    long timeA = jsonParser.parseObj(a.toString()).getLong("msgTime");
+                    long timeB = jsonParser.parseObj(b.toString()).getLong("msgTime");
+                    return Long.compare(timeB, timeA);
+                });
+                return out;
 
-        } else {
-            logError(roomID + object.getStr("message"));
-
+            } else {
+                logError("[API错误] 获取消息失败，房间ID: " + roomID + ", 服务器ID: " + serverID + ", 状态码: " + object.getInt("status") + ", 错误信息: " + object.getStr("message"));
+            }
+        } catch (Exception e) {
+            logError("[网络异常] 获取消息失败，房间ID: " + roomID + ", 服务器ID: " + serverID + ", 异常: " + e.getMessage());
         }
         return null;
     }
 
     public List<Long> getRoomVoiceList(long roomID, long serverID) {
-        String s = post(APIRoomVoice, String.format("{\"channelId\":%d,\"serverId\":%d,\"operateCode\":2}", roomID, serverID), getPocket48Headers());
-        JSONObject object = jsonParser.parseObj(s);
-        if (object.getInt("status") == 200) {
-            JSONObject content = jsonParser.parseObj(object.getObj("content").toString());
-            JSONArray a = content.getJSONArray("voiceUserList");
-            List<Long> l = new ArrayList<>();
-            if (a.size() > 0) {
-                for (Object star_ : a.stream().toArray()) {
-                    JSONObject star = jsonParser.parseObj(star_.toString());
-                    long starID = star.getLong("userId");
-                    l.add(starID);
+        try {
+            String requestBody = String.format("{\"channelId\":%d,\"serverId\":%d,\"operateCode\":2}", roomID, serverID);
+            String s = post(APIRoomVoice, requestBody, getPocket48Headers());
+            JSONObject object = jsonParser.parseObj(s);
+            
+            if (object.getInt("status") == 200) {
+                JSONObject content = jsonParser.parseObj(object.getObj("content").toString());
+                JSONArray a = content.getJSONArray("voiceUserList");
+                List<Long> l = new ArrayList<>();
+                if (a.size() > 0) {
+                    for (Object star_ : a.stream().toArray()) {
+                        JSONObject star = jsonParser.parseObj(star_.toString());
+                        long starID = star.getLong("userId");
+                        l.add(starID);
 
-                    //优化：names的另一种添加途径
-                    if (!name.containsKey(starID)) {
-                        name.put(starID, star.getStr("nickname"));
+                        //优化：names的另一种添加途径
+                        if (!name.containsKey(starID)) {
+                            name.put(starID, star.getStr("nickname"));
+                        }
                     }
+                    return l;
                 }
-                return l;
-            }
+                return new ArrayList<>(); // 返回空列表而不是静态列表
 
-        } else {
-            logError(roomID + object.getStr("message"));
+            } else {
+                logError("[API错误] 获取语音列表失败，房间ID: " + roomID + ", 服务器ID: " + serverID + ", 状态码: " + object.getInt("status") + ", 错误信息: " + object.getStr("message"));
+            }
+        } catch (Exception e) {
+            logError("[网络异常] 获取语音列表失败，房间ID: " + roomID + ", 服务器ID: " + serverID + ", 异常: " + e.getMessage());
         }
         return voidRoomVoiceList;
     }

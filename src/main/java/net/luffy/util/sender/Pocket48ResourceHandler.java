@@ -39,11 +39,50 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
             
             // 缓存未命中，从网络获取
             // 为了避免资源泄漏，我们下载到临时文件然后返回文件流
-            File tempFile = downloadToTempFileInternal(url, ".tmp");
+            // 根据URL推断文件扩展名，避免使用.tmp后缀
+            String fileExtension = getFileExtensionFromUrl(url);
+            File tempFile = downloadToTempFileInternal(url, fileExtension);
             return new FileInputStream(tempFile);
         } catch (IOException e) {
             throw new RuntimeException("获取口袋48资源流失败: " + e.getMessage(), e);
         }
+    }
+    
+    /**
+     * 从URL推断文件扩展名
+     * @param url 资源URL
+     * @return 文件扩展名
+     */
+    private String getFileExtensionFromUrl(String url) {
+        if (url == null || url.isEmpty()) {
+            return ".dat";
+        }
+        
+        // 移除查询参数
+        String cleanUrl = url.split("\\?")[0];
+        
+        // 获取文件名部分
+        int lastSlash = cleanUrl.lastIndexOf('/');
+        if (lastSlash >= 0 && lastSlash < cleanUrl.length() - 1) {
+            String fileName = cleanUrl.substring(lastSlash + 1);
+            int lastDot = fileName.lastIndexOf('.');
+            if (lastDot > 0 && lastDot < fileName.length() - 1) {
+                return fileName.substring(lastDot);
+            }
+        }
+        
+        // 根据URL路径推断类型
+        String lowerUrl = url.toLowerCase();
+        if (lowerUrl.contains("/image/") || lowerUrl.contains("/img/") || lowerUrl.contains("/cover/")) {
+            return ".jpg";
+        } else if (lowerUrl.contains("/video/") || lowerUrl.contains("/mp4/")) {
+            return ".mp4";
+        } else if (lowerUrl.contains("/audio/") || lowerUrl.contains("/voice/")) {
+            return ".amr";
+        }
+        
+        // 默认扩展名
+        return ".dat";
     }
     
     /**
@@ -100,7 +139,7 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
     }
     
     /**
-     * 带重试机制的资源获取
+     * 带重试机制的资源获取 - 优化为异步重试
      * 
      * @param url 资源URL
      * @param maxRetries 最大重试次数
@@ -115,12 +154,12 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
             } catch (Exception e) {
                 lastException = e;
                 if (i < maxRetries) {
+                    // 优化的指数退避重试策略：适当放宽等待时间，最大等待5秒
+                    long waitTime = Math.min(500 * (long) Math.pow(1.5, i), 5000);
                     try {
-                        // 指数退避重试策略
-                        Thread.sleep(1000 * (long) Math.pow(2, i));
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        throw new RuntimeException("重试被中断", ie);
+                        delayAsync(waitTime).get();
+                    } catch (Exception ex) {
+                        // 延迟失败时继续重试
                     }
                 }
             }
@@ -150,7 +189,7 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
     }
     
     /**
-     * 带重试机制下载口袋48资源到本地临时文件
+     * 带重试机制下载口袋48资源到本地临时文件 - 优化为异步重试
      * 
      * @param url 资源URL
      * @param fileExtension 文件扩展名（如 ".mp4", ".jpg"）
@@ -167,19 +206,46 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
             } catch (Exception e) {
                 lastException = e;
                 if (i < maxRetries) {
+                    // 优化的指数退避重试策略：适当放宽等待时间，最大等待5秒
+                    long waitTime = Math.min(500 * (long) Math.pow(1.5, i), 5000);
                     try {
-                        // 指数退避重试策略
-                        Thread.sleep(1000 * (long) Math.pow(2, i));
-                        // 下载重试
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        throw new RuntimeException("下载重试被中断", ie);
+                        delayAsync(waitTime).get();
+                    } catch (Exception ex) {
+                        // 延迟失败时继续重试
                     }
+                    // 下载重试
                 }
             }
         }
         
         throw new RuntimeException("下载重试 " + maxRetries + " 次后仍然失败: " + lastException.getMessage(), lastException);
+    }
+    
+    /**
+     * 异步延迟方法，替代Thread.sleep避免阻塞
+     * @param delayMs 延迟毫秒数
+     * @return CompletableFuture用于异步处理
+     */
+    private java.util.concurrent.CompletableFuture<Void> delayAsync(long delayMs) {
+        try {
+            // 使用统一调度器进行真正的异步延迟
+            java.util.concurrent.CompletableFuture<Void> delayFuture = new java.util.concurrent.CompletableFuture<>();
+            
+            net.luffy.util.UnifiedSchedulerManager.getInstance().getExecutor().execute(() -> {
+                try {
+                    Thread.sleep(delayMs);
+                    delayFuture.complete(null);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    delayFuture.completeExceptionally(e);
+                }
+            });
+            
+            return delayFuture;
+        } catch (Exception e) {
+            // 如果异步延迟失败，返回立即完成的Future
+            return java.util.concurrent.CompletableFuture.completedFuture(null);
+        }
     }
     
     /**

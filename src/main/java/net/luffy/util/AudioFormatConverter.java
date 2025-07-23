@@ -101,8 +101,8 @@ public class AudioFormatConverter {
             processBuilder.redirectErrorStream(true);
             Process process = processBuilder.start();
             
-            // 等待转换完成，最多等待30秒
-            boolean finished = process.waitFor(30, TimeUnit.SECONDS);
+            // 等待转换完成，最多等待10秒（优化超时时间）
+            boolean finished = process.waitFor(10, TimeUnit.SECONDS);
             
             if (!finished) {
                 process.destroyForcibly();
@@ -142,7 +142,7 @@ public class AudioFormatConverter {
      */
     private static String getFileExtension(String format) {
         if (format == null) {
-            return ".tmp";
+            return ".audio";
         }
         
         switch (format.toUpperCase()) {
@@ -161,7 +161,7 @@ public class AudioFormatConverter {
             case "SILK":
                 return ".silk";
             default:
-                return ".tmp";
+                return ".audio";
         }
     }
     

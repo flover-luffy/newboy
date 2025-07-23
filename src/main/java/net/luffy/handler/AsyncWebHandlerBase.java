@@ -63,14 +63,31 @@ public class AsyncWebHandlerBase {
     }
 
     /**
-     * 同步POST请求（兼容旧接口）
+     * 同步POST请求（兼容旧接口）- 带重试机制
      */
     protected String post(String url, String body) {
-        try {
-            return UnifiedHttpClient.getInstance().post(url, body);
-        } catch (Exception e) {
-            throw new RuntimeException("POST请求失败: " + e.getMessage(), e);
+        int maxRetries = 3;
+        long baseDelay = 1000; // 1秒基础延迟
+        
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                return UnifiedHttpClient.getInstance().post(url, body);
+            } catch (Exception e) {
+                if (attempt == maxRetries) {
+                    throw new RuntimeException("POST请求失败（已重试" + maxRetries + "次）: " + e.getMessage(), e);
+                }
+                
+                // 指数退避重试
+                try {
+                    long delay = baseDelay * (1L << (attempt - 1));
+                    Thread.sleep(Math.min(delay, 10000)); // 最大延迟10秒
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException("POST请求被中断: " + e.getMessage(), e);
+                }
+            }
         }
+        return null; // 不会到达这里
     }
     
     /**
@@ -102,42 +119,93 @@ public class AsyncWebHandlerBase {
     }
 
     /**
-     * 同步GET请求（兼容旧接口）
+     * 同步GET请求（兼容旧接口）- 带重试机制
      */
     protected String get(String url) {
-        try {
-            return UnifiedHttpClient.getInstance().get(url);
-        } catch (Exception e) {
-            throw new RuntimeException("GET请求失败: " + e.getMessage(), e);
-        }
-    }
-    
-    /**
-     * 带Headers的同步GET请求（兼容旧接口）
-     */
-    protected String get(String url, okhttp3.Headers headers) {
-        try {
-            Map<String, String> headerMap = new HashMap<>();
-            if (headers != null) {
-                for (String name : headers.names()) {
-                    headerMap.put(name, headers.get(name));
+        int maxRetries = 3;
+        long baseDelay = 1000; // 1秒基础延迟
+        
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                return UnifiedHttpClient.getInstance().get(url);
+            } catch (Exception e) {
+                if (attempt == maxRetries) {
+                    throw new RuntimeException("GET请求失败（已重试" + maxRetries + "次）: " + e.getMessage(), e);
+                }
+                
+                // 指数退避重试
+                try {
+                    long delay = baseDelay * (1L << (attempt - 1));
+                    Thread.sleep(Math.min(delay, 10000)); // 最大延迟10秒
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException("GET请求被中断: " + e.getMessage(), e);
                 }
             }
-            return UnifiedHttpClient.getInstance().get(url, headerMap);
-        } catch (Exception e) {
-            throw new RuntimeException("GET请求失败: " + e.getMessage(), e);
         }
+        return null; // 不会到达这里
     }
     
     /**
-     * 带Map Headers的同步GET请求
+     * 带Headers的同步GET请求（兼容旧接口）- 带重试机制
+     */
+    protected String get(String url, okhttp3.Headers headers) {
+        int maxRetries = 3;
+        long baseDelay = 1000; // 1秒基础延迟
+        
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                Map<String, String> headerMap = new HashMap<>();
+                if (headers != null) {
+                    for (String name : headers.names()) {
+                        headerMap.put(name, headers.get(name));
+                    }
+                }
+                return UnifiedHttpClient.getInstance().get(url, headerMap);
+            } catch (Exception e) {
+                if (attempt == maxRetries) {
+                    throw new RuntimeException("GET请求失败（已重试" + maxRetries + "次）: " + e.getMessage(), e);
+                }
+                
+                // 指数退避重试
+                try {
+                    long delay = baseDelay * (1L << (attempt - 1));
+                    Thread.sleep(Math.min(delay, 10000)); // 最大延迟10秒
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException("GET请求被中断: " + e.getMessage(), e);
+                }
+            }
+        }
+        return null; // 不会到达这里
+    }
+    
+    /**
+     * 带Map Headers的同步GET请求 - 带重试机制
      */
     protected String get(String url, Map<String, String> headers) {
-        try {
-            return UnifiedHttpClient.getInstance().get(url, headers);
-        } catch (Exception e) {
-            throw new RuntimeException("GET请求失败: " + e.getMessage(), e);
+        int maxRetries = 5;
+        long baseDelay = 1000; // 1秒基础延迟
+        
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                return UnifiedHttpClient.getInstance().get(url, headers);
+            } catch (Exception e) {
+                if (attempt == maxRetries) {
+                    throw new RuntimeException("GET请求失败（已重试" + maxRetries + "次）: " + e.getMessage(), e);
+                }
+                
+                // 指数退避重试，适当放宽延迟时间
+                try {
+                    long delay = Math.min(baseDelay * (long) Math.pow(1.5, attempt - 1), 5000);
+                    Thread.sleep(delay); // 最大延迟5秒
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException("GET请求被中断: " + e.getMessage(), e);
+                }
+            }
         }
+        return null; // 不会到达这里
     }
     
     /**

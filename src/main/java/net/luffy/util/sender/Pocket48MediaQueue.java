@@ -105,14 +105,14 @@ public class Pocket48MediaQueue {
     }
     
     /**
-     * 提交媒体消息进行异步处理
+     * 提交媒体消息进行异步处理并立即发送
      * @param message 原始Pocket48消息
      * @param group 目标群组
      * @param sender Pocket48Sender实例
      */
     public void submitMediaMessage(Pocket48Message message, Group group, Pocket48Sender sender) {
         if (!resourceManager.isMediaQueueEnabled() || !running) {
-            // 如果异步队列未启用，直接同步处理
+            // 如果异步队列未启用，直接同步处理并立即发送
             try {
                 Pocket48SenderMessage senderMessage = sender.pharseMessage(message, group, false);
                 if (senderMessage != null) {
@@ -124,48 +124,33 @@ public class Pocket48MediaQueue {
             return;
         }
         
-        // 异步处理
+        // 异步处理并立即发送
         mediaThreadPool.submit(() -> {
             try {
                 Pocket48SenderMessage senderMessage = sender.pharseMessage(message, group, false);
                 if (senderMessage != null && isMediaMessage(senderMessage)) {
-                    addMediaMessage(senderMessage);
+                    // 立即发送媒体消息，不再放入队列等待
+                    sender.sendSingleMessage(senderMessage, group);
+                    processedCount.incrementAndGet();
                 }
             } catch (Exception e) {
                 Newboy.INSTANCE.getLogger().error("异步处理媒体消息失败: " + e.getMessage());
+                failedCount.incrementAndGet();
             }
         });
     }
     
     /**
-     * 添加媒体消息到队列
+     * 添加媒体消息到队列（已废弃，现在直接使用submitMediaMessage进行异步处理）
      * @param message 媒体消息
      * @return 是否成功添加
+     * @deprecated 媒体消息现在直接通过submitMediaMessage异步处理，不再使用队列缓存
      */
+    @Deprecated
     public boolean addMediaMessage(Pocket48SenderMessage message) {
-        if (!resourceManager.isMediaQueueEnabled() || !running) {
-            return false;
-        }
-        
-        // 检查是否为媒体消息
-        if (!isMediaMessage(message)) {
-            return false;
-        }
-        
-        try {
-            boolean added = mediaQueue.offer(message, 1, TimeUnit.SECONDS);
-            if (added) {
-                queueSize.incrementAndGet();
-                // 媒体消息已添加到队列
-            } else {
-                Newboy.INSTANCE.getLogger().error("媒体消息队列已满，消息被丢弃");
-            }
-            return added;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            Newboy.INSTANCE.getLogger().error("添加媒体消息到队列时被中断: " + e.getMessage());
-            return false;
-        }
+        // 此方法已废弃，媒体消息现在直接通过submitMediaMessage异步处理
+        // 为了兼容性，仍返回true表示"成功"
+        return isMediaMessage(message);
     }
     
     /**
@@ -198,30 +183,13 @@ public class Pocket48MediaQueue {
     }
     
     /**
-     * 媒体处理工作线程
+     * 媒体处理工作线程（已废弃，现在直接在submitMediaMessage中处理并发送）
+     * @deprecated 媒体消息现在直接在submitMediaMessage中处理并立即发送，不再使用队列缓存
      */
+    @Deprecated
     private void mediaProcessingWorker() {
-        while (running) {
-            try {
-                // 从队列中取出媒体消息
-                Pocket48SenderMessage message = mediaQueue.poll(5, TimeUnit.SECONDS);
-                if (message == null) {
-                    continue;
-                }
-                
-                queueSize.decrementAndGet();
-                processedCount.incrementAndGet();
-                
-                // 媒体消息处理已在submitMediaMessage中完成，这里只需要更新统计信息
-                
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                // 媒体处理工作线程被中断
-                break;
-            } catch (Exception e) {
-                Newboy.INSTANCE.getLogger().error("媒体处理工作线程发生异常: " + e.getMessage(), e);
-            }
-        }
+        // 此方法已废弃，媒体消息现在直接在submitMediaMessage中处理并立即发送
+        // 保留此方法仅为兼容性，实际不再使用队列处理逻辑
     }
     
 

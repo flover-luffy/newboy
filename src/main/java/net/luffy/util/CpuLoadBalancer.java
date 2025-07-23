@@ -234,10 +234,23 @@ public class CpuLoadBalancer {
     }
     
     /**
-     * 获取动态延迟时间
+     * 获取动态延迟时间 - 优化版本，确保低负载时不增加延迟
      */
     public int getDynamicDelay(int baseDelay) {
-        return baseDelay * messageDelayMultiplier;
+        LoadLevel currentLevel = currentLoadLevel.get();
+        
+        // 在正常和低负载时，不增加延迟，甚至可以减少延迟
+        switch (currentLevel) {
+            case LOW:
+                return Math.max(1, baseDelay / 2); // 低负载时减少一半延迟
+            case NORMAL:
+                return baseDelay; // 正常负载时保持原延迟
+            case HIGH:
+            case CRITICAL:
+                return baseDelay * messageDelayMultiplier; // 高负载时才增加延迟
+            default:
+                return baseDelay;
+        }
     }
     
     /**

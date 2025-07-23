@@ -23,7 +23,7 @@ public class Pocket48ResourceManager {
     private final AtomicBoolean mediaQueueEnabled = new AtomicBoolean(true);
     private final AtomicInteger mediaQueueSize = new AtomicInteger(100);
     private final AtomicInteger mediaThreadPoolSize = new AtomicInteger(2);
-    private final AtomicInteger mediaProcessingTimeout = new AtomicInteger(30);
+    private final AtomicInteger mediaProcessingTimeout = new AtomicInteger(10);
     private final AtomicBoolean prioritizeTextMessages = new AtomicBoolean(true);
     private final AtomicInteger mediaBatchSize = new AtomicInteger(5);
     private final AtomicInteger mediaRetryAttempts = new AtomicInteger(3);
@@ -229,30 +229,34 @@ public class Pocket48ResourceManager {
     }
     
     /**
-     * 动态调整配置（基于系统负载）
+     * 动态调整配置（基于系统负载）- 使用无锁并发优化
      */
     public void adjustConfigurationDynamically() {
-        synchronized (lock) {
-            CpuLoadBalancer.LoadLevel loadLevel = loadBalancer.getCurrentLoadLevel();
-            
-            switch (loadLevel) {
-                case LOW:
-                    // 低负载时可以增加处理能力
-                    if (mediaThreadPoolSize.get() < 4) {
-                        setMediaThreadPoolSize(Math.min(4, mediaThreadPoolSize.get() + 1));
-                    }
-                    break;
-                case HIGH:
-                case CRITICAL:
-                    // 高负载时减少处理能力
-                    if (mediaThreadPoolSize.get() > 1) {
-                        setMediaThreadPoolSize(Math.max(1, mediaThreadPoolSize.get() - 1));
-                    }
-                    break;
-                default:
-                    // 正常负载保持当前配置
-                    break;
-            }
+        // 使用无锁方式获取负载级别，避免阻塞
+        CpuLoadBalancer.LoadLevel loadLevel = loadBalancer.getCurrentLoadLevel();
+        
+        // 使用原子操作进行无锁配置调整
+        switch (loadLevel) {
+            case LOW:
+                // 低负载时可以增加处理能力
+                int currentLowSize = mediaThreadPoolSize.get();
+                if (currentLowSize < 4) {
+                    mediaThreadPoolSize.compareAndSet(currentLowSize, Math.min(4, currentLowSize + 1));
+                    updateConfigVersion();
+                }
+                break;
+            case HIGH:
+            case CRITICAL:
+                // 高负载时减少处理能力
+                int currentHighSize = mediaThreadPoolSize.get();
+                if (currentHighSize > 1) {
+                    mediaThreadPoolSize.compareAndSet(currentHighSize, Math.max(1, currentHighSize - 1));
+                    updateConfigVersion();
+                }
+                break;
+            default:
+                // 正常负载保持当前配置
+                break;
         }
     }
     
@@ -273,21 +277,20 @@ public class Pocket48ResourceManager {
     }
     
     /**
-     * 重置为默认配置
+     * 重置为默认配置 - 使用无锁并发优化
      */
     public void resetToDefaults() {
-        synchronized (lock) {
-            mediaQueueEnabled.set(true);
-            mediaQueueSize.set(100);
-            mediaThreadPoolSize.set(2);
-            mediaProcessingTimeout.set(30);
-            prioritizeTextMessages.set(true);
-            mediaBatchSize.set(5);
-            mediaRetryAttempts.set(3);
-            updateConfigVersion();
-            
-            // 配置已重置为默认值
-        }
+        // 使用原子操作进行无锁重置，避免阻塞
+        mediaQueueEnabled.set(true);
+        mediaQueueSize.set(100);
+        mediaThreadPoolSize.set(2);
+        mediaProcessingTimeout.set(15);  // 优化媒体处理超时为15秒
+        prioritizeTextMessages.set(true);
+        mediaBatchSize.set(5);
+        mediaRetryAttempts.set(3);
+        updateConfigVersion();
+        
+        // 配置已重置为默认值
     }
     
     /**

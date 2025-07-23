@@ -403,7 +403,13 @@ public class WeidianHandler extends SyncWebHandler {
     }
 
     public WeidianItem searchItem(WeidianCookie cookie, long id) {
-        for (WeidianItem item : getItems(cookie)) {
+        WeidianItem[] items = getItems(cookie);
+        if (items == null) {
+            logInfo("获取商品列表失败，可能是cookie失效或网络问题");
+            return null;
+        }
+        
+        for (WeidianItem item : items) {
             if (item.id == id)
                 return item;
         }

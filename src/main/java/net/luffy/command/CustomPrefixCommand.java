@@ -25,6 +25,7 @@ import net.luffy.util.Properties;
 import net.luffy.model.WeidianCookie;
 import net.luffy.model.Pocket48Subscribe;
 import net.luffy.util.DouyinMonitorService;
+import net.luffy.util.WeiboMonitorService;
 
 /**
  * 自定义前缀命令处理器
@@ -412,7 +413,43 @@ public class CustomPrefixCommand {
                     List<Long> userIds = entry.getValue();
                     subscribeInfo.append(String.format("  群 %d: %d个用户\n", groupId, userIds.size()));
                     for (Long userId : userIds) {
-                        subscribeInfo.append(String.format("    - 用户ID: %d\n", userId));
+                        // 尝试从监控服务获取用户昵称和最后更新时间
+                        String name = "微博用户";
+                        String lastUpdateTime = "未知";
+                        try {
+                            WeiboMonitorService weiboMonitor = WeiboMonitorService.getInstance();
+                            if (weiboMonitor != null) {
+                                // 确保用户在监控服务中
+                                weiboMonitor.addMonitorUser(userId);
+                                
+                                WeiboMonitorService.UserMonitorInfo userInfo = weiboMonitor.getMonitoredUserInfo(userId);
+                                if (userInfo != null) {
+                                    if (userInfo.nickname != null && !userInfo.nickname.isEmpty()) {
+                                        name = userInfo.nickname;
+                                    }
+                                    if (userInfo.lastUpdateTime > 0) {
+                                        lastUpdateTime = cn.hutool.core.date.DateUtil.formatDateTime(new java.util.Date(userInfo.lastUpdateTime));
+                                    } else {
+                                        lastUpdateTime = "暂无微博";
+                                    }
+                                } else {
+                                    // 如果没有监控信息，尝试直接获取
+                                    String nickname = weiboMonitor.getUserNickname(userId);
+                                    if (nickname != null && !nickname.equals("未知用户")) {
+                                        name = nickname;
+                                    }
+                                    String formattedTime = weiboMonitor.getFormattedLastUpdateTime(userId);
+                                    if (formattedTime != null && !formattedTime.equals("未知")) {
+                                        lastUpdateTime = formattedTime;
+                                    }
+                                }
+                            }
+                        } catch (Exception e) {
+                            // 忽略异常，使用默认值
+                        }
+                        
+                        subscribeInfo.append(String.format("    - %s (UID: %d)\n", name, userId));
+                        subscribeInfo.append(String.format("      最后更新: %s\n", lastUpdateTime));
                     }
                 }
             } else {
@@ -440,7 +477,19 @@ public class CustomPrefixCommand {
                 for (Map.Entry<Long, WeidianCookie> entry : properties.weidian_cookie.entrySet()) {
                     Long groupId = entry.getKey();
                     WeidianCookie cookie = entry.getValue();
-                    subscribeInfo.append(String.format("  群 %d: 已配置微店Cookie\n", groupId));
+                    String cookieStatus = cookie.invalid ? "❌ 失效" : "✅ 有效";
+                    String autoDeliver = cookie.autoDeliver ? "✅" : "❌";
+                    String broadcast = cookie.doBroadcast ? "✅" : "❌";
+                    
+                    subscribeInfo.append(String.format("  群 %d: Cookie状态 %s\n", groupId, cookieStatus));
+                    subscribeInfo.append(String.format("    - 自动发货: %s | 群播报: %s\n", autoDeliver, broadcast));
+                    
+                    if (cookie.highlightItem != null && !cookie.highlightItem.isEmpty()) {
+                        subscribeInfo.append(String.format("    - 特殊商品: %d个\n", cookie.highlightItem.size()));
+                    }
+                    if (cookie.shieldedItem != null && !cookie.shieldedItem.isEmpty()) {
+                        subscribeInfo.append(String.format("    - 屏蔽商品: %d个\n", cookie.shieldedItem.size()));
+                    }
                 }
             } else {
                 subscribeInfo.append("  ❌ 暂无订阅\n");
@@ -454,7 +503,35 @@ public class CustomPrefixCommand {
                     List<String> userIds = entry.getValue();
                     subscribeInfo.append(String.format("  群 %d: %d个用户\n", groupId, userIds.size()));
                     for (String userId : userIds) {
-                        subscribeInfo.append(String.format("    - 用户ID: %s\n", userId));
+                        // 尝试从监控服务获取用户昵称和最后更新时间
+                        String name = "抖音用户";
+                        String lastUpdateTime = "未知";
+                        try {
+                            DouyinMonitorService monitorService = DouyinMonitorService.getInstance();
+                            if (monitorService != null) {
+                                // 确保用户在监控服务中
+                                monitorService.addMonitorUser(userId);
+                                
+                                String nickname = monitorService.getMonitoredUserNickname(userId);
+                                if (nickname != null && !nickname.isEmpty()) {
+                                    name = nickname;
+                                }
+                                
+                                DouyinMonitorService.UserMonitorInfo userInfo = monitorService.getMonitoredUserInfo(userId);
+                                if (userInfo != null) {
+                                    if (userInfo.lastUpdateTime > 0) {
+                                        lastUpdateTime = cn.hutool.core.date.DateUtil.formatDateTime(new java.util.Date(userInfo.lastUpdateTime));
+                                    } else {
+                                        lastUpdateTime = "暂无作品";
+                                    }
+                                }
+                            }
+                        } catch (Exception e) {
+                            // 忽略异常，使用默认值
+                        }
+                        
+                        subscribeInfo.append(String.format("    - %s (ID: %s)\n", name, userId));
+                        subscribeInfo.append(String.format("      最后更新: %s\n", lastUpdateTime));
                     }
                 }
             } else {

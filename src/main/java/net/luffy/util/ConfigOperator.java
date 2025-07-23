@@ -55,8 +55,8 @@ public class ConfigOperator {
             tempSetting.setByGroup("basic", "admins", "123456789");
             tempSetting.setByGroup("basic", "secureGroup", "");
             
-            // 设置定时任务默认配置 - 优化为3秒间隔，提升实时性
-            tempSetting.setByGroup("schedule", "pocket48", "*/3 * * * * *");
+            // 设置定时任务默认配置 - 优化为10秒间隔，大幅降低消息延迟
+            tempSetting.setByGroup("schedule", "pocket48", "*/10 * * * * *");
             tempSetting.setByGroup("schedule", "weibo", "*/5 * * * *");
             tempSetting.setByGroup("schedule", "douyin", "*/10 * * * *");
     
@@ -74,15 +74,15 @@ public class ConfigOperator {
             // 设置异步监控配置默认值
             tempSetting.setByGroup("async_monitor", "schedule_pattern", "*/30 * * * * *");
             
-            // 设置消息延迟优化配置默认值
-            tempSetting.setByGroup("message_delay", "optimization_mode", "BALANCED");
-            tempSetting.setByGroup("message_delay", "text", "12");
-            tempSetting.setByGroup("message_delay", "media", "25");
-            tempSetting.setByGroup("message_delay", "group_high_priority", "15");
-            tempSetting.setByGroup("message_delay", "group_low_priority", "25");
-            tempSetting.setByGroup("message_delay", "processing_timeout", "15");
+            // 设置消息延迟优化配置默认值 - 超激进模式，文本消息0延迟
+            tempSetting.setByGroup("message_delay", "optimization_mode", "ULTRA_AGGRESSIVE");
+            tempSetting.setByGroup("message_delay", "text", "0");
+            tempSetting.setByGroup("message_delay", "media", "1");
+            tempSetting.setByGroup("message_delay", "group_high_priority", "0");
+            tempSetting.setByGroup("message_delay", "group_low_priority", "1");
+            tempSetting.setByGroup("message_delay", "processing_timeout", "2");
             tempSetting.setByGroup("message_delay", "high_load_multiplier", "1.0");
-            tempSetting.setByGroup("message_delay", "critical_load_multiplier", "2.0");
+            tempSetting.setByGroup("message_delay", "critical_load_multiplier", "1.2");
             
             // 口袋48异步处理队列配置已迁移到 Pocket48ResourceManager
             
@@ -129,8 +129,8 @@ public class ConfigOperator {
 
         // 进群欢迎功能已移除
 
-        //schedule pattern
-        properties.pocket48_pattern = setting.getStr("schedule", "pocket48", "* * * * *");
+        //schedule pattern - 优化为每10秒执行一次，大幅降低消息延迟
+        properties.pocket48_pattern = setting.getStr("schedule", "pocket48", "*/10 * * * * *");
 
         properties.weibo_pattern = setting.getStr("schedule", "weibo", "*/5 * * * *");
         properties.douyin_pattern = setting.getStr("schedule", "douyin", "*/10 * * * *");
@@ -142,15 +142,15 @@ public class ConfigOperator {
         // 异步监控配置
         properties.async_monitor_schedule_pattern = setting.getStr("async_monitor", "schedule_pattern", "*/30 * * * * *");
         
-        // 消息延迟优化配置
-        properties.message_delay_optimization_mode = setting.getStr("message_delay", "optimization_mode", "AGGRESSIVE");
-        properties.message_delay_text = setting.getInt("message_delay", "text", 8);  // 减少文本消息延迟
-        properties.message_delay_media = setting.getInt("message_delay", "media", 15);  // 减少媒体消息延迟
-        properties.message_delay_group_high_priority = setting.getInt("message_delay", "group_high_priority", 10);  // 减少高优先级延迟
-        properties.message_delay_group_low_priority = setting.getInt("message_delay", "group_low_priority", 18);  // 减少低优先级延迟
-        properties.message_delay_processing_timeout = setting.getInt("message_delay", "processing_timeout", 12);  // 减少处理超时
+        // 消息延迟优化配置 - 超级优化：文本消息0延迟
+        properties.message_delay_optimization_mode = setting.getStr("message_delay", "optimization_mode", "ULTRA_AGGRESSIVE");
+        properties.message_delay_text = setting.getInt("message_delay", "text", 0);  // 文本消息0延迟，实现真正无延迟
+        properties.message_delay_media = setting.getInt("message_delay", "media", 1);  // 媒体消息最小延迟1ms
+        properties.message_delay_group_high_priority = setting.getInt("message_delay", "group_high_priority", 0);  // 高优先级0延迟
+        properties.message_delay_group_low_priority = setting.getInt("message_delay", "group_low_priority", 1);  // 低优先级最小延迟1ms
+        properties.message_delay_processing_timeout = setting.getInt("message_delay", "processing_timeout", 2);  // 处理超时减少到2秒
         properties.message_delay_high_load_multiplier = setting.getDouble("message_delay", "high_load_multiplier", 1.0);
-        properties.message_delay_critical_load_multiplier = setting.getDouble("message_delay", "critical_load_multiplier", 1.5);  // 减少临界负载倍数
+        properties.message_delay_critical_load_multiplier = setting.getDouble("message_delay", "critical_load_multiplier", 1.2);  // 进一步减少临界负载倍数
         
         // 口袋48异步处理队列配置已迁移到 Pocket48ResourceManager
 

@@ -45,7 +45,8 @@ public class Listener extends SimpleListenerHost {
                 return ListeningStatus.LISTENING;
             }
             
-            Message m = operator.executePublic(message.split(" "), group, sender.getId());
+            String[] args = message.split(" ");
+            Message m = operator.executePublic(args, group, sender.getId());
             if (m != null)
                 group.sendMessage(m);
         }
@@ -87,14 +88,8 @@ public class Listener extends SimpleListenerHost {
                     sender.sendMessage(m);
                 }
             } catch (Exception e) {
-                // 记录错误但不中断程序运行
+                // 静默处理错误，不向用户发送错误消息
                 e.printStackTrace();
-                try {
-                    sender.sendMessage("处理命令时发生错误，请稍后重试");
-                } catch (Exception sendError) {
-                    // 如果连错误消息都发送失败，只记录日志
-                    sendError.printStackTrace();
-                }
             }
         }
 

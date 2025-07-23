@@ -54,11 +54,11 @@ public class UnifiedHttpClient {
      */
     private OkHttpClient createOptimizedClient() {
         return new OkHttpClient.Builder()
-                .connectTimeout(10, TimeUnit.SECONDS)
-                .readTimeout(30, TimeUnit.SECONDS)
-                .writeTimeout(30, TimeUnit.SECONDS)
-                .connectionPool(new ConnectionPool(20, 5, TimeUnit.MINUTES))
-                .retryOnConnectionFailure(true)
+                .connectTimeout(5, TimeUnit.SECONDS)  // 调整连接超时为5秒，避免连接失败
+                .readTimeout(8, TimeUnit.SECONDS)     // 调整读取超时为8秒，确保稳定性
+                .writeTimeout(8, TimeUnit.SECONDS)    // 调整写入超时为8秒，确保稳定性
+                .connectionPool(new ConnectionPool(30, 5, TimeUnit.MINUTES))  // 保持连接池优化
+                .retryOnConnectionFailure(true)      // 重新启用重试机制以提高稳定性
                 .addInterceptor(new LoggingInterceptor())
                 .addInterceptor(new PerformanceInterceptor())
                 .build();

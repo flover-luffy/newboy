@@ -8,7 +8,7 @@ plugins {
 
 java {
     toolchain {
-        languageVersion.set(JavaLanguageVersion.of(17))
+        languageVersion.set(JavaLanguageVersion.of(18))
     }
 }
 
@@ -41,7 +41,7 @@ dependencies {
 
 tasks.withType<JavaCompile> {
     options.encoding = "UTF-8"
-    options.release.set(17)
+    options.release.set(18)
     options.compilerArgs.addAll(listOf("-Xlint:deprecation", "-Xlint:unchecked", "-Xdiags:verbose"))
 }
 

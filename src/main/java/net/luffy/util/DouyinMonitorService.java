@@ -9,6 +9,9 @@ import net.luffy.util.UnifiedHttpClient;
 // 移除了对旧DouyinHandler的依赖
 import net.mamoe.mirai.Bot;
 import net.mamoe.mirai.contact.Group;
+import net.mamoe.mirai.message.data.Message;
+import net.mamoe.mirai.message.data.PlainText;
+import net.mamoe.mirai.message.data.AtAll;
 // 已迁移到UnifiedHttpClient，移除okhttp3依赖
 
 import java.util.Map;
@@ -168,13 +171,20 @@ public class DouyinMonitorService {
                     JSONObject latestAweme = awemeList.getJSONObject(0);
                     userInfo.lastAwemeId = latestAweme.getStr("aweme_id");
                     
+                    // 设置最后更新时间为最新作品的创建时间
+                    long createTime = latestAweme.getLong("create_time", 0L) * 1000;
+                    if (createTime > 0) {
+                        userInfo.lastUpdateTime = createTime;
+                    }
+                    
                     // 从作品信息中获取用户昵称
                     JSONObject author = latestAweme.getJSONObject("author");
                     if (author != null) {
                         userInfo.nickname = author.getStr("nickname", "未知用户");
                     }
                 } else {
-                    // 用户没有作品，无法获取昵称
+                    // 用户没有作品，设置lastUpdateTime为0表示无作品
+                    userInfo.lastUpdateTime = 0;
                 }
             }
         } catch (Exception e) {
@@ -408,10 +418,18 @@ public class DouyinMonitorService {
                     if (bot != null) {
                         Group group = bot.getGroup(groupId);
                         if (group != null) {
-                            group.sendMessage(message);
+                            // 检查机器人是否拥有管理员权限，如果有则@全体成员
+                            Message finalMessage;
+                            if (group.getBotAsMember().getPermission() == net.mamoe.mirai.contact.MemberPermission.ADMINISTRATOR) {
+                                finalMessage = AtAll.INSTANCE.plus("\n").plus(new PlainText(message));
+                            } else {
+                                finalMessage = new PlainText(message);
+                            }
+                            group.sendMessage(finalMessage);
                         }
                     }
                 } catch (Exception e) {
+                    // 静默处理发送失败，不推送错误消息到群组
                     Newboy.INSTANCE.getLogger().error(
                         String.format("发送抖音消息到群 %d 失败: %s", groupId, e.getMessage())
                     );
@@ -642,9 +660,26 @@ public class DouyinMonitorService {
         int index = 1;
         for (UserMonitorInfo userInfo : monitoredUsers.values()) {
             list.append(index++).append(". ");
-            list.append(userInfo.nickname).append(" (").append(userInfo.secUserId).append(")\n");
+            list.append(userInfo.nickname != null ? userInfo.nickname : "未知用户");
+            list.append(" (").append(userInfo.secUserId).append(")\n");
             list.append("   状态: ").append(userInfo.isActive ? "活跃" : "暂停");
             list.append(", 失败次数: ").append(userInfo.failureCount).append("\n");
+            
+            // 添加最后更新时间
+            if (userInfo.lastUpdateTime > 0) {
+                String lastUpdateTimeStr = cn.hutool.core.date.DateUtil.formatDateTime(
+                    new java.util.Date(userInfo.lastUpdateTime));
+                list.append("   最后更新: ").append(lastUpdateTimeStr).append("\n");
+            } else {
+                list.append("   最后更新: 未知\n");
+            }
+            
+            // 添加最后检查时间
+            if (userInfo.lastCheckTime > 0) {
+                String lastCheckTimeStr = cn.hutool.core.date.DateUtil.formatDateTime(
+                    new java.util.Date(userInfo.lastCheckTime));
+                list.append("   最后检查: ").append(lastCheckTimeStr).append("\n");
+            }
         }
         
         return list.toString();
@@ -674,6 +709,15 @@ public class DouyinMonitorService {
     public String getMonitoredUserNickname(String secUserId) {
         UserMonitorInfo userInfo = monitoredUsers.get(secUserId);
         return userInfo != null ? userInfo.nickname : null;
+    }
+    
+    /**
+     * 获取监控用户信息
+     * @param secUserId 用户ID
+     * @return 用户监控信息，如果用户不存在则返回null
+     */
+    public UserMonitorInfo getMonitoredUserInfo(String secUserId) {
+        return monitoredUsers.get(secUserId);
     }
     
     /**

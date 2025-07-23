@@ -120,14 +120,7 @@ public class AsyncOnlineStatusMonitor {
             UnifiedSchedulerManager.getInstance().executeTask(this::executeBatchQuery);
         } else {
             // 对于单个查询，设置较短的延迟后执行批量查询以提高响应速度
-            UnifiedSchedulerManager.getInstance().getExecutor().execute(() -> {
-                try {
-                    Thread.sleep(500);
-                    executeBatchQuery();
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
-            });
+            delayAsync(500).thenRun(this::executeBatchQuery);
         }
         
         return future;
@@ -418,7 +411,11 @@ public class AsyncOnlineStatusMonitor {
                 // 异步发送消息，避免阻塞监控流程
                 java.util.concurrent.CompletableFuture.runAsync(() -> {
                     try {
-                        group.sendMessage(message);
+                        // 发送普通文本消息，不@全体成员
+                        // 仅发送正常状态消息，不发送错误消息
+                        if (!message.contains("错误") && !message.contains("失败") && !message.contains("异常")) {
+                            group.sendMessage(message);
+                        }
                     } catch (Exception e) {
                         // 静默处理发送异常
                     }
@@ -834,5 +831,32 @@ public class AsyncOnlineStatusMonitor {
         public String getRawResponse() { return rawResponse; }
         public long getTimestamp() { return timestamp; }
         public boolean isExpired() { return System.currentTimeMillis() > expireTime; }
+    }
+    
+    /**
+     * 异步延迟方法，替代Thread.sleep避免阻塞
+     * @param delayMs 延迟毫秒数
+     * @return CompletableFuture用于异步处理
+     */
+    private java.util.concurrent.CompletableFuture<Void> delayAsync(long delayMs) {
+        try {
+            // 使用统一调度器进行真正的异步延迟
+            java.util.concurrent.CompletableFuture<Void> delayFuture = new java.util.concurrent.CompletableFuture<>();
+            
+            UnifiedSchedulerManager.getInstance().getExecutor().execute(() -> {
+                try {
+                    Thread.sleep(delayMs);
+                    delayFuture.complete(null);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    delayFuture.completeExceptionally(e);
+                }
+            });
+            
+            return delayFuture;
+        } catch (Exception e) {
+            // 如果异步延迟失败，返回立即完成的Future
+            return java.util.concurrent.CompletableFuture.completedFuture(null);
+        }
     }
 }
