@@ -249,7 +249,7 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
     }
     
     /**
-     * 内部下载方法（集成缓存）
+     * 内部下载方法（集成缓存，增强版）
      * 
      * @param url 资源URL
      * @param fileExtension 文件扩展名
@@ -257,21 +257,46 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
      * @throws IOException 当下载失败时抛出
      */
     private File downloadToTempFileInternal(String url, String fileExtension) throws IOException {
-        // 下载开始
+        java.util.logging.Logger logger = java.util.logging.Logger.getLogger(this.getClass().getName());
+        logger.setUseParentHandlers(false); // 不在控制台显示日志
+        
+        logger.info("开始下载资源: " + url);
         
         Pocket48ResourceCache cache = Pocket48ResourceCache.getInstance();
         
         // 使用UnifiedHttpClient下载文件并直接缓存
         try (InputStream inputStream = UnifiedHttpClient.getInstance().getInputStreamWithHeaders(url, getPocket48Headers())) {
-            // 直接从流缓存文件
-            File cachedFile = cache.cacheFromStream(url, inputStream, fileExtension);
-            if (cachedFile != null) {
-                // 下载完成
-                return cachedFile;
-            } else {
-                throw new IOException("缓存文件失败: " + url);
+            if (inputStream == null) {
+                throw new IOException("获取输入流失败，可能是网络问题或资源不存在: " + url);
+            }
+            
+            // 使用BufferedInputStream提高读取性能
+            try (java.io.BufferedInputStream bufferedStream = new java.io.BufferedInputStream(inputStream, 8192)) {
+                // 直接从流缓存文件
+                File cachedFile = cache.cacheFromStream(url, bufferedStream, fileExtension);
+                if (cachedFile != null && cachedFile.exists() && cachedFile.length() > 0) {
+                    logger.info("资源下载并缓存成功: " + url + ", 文件大小: " + cachedFile.length() + " bytes");
+                    
+                    // 验证下载的文件是否为有效图片（如果是图片文件）
+                    if (fileExtension != null && (fileExtension.toLowerCase().contains("jpg") || 
+                        fileExtension.toLowerCase().contains("jpeg") || 
+                        fileExtension.toLowerCase().contains("png") || 
+                        fileExtension.toLowerCase().contains("gif"))) {
+                        
+                        // 验证图片完整性
+                        if (!net.luffy.util.ImageFormatDetector.validateImageIntegrity(cachedFile)) {
+                            logger.warning("下载的图片文件可能损坏: " + cachedFile.getAbsolutePath());
+                            // 不抛出异常，让上层处理
+                        }
+                    }
+                    
+                    return cachedFile;
+                } else {
+                    throw new IOException("缓存文件失败或文件为空: " + url);
+                }
             }
         } catch (Exception e) {
+            logger.severe("下载失败: " + e.getMessage() + ", URL: " + url);
             throw new IOException("下载失败: " + e.getMessage() + " " + url, e);
         }
     }

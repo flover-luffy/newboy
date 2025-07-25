@@ -8,7 +8,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.Logger;
 import net.luffy.util.UnifiedSchedulerManager;
+import net.luffy.util.ImageFormatDetector;
 
 /**
  * 口袋48资源缓存管理器
@@ -39,7 +41,7 @@ public class Pocket48ResourceCache {
         try {
             Files.createDirectories(cacheDir);
         } catch (IOException e) {
-            System.err.println("[缓存警告] 无法创建缓存目录: " + e.getMessage());
+            throw new RuntimeException("无法创建缓存目录: " + e.getMessage(), e);
         }
         
         this.urlToFileMap = new ConcurrentHashMap<>();
@@ -89,6 +91,9 @@ public class Pocket48ResourceCache {
      * @return 缓存的文件
      */
     public File cacheFile(String url, File sourceFile, String fileExtension) {
+        Logger logger = Logger.getLogger("Pocket48ResourceCache");
+        logger.setUseParentHandlers(false); // 不在控制台显示日志
+        
         try {
             // 生成缓存文件名
             String fileName = generateCacheFileName(url, fileExtension);
@@ -98,54 +103,20 @@ public class Pocket48ResourceCache {
             if (cacheFile.exists()) {
                 fileAccessTime.put(cacheFile.getAbsolutePath(), System.currentTimeMillis());
                 urlToFileMap.put(url, cacheFile.getAbsolutePath());
+                logger.info("使用现有缓存文件: " + cacheFile.getName());
                 return cacheFile;
             }
             
             // 复制文件到缓存目录
             Files.copy(sourceFile.toPath(), cacheFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
             
-            // 更新缓存映射
-            urlToFileMap.put(url, cacheFile.getAbsolutePath());
-            fileAccessTime.put(cacheFile.getAbsolutePath(), System.currentTimeMillis());
+            logger.info("文件缓存完成: " + cacheFile.getName() + ", 大小: " + cacheFile.length() + " bytes");
             
-            // 文件已缓存
-            
-            // 检查缓存大小
-            checkCacheSize();
-            
-            return cacheFile;
-        } catch (IOException e) {
-            System.err.println("[缓存错误] 无法缓存文件: " + e.getMessage());
-            return sourceFile; // 返回原文件
-        }
-    }
-    
-    /**
-     * 直接缓存下载的文件
-     * @param url 资源URL
-     * @param inputStream 输入流
-     * @param fileExtension 文件扩展名
-     * @return 缓存的文件
-     */
-    public File cacheFromStream(String url, InputStream inputStream, String fileExtension) {
-        try {
-            // 检查是否已有缓存
-            File existingCache = getCachedFile(url);
-            if (existingCache != null) {
-                inputStream.close();
-                return existingCache;
-            }
-            
-            // 生成缓存文件名
-            String fileName = generateCacheFileName(url, fileExtension);
-            File cacheFile = new File(cacheDir.toFile(), fileName);
-            
-            // 写入缓存文件
-            try (FileOutputStream outputStream = new FileOutputStream(cacheFile)) {
-                byte[] buffer = new byte[8192];
-                int bytesRead;
-                while ((bytesRead = inputStream.read(buffer)) != -1) {
-                    outputStream.write(buffer, 0, bytesRead);
+            // 验证缓存的图片文件完整性
+            if (isImageFile(cacheFile)) {
+                if (!ImageFormatDetector.validateImageIntegrity(cacheFile)) {
+                    logger.warning("缓存的图片文件可能损坏: " + cacheFile.getName());
+                    // 不删除文件，让上层逻辑处理
                 }
             }
             
@@ -160,8 +131,81 @@ public class Pocket48ResourceCache {
             
             return cacheFile;
         } catch (IOException e) {
-            System.err.println("[缓存错误] 无法从流缓存文件: " + e.getMessage());
-            return null;
+            logger.severe("[缓存错误] 无法缓存文件: " + e.getMessage());
+            return sourceFile; // 返回原文件
+        }
+    }
+    
+    /**
+     * 判断文件是否为图片文件
+     * @param file 文件
+     * @return 是否为图片文件
+     */
+    private boolean isImageFile(File file) {
+        String fileName = file.getName().toLowerCase();
+        return fileName.endsWith(".jpg") || fileName.endsWith(".jpeg") || 
+               fileName.endsWith(".png") || fileName.endsWith(".gif") || 
+               fileName.endsWith(".bmp") || fileName.endsWith(".webp");
+    }
+    
+    /**
+     * 直接缓存下载的文件
+     * @param url 资源URL
+     * @param inputStream 输入流
+     * @param fileExtension 文件扩展名
+     * @return 缓存的文件
+     */
+    public File cacheFromStream(String url, InputStream inputStream, String fileExtension) {
+        Logger logger = Logger.getLogger("Pocket48ResourceCache");
+        logger.setUseParentHandlers(false); // 不在控制台显示日志
+        
+        try {
+            // 检查是否已有缓存
+            File existingCache = getCachedFile(url);
+            if (existingCache != null) {
+                inputStream.close();
+                logger.info("使用现有缓存文件: " + existingCache.getName());
+                return existingCache;
+            }
+            
+            // 生成缓存文件名
+            String fileName = generateCacheFileName(url, fileExtension);
+            File cacheFile = new File(cacheDir.toFile(), fileName);
+            
+            // 写入缓存文件
+            long totalBytes = 0;
+            try (FileOutputStream outputStream = new FileOutputStream(cacheFile)) {
+                byte[] buffer = new byte[8192];
+                int bytesRead;
+                while ((bytesRead = inputStream.read(buffer)) != -1) {
+                    outputStream.write(buffer, 0, bytesRead);
+                    totalBytes += bytesRead;
+                }
+            }
+            
+            logger.info("缓存文件写入完成: " + cacheFile.getName() + ", 大小: " + totalBytes + " bytes");
+            
+            // 验证缓存的图片文件完整性
+            if (isImageFile(cacheFile)) {
+                if (!ImageFormatDetector.validateImageIntegrity(cacheFile)) {
+                    logger.warning("缓存的图片文件可能损坏: " + cacheFile.getName());
+                    // 不删除文件，让上层逻辑处理
+                }
+            }
+            
+            // 更新缓存映射
+            urlToFileMap.put(url, cacheFile.getAbsolutePath());
+            fileAccessTime.put(cacheFile.getAbsolutePath(), System.currentTimeMillis());
+            
+            // 文件已缓存
+            
+            // 检查缓存大小
+            checkCacheSize();
+            
+            return cacheFile;
+        } catch (IOException e) {
+            logger.severe("[缓存错误] 无法缓存文件: " + e.getMessage());
+            return null; // 缓存失败
         } finally {
             try {
                 inputStream.close();
@@ -218,7 +262,7 @@ public class Pocket48ResourceCache {
                 // 缓存清理完成
             }
         } catch (Exception e) {
-            System.err.println("[缓存清理错误] " + e.getMessage());
+            // 静默处理缓存清理错误
         }
     }
     
@@ -243,7 +287,7 @@ public class Pocket48ResourceCache {
                 cleanOldestFiles(totalSize - MAX_CACHE_SIZE / 2); // 清理到一半大小
             }
         } catch (IOException e) {
-            System.err.println("[缓存大小检查错误] " + e.getMessage());
+            // 静默处理缓存大小检查错误
         }
     }
     
@@ -311,7 +355,7 @@ public class Pocket48ResourceCache {
             fileAccessTime.clear();
             // 所有缓存已清空
         } catch (IOException e) {
-            System.err.println("[缓存清空错误] " + e.getMessage());
+            // 静默处理缓存清空错误
         }
     }
     

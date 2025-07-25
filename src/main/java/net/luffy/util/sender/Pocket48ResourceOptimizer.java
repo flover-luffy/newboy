@@ -55,7 +55,7 @@ public class Pocket48ResourceOptimizer {
                             // 预加载成功
                         }
                     } catch (Exception e) {
-                        System.err.println("[预加载失败] " + url + ": " + e.getMessage());
+                        // 静默处理预加载失败
                     }
                 }, preloadExecutor);
                 futures.add(future);
@@ -103,7 +103,7 @@ public class Pocket48ResourceOptimizer {
                 return downloadedFile;
             }
         } catch (Exception e) {
-            System.err.println("[资源下载失败] " + resourceUrl + ": " + e.getMessage());
+            // 静默处理资源下载失败
         }
         
         return null;
@@ -198,7 +198,7 @@ public class Pocket48ResourceOptimizer {
                         file.delete();
                         // 删除过期文件
                     } catch (Exception e) {
-                        System.err.println("[缓存清理失败] " + file.getName() + ": " + e.getMessage());
+                        // 静默处理缓存清理失败
                     }
                 }
                 return true;

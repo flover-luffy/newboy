@@ -54,11 +54,12 @@ public class UnifiedHttpClient {
      */
     private OkHttpClient createOptimizedClient() {
         return new OkHttpClient.Builder()
-                .connectTimeout(5, TimeUnit.SECONDS)  // 调整连接超时为5秒，避免连接失败
-                .readTimeout(8, TimeUnit.SECONDS)     // 调整读取超时为8秒，确保稳定性
-                .writeTimeout(8, TimeUnit.SECONDS)    // 调整写入超时为8秒，确保稳定性
-                .connectionPool(new ConnectionPool(30, 5, TimeUnit.MINUTES))  // 保持连接池优化
-                .retryOnConnectionFailure(true)      // 重新启用重试机制以提高稳定性
+                .connectTimeout(10, TimeUnit.SECONDS)  // 增加连接超时为10秒，提高网络不稳定情况下的成功率
+                .readTimeout(15, TimeUnit.SECONDS)     // 增加读取超时为15秒，适应大文件下载
+                .writeTimeout(15, TimeUnit.SECONDS)    // 增加写入超时为15秒，适应大文件上传
+                .connectionPool(new ConnectionPool(50, 5, TimeUnit.MINUTES))  // 增加连接池大小到50
+                .retryOnConnectionFailure(true)      // 启用连接失败重试机制
+                .addInterceptor(new RetryInterceptor(3)) // 添加全局重试拦截器，最多重试3次
                 .addInterceptor(new LoggingInterceptor())
                 .addInterceptor(new PerformanceInterceptor())
                 .build();
@@ -500,6 +501,97 @@ public class UnifiedHttpClient {
                 
                 throw e;
             }
+        }
+    }
+    
+    /**
+     * 重试拦截器
+     * 实现全局HTTP请求重试机制，支持指数退避策略
+     */
+    private static class RetryInterceptor implements Interceptor {
+        private final int maxRetries;
+        private final long baseDelayMs = 1000; // 基础延迟1秒
+        
+        public RetryInterceptor(int maxRetries) {
+            this.maxRetries = maxRetries;
+        }
+        
+        @Override
+        public Response intercept(Chain chain) throws IOException {
+            Request request = chain.request();
+            IOException lastException = null;
+            int retryCount = 0;
+            
+            while (retryCount <= maxRetries) {
+                try {
+                    // 尝试执行请求
+                    Response response = chain.proceed(request);
+                    
+                    // 检查响应是否成功
+                    if (response.isSuccessful() || !isRetryable(response.code())) {
+                        return response; // 成功或不可重试状态码，直接返回
+                    }
+                    
+                    // 关闭当前响应，准备重试
+                    if (response.body() != null) {
+                        response.close();
+                    }
+                    
+                    // 如果已达到最大重试次数，返回最后一个响应
+                    if (retryCount == maxRetries) {
+                        return response;
+                    }
+                    
+                } catch (IOException e) {
+                    // 保存异常，准备重试
+                    lastException = e;
+                    
+                    // 如果已达到最大重试次数，抛出最后捕获的异常
+                    if (retryCount == maxRetries) {
+                        throw lastException;
+                    }
+                }
+                
+                // 计算重试延迟（指数退避策略）
+                long delayMs = calculateRetryDelay(retryCount);
+                try {
+                    Thread.sleep(delayMs);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("重试被中断", e);
+                }
+                
+                // 记录重试日志
+                if (System.getProperty("http.debug", "false").equals("true")) {
+                    System.out.printf("[HTTP-RETRY] 第%d次重试 %s %s (延迟: %dms)%n", 
+                        retryCount + 1, request.method(), request.url(), delayMs);
+                }
+                
+                retryCount++;
+            }
+            
+            // 如果执行到这里，说明所有重试都失败了
+            throw new IOException("达到最大重试次数 " + maxRetries + " 后仍然失败", lastException);
+        }
+        
+        /**
+         * 判断HTTP状态码是否可以重试
+         * @param code HTTP状态码
+         * @return 是否可重试
+         */
+        private boolean isRetryable(int code) {
+            // 5xx服务器错误和部分4xx客户端错误可以重试
+            return code >= 500 || code == 429 || code == 408;
+        }
+        
+        /**
+         * 计算重试延迟时间（指数退避策略）
+         * @param retryCount 当前重试次数
+         * @return 延迟毫秒数
+         */
+        private long calculateRetryDelay(int retryCount) {
+            // 指数退避策略：baseDelay * (1.5^retryCount)，最大10秒
+            return Math.min((long)(baseDelayMs * Math.pow(1.5, retryCount)), 10000);
         }
     }
     

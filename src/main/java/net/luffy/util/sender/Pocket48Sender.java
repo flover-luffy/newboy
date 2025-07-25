@@ -75,7 +75,7 @@ public class Pocket48Sender extends Sender {
                 
                 // 智能重试机制：如果创建失败，进行多次重试
                 if (cache.get(roomID) == null) {
-                    System.out.println("[重试机制] 开始重试创建房间缓存: " + roomID);
+                    // 开始重试创建房间缓存
                     
                     boolean retrySuccess = false;
                     int maxRetries = 3;
@@ -83,26 +83,17 @@ public class Pocket48Sender extends Sender {
                     
                     for (int attempt = 1; attempt <= maxRetries && !retrySuccess; attempt++) {
                         try {
-                            System.out.println("[重试机制] 房间 " + roomID + " 第 " + attempt + "/" + maxRetries + " 次重试，等待 " + (retryDelays[attempt-1]/1000) + " 秒...");
                             Thread.sleep(retryDelays[attempt-1]);
                             
                             Pocket48SenderCache newCache = Pocket48SenderCache.create(roomID, endTime);
-                            if (newCache != null) {
-                                cache.put(roomID, newCache);
-                                retrySuccess = true;
-                                System.out.println("[重试成功] 房间 " + roomID + " 缓存创建成功，第 " + attempt + " 次重试");
-                            } else {
-                                System.err.println("[重试失败] 房间 " + roomID + " 第 " + attempt + " 次重试失败");
-                            }
+                            cache.put(roomID, newCache);
+                            retrySuccess = true;
                         } catch (InterruptedException e) {
                             Thread.currentThread().interrupt();
-                            System.err.println("[重试中断] 房间 " + roomID + " 重试被中断");
                             break;
+                        } catch (RuntimeException e) {
+                            // 静默处理缓存创建失败，继续重试
                         }
-                    }
-                    
-                    if (!retrySuccess) {
-                        System.err.println("[重试失败] 房间 " + roomID + " 经过 " + maxRetries + " 次重试仍然失败，将在下次轮询时重新尝试");
                     }
                 }
             }
@@ -111,7 +102,6 @@ public class Pocket48Sender extends Sender {
 
             for (long roomID : subscribe.getRoomIDs()) {
                 if (cache.get(roomID) == null) {
-                    System.err.println("跳过房间 " + roomID + "，缓存创建失败");
                     continue;
                 }
 
@@ -505,25 +495,97 @@ public class Pocket48Sender extends Sender {
                 return new Pocket48SenderMessage(false, null,
                         new Message[]{new PlainText(replyContent)});
             case LIVEPUSH:
-                // 直播封面处理：启用缓存，优化下载机制
+                // 直播封面处理：启用缓存，优化下载机制，增强格式检测和转换（改进版）
                 File coverFile = null;
+                File convertedCoverFile = null;
+                java.util.logging.Logger livePushLogger = java.util.logging.Logger.getLogger("Pocket48Sender.LIVEPUSH");
+                livePushLogger.setUseParentHandlers(false); // 不在控制台显示日志
+                
                 try {
                     String coverUrl = message.getLivePush().getCover();
+                    livePushLogger.info("开始处理直播封面: " + coverUrl);
                     
                     // 优先使用缓存，缓存未命中时下载（启用缓存机制）
                     coverFile = unifiedResourceManager.getResourceSmart(coverUrl);
                     
                     // 如果智能获取失败，使用带重试的下载方式
                     if (coverFile == null || !coverFile.exists()) {
-                        coverFile = unifiedResourceManager.downloadToTempFileWithRetry(coverUrl, ".jpg", 5);
+                        livePushLogger.info("缓存未命中，开始下载直播封面");
+                        // 根据URL推断文件扩展名
+                        String inferredExt = inferImageExtensionFromUrl(coverUrl);
+                        coverFile = unifiedResourceManager.downloadToTempFileWithRetry(coverUrl, inferredExt, 5);
                     }
                     
                     if (coverFile == null || !coverFile.exists()) {
                         throw new RuntimeException("直播封面获取失败");
                     }
                     
+                    livePushLogger.info("直播封面文件获取成功: " + coverFile.getAbsolutePath() + ", 大小: " + coverFile.length() + " bytes");
+                    
+                    // 检测图片格式
+                    String imageFormat = net.luffy.util.ImageFormatDetector.detectFormat(coverFile);
+                    livePushLogger.info("检测到图片格式: " + imageFormat);
+                    
+                    // 验证图片完整性
+                    if (!net.luffy.util.ImageFormatDetector.validateImageIntegrity(coverFile)) {
+                        livePushLogger.warning("图片完整性验证失败，尝试重新下载");
+                        // 尝试重新下载一次
+                        coverFile = unifiedResourceManager.downloadToTempFileWithRetry(coverUrl, ".jpg", 2);
+                        if (coverFile == null || !net.luffy.util.ImageFormatDetector.validateImageIntegrity(coverFile)) {
+                            throw new RuntimeException("图片下载后仍然损坏");
+                        }
+                        imageFormat = net.luffy.util.ImageFormatDetector.detectFormat(coverFile);
+                    }
+                    
+                    // 如果图片格式无法识别或不兼容，尝试使用ImageIO读取并重新保存
+                    if ("UNKNOWN".equals(imageFormat) || !net.luffy.util.ImageFormatDetector.isQQCompatible(imageFormat)) {
+                        livePushLogger.info("图片格式不兼容，开始转换: " + imageFormat + " -> JPEG");
+                        try {
+                            // 尝试读取图片并转换为兼容格式
+                            java.awt.image.BufferedImage image = javax.imageio.ImageIO.read(coverFile);
+                            if (image != null) {
+                                // 创建转换后的文件
+                                convertedCoverFile = new File(coverFile.getParent(), "converted_" + 
+                                    System.currentTimeMillis() + "_" + 
+                                    coverFile.getName().replaceAll("\\.[^.]+$", ".jpg"));
+                                
+                                // 保存为JPEG格式，设置高质量
+                                javax.imageio.ImageWriter writer = javax.imageio.ImageIO.getImageWritersByFormatName("JPEG").next();
+                                javax.imageio.ImageWriteParam param = writer.getDefaultWriteParam();
+                                param.setCompressionMode(javax.imageio.ImageWriteParam.MODE_EXPLICIT);
+                                param.setCompressionQuality(0.9f); // 高质量
+                                
+                                try (java.io.FileOutputStream fos = new java.io.FileOutputStream(convertedCoverFile);
+                                     javax.imageio.stream.ImageOutputStream ios = javax.imageio.ImageIO.createImageOutputStream(fos)) {
+                                    writer.setOutput(ios);
+                                    writer.write(null, new javax.imageio.IIOImage(image, null, null), param);
+                                    writer.dispose();
+                                }
+                                
+                                livePushLogger.info("图片转换成功: " + convertedCoverFile.getAbsolutePath());
+                                // 使用转换后的文件
+                                coverFile = convertedCoverFile;
+                                imageFormat = "JPEG";
+                            } else {
+                                livePushLogger.severe("图片无法读取，可能是损坏的图片或不支持的格式");
+                                throw new RuntimeException("图片无法读取");
+                            }
+                        } catch (Exception e) {
+                            livePushLogger.severe("图片格式转换失败: " + e.getMessage());
+                            throw new RuntimeException("图片格式转换失败: " + e.getMessage(), e);
+                        }
+                    }
+                    
+                    // 最终验证转换后的图片
+                    if (!net.luffy.util.ImageFormatDetector.validateImageIntegrity(coverFile)) {
+                        throw new RuntimeException("转换后的图片仍然无效");
+                    }
+                    
+                    livePushLogger.info("准备上传图片，最终格式: " + imageFormat);
+                    
                     try (ExternalResource coverResource = ExternalResource.create(coverFile)) {
-                        Image cover = group.uploadImage(coverResource);
+                        // 带重试机制的图片上传，解决网络超时问题
+                        Image cover = uploadImageWithRetry(coverResource, 3);
                         String livePushContent = "【" + n + "】: 直播中快来~\n直播标题：" + message.getLivePush().getTitle();
                         
                         // 构建消息链：文本 + 图片 + 补充信息
@@ -533,11 +595,11 @@ public class Pocket48Sender extends Sender {
                         
                         // 直播推送自动@全体成员（如果机器人有管理权限）
                         Message finalMessage = toNotification(messageChain);
+                        livePushLogger.info("直播封面处理完成，消息发送成功");
                         return new Pocket48SenderMessage(false, null, new Message[]{finalMessage});
                     }
                 } catch (Exception e) {
-                    System.err.println("[错误] 处理直播封面失败: " + e.getMessage());
-                    e.printStackTrace();
+                    livePushLogger.severe("处理直播封面失败: " + e.getMessage());
                     
                     // 封面处理失败时，发送纯文本消息（不暴露异常信息给用户）
                     String fallbackContent = "【" + n + "】: 直播中快来~\n直播标题：" + message.getLivePush().getTitle() + "\n频道：" + r + "\n时间: " + timeStr;
@@ -548,8 +610,19 @@ public class Pocket48Sender extends Sender {
                     if (coverFile != null && coverFile.exists() && !coverFile.getAbsolutePath().contains("cache")) {
                         try {
                             coverFile.delete();
+                            livePushLogger.info("清理临时文件: " + coverFile.getAbsolutePath());
                         } catch (Exception e) {
-                            System.err.println("[警告] 删除临时直播封面文件失败: " + e.getMessage());
+                            livePushLogger.warning("删除临时直播封面文件失败: " + e.getMessage());
+                        }
+                    }
+                    
+                    // 清理转换后的临时文件
+                    if (convertedCoverFile != null && convertedCoverFile.exists()) {
+                        try {
+                            convertedCoverFile.delete();
+                            livePushLogger.info("清理转换后的临时文件: " + convertedCoverFile.getAbsolutePath());
+                        } catch (Exception e) {
+                            livePushLogger.warning("删除转换后的临时直播封面文件失败: " + e.getMessage());
                         }
                     }
                 }
@@ -1240,6 +1313,83 @@ public class Pocket48Sender extends Sender {
         }
     }
 
+    /**
+     * 根据URL推断图片文件扩展名
+     * @param url 图片URL
+     * @return 推断的文件扩展名（包含点号）
+     */
+    private String inferImageExtensionFromUrl(String url) {
+        if (url == null || url.trim().isEmpty()) {
+            return ".jpg"; // 默认扩展名
+        }
+        
+        // 移除查询参数
+        String cleanUrl = url.split("\\?")[0].toLowerCase();
+        
+        // 从URL路径推断扩展名
+        if (cleanUrl.contains(".jpg") || cleanUrl.contains(".jpeg")) {
+            return ".jpg";
+        } else if (cleanUrl.contains(".png")) {
+            return ".png";
+        } else if (cleanUrl.contains(".gif")) {
+            return ".gif";
+        } else if (cleanUrl.contains(".bmp")) {
+            return ".bmp";
+        } else if (cleanUrl.contains(".webp")) {
+            return ".webp";
+        } else if (cleanUrl.contains("/image/") || cleanUrl.contains("cover") || cleanUrl.contains("thumb")) {
+            // 如果URL路径包含图片相关关键词，默认为jpg
+            return ".jpg";
+        }
+        
+        // 默认返回jpg扩展名
+        return ".jpg";
+    }
+    
+    /**
+     * 带重试机制的图片上传方法，解决网络超时问题
+     * @param resource 图片资源
+     * @param maxRetries 最大重试次数
+     * @return 上传的图片对象
+     * @throws RuntimeException 上传失败时抛出异常
+     */
+    private Image uploadImageWithRetry(ExternalResource resource, int maxRetries) {
+        int retryCount = 0;
+        Exception lastException = null;
+        java.util.logging.Logger uploadLogger = java.util.logging.Logger.getLogger("Pocket48Sender.Upload");
+        uploadLogger.setUseParentHandlers(false); // 不在控制台显示日志
+        
+        while (retryCount <= maxRetries) {
+            try {
+                // 尝试上传图片
+                uploadLogger.info("尝试上传图片，第" + (retryCount + 1) + "次");
+                Image result = group.uploadImage(resource);
+                uploadLogger.info("图片上传成功");
+                return result;
+            } catch (Exception e) {
+                lastException = e;
+                retryCount++;
+                
+                if (retryCount <= maxRetries) {
+                    // 指数退避延迟：1秒、2秒、4秒
+                    long delayMs = 1000L * (1L << (retryCount - 1));
+                    uploadLogger.warning("图片上传失败，第" + retryCount + "次重试，延迟" + delayMs + "ms: " + e.getMessage());
+                    
+                    try {
+                        Thread.sleep(delayMs);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new RuntimeException("图片上传被中断", ie);
+                    }
+                } else {
+                    uploadLogger.severe("图片上传失败，已达到最大重试次数: " + e.getMessage());
+                }
+            }
+        }
+        
+        throw new RuntimeException("图片上传失败，重试" + maxRetries + "次后仍然失败", lastException);
+    }
+    
     /**
      * 关闭发送器，释放资源
      */
