@@ -214,10 +214,12 @@ public class WeiboSender extends Sender {
         String text = handleWeiboText(oriText); //另有文本格式的text_raw(草稿中样式)，但视频提示不友好，我毅然决然选择text+处理
         Message o = new PlainText(text + "\n");
 
-        //图片夹视频
+        //图片夹视频 - 优化：只推送第一张图片
         if (b.containsKey("mix_media_info")) {
-            for (Object media_ : b.getJSONObject("mix_media_info").getJSONArray("items").stream().toArray()) {
-                JSONObject media = jsonParser.parseObj(media_.toString());
+            Object[] mediaItems = b.getJSONObject("mix_media_info").getJSONArray("items").stream().toArray();
+            if (mediaItems.length > 0) {
+                // 只处理第一个媒体项
+                JSONObject media = jsonParser.parseObj(mediaItems[0].toString());
                 String id = media.getStr("id");
                 JSONObject data = media.getJSONObject("data");
                 String cover = data.getStr("page_pic");
@@ -240,10 +242,13 @@ public class WeiboSender extends Sender {
             }
         }
 
-        //单独图片
+        //单独图片 - 优化：只推送第一张图片
         else if (b.containsKey("pic_infos")) {
             JSONObject pic_infos = b.getJSONObject("pic_infos");
-            for (String pic_id : b.getJSONArray("pic_ids").toArray(new String[0])) {
+            String[] pic_ids = b.getJSONArray("pic_ids").toArray(new String[0]);
+            if (pic_ids.length > 0) {
+                // 只处理第一张图片
+                String pic_id = pic_ids[0];
                 JSONObject pic_info = pic_infos.getJSONObject(pic_id);
                 String src = pic_info.getJSONObject("original")
                         .getStr("url");

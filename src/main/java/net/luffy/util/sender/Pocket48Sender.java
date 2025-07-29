@@ -67,19 +67,17 @@ public class Pocket48Sender extends Sender {
             Pocket48Subscribe subscribe = Newboy.INSTANCE.getProperties().pocket48_subscribe.get(group_id);
             Pocket48Handler pocket = Newboy.INSTANCE.getHandlerPocket48();
 
-            //房间消息获取 - 改进的重试机制
+            //房间消息获取 - 改进的重试机制（优化：减少重试延迟）
             for (long roomID : subscribe.getRoomIDs()) {
                 if (!cache.containsKey(roomID)) {
                     cache.put(roomID, Pocket48SenderCache.create(roomID, endTime));
                 }
                 
-                // 智能重试机制：如果创建失败，进行多次重试
+                // 智能重试机制：如果创建失败，进行快速重试
                 if (cache.get(roomID) == null) {
-                    // 开始重试创建房间缓存
-                    
                     boolean retrySuccess = false;
-                    int maxRetries = 3;
-                    long[] retryDelays = {2000, 5000, 10000}; // 递增延迟：2秒、5秒、10秒
+                    int maxRetries = 2; // 减少重试次数
+                    long[] retryDelays = {500, 1500}; // 减少延迟：0.5秒、1.5秒
                     
                     for (int attempt = 1; attempt <= maxRetries && !retrySuccess; attempt++) {
                         try {
@@ -118,20 +116,21 @@ public class Pocket48Sender extends Sender {
                 if (voiceStatus.containsKey(roomID)) {
                     String[] r = handleVoiceList(voiceStatus.get(roomID), n);
                     if (r[0] != null || r[1] != null) {
-                        String ownerName = Pocket48Handler.getOwnerOrTeamName(roomInfo);
-                        boolean private_ = ownerName.equals(roomInfo.getOwnerName());
-                        String message = "【" + roomInfo.getRoomName() + "(" + ownerName + ")房间语音】: \n";
-
+                        boolean private_ = Pocket48Handler.getOwnerOrTeamName(roomInfo).equals(roomInfo.getOwnerName());
+                        String currentTime = cn.hutool.core.date.DateUtil.format(new java.util.Date(), "yyyy-MM-dd HH:mm:ss");
+                        String message = "【" + roomInfo.getRoomName() + "房间语音】\n";
+                        
                         if (r[0] != null) {
                             message += private_ ?
-                                    "上麦啦~" //成员房间
-                                    : "★ 上麦：\n" + r[0] + "\n"; //队伍房间
+                                    "上麦啦~ (" + currentTime + ")" //成员房间
+                                    : "★ 上麦：" + r[0] + " (" + currentTime + ")\n"; //队伍房间
                         }
                         if (r[1] != null) {
                             message += private_ ?
-                                    "下麦了捏~"
-                                    : "☆ 下麦：\n" + r[1];
+                                    "下麦了捏~ (" + currentTime + ")"
+                                    : "☆ 下麦：" + r[1] + " (" + currentTime + ")";
                         }
+                        
                         Message m = new PlainText(message);
                         group.sendMessage(r[0] != null ? toNotification(m) : m); //有人上麦时才@all
                     }
@@ -139,7 +138,7 @@ public class Pocket48Sender extends Sender {
                 voiceStatus.put(roomID, n);
             }
 
-            //房间消息 - 优化：按时间统一排序后逐个发送，避免批量发送造成的延迟
+            //房间消息 - 优化：快速发送模式，减少延迟
             if (totalMessages.size() > 0) {
                 // 将所有房间的消息合并并按时间排序
                 List<Pocket48Message> allMessages = new ArrayList<>();
@@ -152,8 +151,8 @@ public class Pocket48Sender extends Sender {
                 // 按消息时间戳排序（从旧到新）
                 allMessages.sort((a, b) -> Long.compare(a.getTime(), b.getTime()));
                 
-                // 使用优化的发送方法：按时间顺序逐个发送
-                sendMessagesInTimeOrder(allMessages, group);
+                // 使用优化的快速发送方法
+                sendMessagesOptimized(allMessages, group);
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -163,13 +162,19 @@ public class Pocket48Sender extends Sender {
     private String[] handleVoiceList(List<Long> a, List<Long> b) {
         String zengjia = "";
         String jianshao = "";
+        Pocket48Handler handler = Newboy.INSTANCE.getHandlerPocket48();
+        
         for (Long b0 : b) {
-            if (!a.contains(b0))
-                zengjia += "，" + b0;
+            if (!a.contains(b0)) {
+                String nickname = handler.getUserNickName(b0);
+                zengjia += "，" + (nickname != null ? nickname : String.valueOf(b0));
+            }
         }
         for (Long a0 : a) {
-            if (!b.contains(a0))
-                jianshao += "，" + a0;
+            if (!b.contains(a0)) {
+                String nickname = handler.getUserNickName(a0);
+                jianshao += "，" + (nickname != null ? nickname : String.valueOf(a0));
+            }
         }
         return new String[]{(zengjia.length() > 0 ? zengjia.substring(1) : null),
                 (jianshao.length() > 0 ? jianshao.substring(1) : null)};
@@ -495,97 +500,33 @@ public class Pocket48Sender extends Sender {
                 return new Pocket48SenderMessage(false, null,
                         new Message[]{new PlainText(replyContent)});
             case LIVEPUSH:
-                // 直播封面处理：启用缓存，优化下载机制，增强格式检测和转换（改进版）
+                // 直播封面处理：优化版本，修复无法发送封面的问题
                 File coverFile = null;
                 File convertedCoverFile = null;
-                java.util.logging.Logger livePushLogger = java.util.logging.Logger.getLogger("Pocket48Sender.LIVEPUSH");
-                livePushLogger.setUseParentHandlers(false); // 不在控制台显示日志
                 
                 try {
                     String coverUrl = message.getLivePush().getCover();
-                    livePushLogger.info("开始处理直播封面: " + coverUrl);
+                    if (coverUrl == null || coverUrl.trim().isEmpty()) {
+                        throw new RuntimeException("直播封面URL为空");
+                    }
                     
-                    // 优先使用缓存，缓存未命中时下载（启用缓存机制）
+                    // 优先使用缓存，缓存未命中时下载
                     coverFile = unifiedResourceManager.getResourceSmart(coverUrl);
                     
                     // 如果智能获取失败，使用带重试的下载方式
                     if (coverFile == null || !coverFile.exists()) {
-                        livePushLogger.info("缓存未命中，开始下载直播封面");
                         // 根据URL推断文件扩展名
                         String inferredExt = inferImageExtensionFromUrl(coverUrl);
-                        coverFile = unifiedResourceManager.downloadToTempFileWithRetry(coverUrl, inferredExt, 5);
+                        coverFile = unifiedResourceManager.downloadToTempFileWithRetry(coverUrl, inferredExt, 3);
                     }
                     
                     if (coverFile == null || !coverFile.exists()) {
-                        throw new RuntimeException("直播封面获取失败");
+                        throw new RuntimeException("直播封面下载失败");
                     }
                     
-                    livePushLogger.info("直播封面文件获取成功: " + coverFile.getAbsolutePath() + ", 大小: " + coverFile.length() + " bytes");
-                    
-                    // 检测图片格式
-                    String imageFormat = net.luffy.util.ImageFormatDetector.detectFormat(coverFile);
-                    livePushLogger.info("检测到图片格式: " + imageFormat);
-                    
-                    // 验证图片完整性
-                    if (!net.luffy.util.ImageFormatDetector.validateImageIntegrity(coverFile)) {
-                        livePushLogger.warning("图片完整性验证失败，尝试重新下载");
-                        // 尝试重新下载一次
-                        coverFile = unifiedResourceManager.downloadToTempFileWithRetry(coverUrl, ".jpg", 2);
-                        if (coverFile == null || !net.luffy.util.ImageFormatDetector.validateImageIntegrity(coverFile)) {
-                            throw new RuntimeException("图片下载后仍然损坏");
-                        }
-                        imageFormat = net.luffy.util.ImageFormatDetector.detectFormat(coverFile);
-                    }
-                    
-                    // 如果图片格式无法识别或不兼容，尝试使用ImageIO读取并重新保存
-                    if ("UNKNOWN".equals(imageFormat) || !net.luffy.util.ImageFormatDetector.isQQCompatible(imageFormat)) {
-                        livePushLogger.info("图片格式不兼容，开始转换: " + imageFormat + " -> JPEG");
-                        try {
-                            // 尝试读取图片并转换为兼容格式
-                            java.awt.image.BufferedImage image = javax.imageio.ImageIO.read(coverFile);
-                            if (image != null) {
-                                // 创建转换后的文件
-                                convertedCoverFile = new File(coverFile.getParent(), "converted_" + 
-                                    System.currentTimeMillis() + "_" + 
-                                    coverFile.getName().replaceAll("\\.[^.]+$", ".jpg"));
-                                
-                                // 保存为JPEG格式，设置高质量
-                                javax.imageio.ImageWriter writer = javax.imageio.ImageIO.getImageWritersByFormatName("JPEG").next();
-                                javax.imageio.ImageWriteParam param = writer.getDefaultWriteParam();
-                                param.setCompressionMode(javax.imageio.ImageWriteParam.MODE_EXPLICIT);
-                                param.setCompressionQuality(0.9f); // 高质量
-                                
-                                try (java.io.FileOutputStream fos = new java.io.FileOutputStream(convertedCoverFile);
-                                     javax.imageio.stream.ImageOutputStream ios = javax.imageio.ImageIO.createImageOutputStream(fos)) {
-                                    writer.setOutput(ios);
-                                    writer.write(null, new javax.imageio.IIOImage(image, null, null), param);
-                                    writer.dispose();
-                                }
-                                
-                                livePushLogger.info("图片转换成功: " + convertedCoverFile.getAbsolutePath());
-                                // 使用转换后的文件
-                                coverFile = convertedCoverFile;
-                                imageFormat = "JPEG";
-                            } else {
-                                livePushLogger.severe("图片无法读取，可能是损坏的图片或不支持的格式");
-                                throw new RuntimeException("图片无法读取");
-                            }
-                        } catch (Exception e) {
-                            livePushLogger.severe("图片格式转换失败: " + e.getMessage());
-                            throw new RuntimeException("图片格式转换失败: " + e.getMessage(), e);
-                        }
-                    }
-                    
-                    // 最终验证转换后的图片
-                    if (!net.luffy.util.ImageFormatDetector.validateImageIntegrity(coverFile)) {
-                        throw new RuntimeException("转换后的图片仍然无效");
-                    }
-                    
-                    livePushLogger.info("准备上传图片，最终格式: " + imageFormat);
-                    
+                    // 简化的图片处理：直接尝试上传，失败时进行格式转换
                     try (ExternalResource coverResource = ExternalResource.create(coverFile)) {
-                        // 带重试机制的图片上传，解决网络超时问题
-                        Image cover = uploadImageWithRetry(coverResource, 3);
+                        Image cover = uploadImageWithRetry(coverResource, 2);
                         String livePushContent = "【" + n + "】: 直播中快来~\n直播标题：" + message.getLivePush().getTitle();
                         
                         // 构建消息链：文本 + 图片 + 补充信息
@@ -593,13 +534,41 @@ public class Pocket48Sender extends Sender {
                                 .plus(cover)
                                 .plus("\n频道：" + r + "\n时间: " + timeStr);
                         
-                        // 直播推送自动@全体成员（如果机器人有管理权限）
+                        // 直播推送自动@全体成员
                         Message finalMessage = toNotification(messageChain);
-                        livePushLogger.info("直播封面处理完成，消息发送成功");
                         return new Pocket48SenderMessage(false, null, new Message[]{finalMessage});
+                    } catch (Exception uploadException) {
+                        // 上传失败，尝试格式转换
+                        try {
+                            java.awt.image.BufferedImage image = javax.imageio.ImageIO.read(coverFile);
+                            if (image != null) {
+                                // 创建转换后的文件
+                                convertedCoverFile = new File(coverFile.getParent(), "converted_" + 
+                                    System.currentTimeMillis() + "_cover.jpg");
+                                
+                                // 保存为JPEG格式
+                                javax.imageio.ImageIO.write(image, "JPEG", convertedCoverFile);
+                                
+                                // 重新尝试上传转换后的图片
+                                try (ExternalResource convertedResource = ExternalResource.create(convertedCoverFile)) {
+                                    Image cover = uploadImageWithRetry(convertedResource, 2);
+                                    String livePushContent = "【" + n + "】: 直播中快来~\n直播标题：" + message.getLivePush().getTitle();
+                                    
+                                    MessageChain messageChain = new PlainText(livePushContent + "\n")
+                                            .plus(cover)
+                                            .plus("\n频道：" + r + "\n时间: " + timeStr);
+                                    
+                                    Message finalMessage = toNotification(messageChain);
+                                    return new Pocket48SenderMessage(false, null, new Message[]{finalMessage});
+                                }
+                            } else {
+                                throw new RuntimeException("图片无法读取");
+                            }
+                        } catch (Exception conversionException) {
+                            throw new RuntimeException("图片格式转换失败: " + conversionException.getMessage());
+                        }
                     }
                 } catch (Exception e) {
-                    livePushLogger.severe("处理直播封面失败: " + e.getMessage());
                     
                     // 封面处理失败时，发送纯文本消息（不暴露异常信息给用户）
                     String fallbackContent = "【" + n + "】: 直播中快来~\n直播标题：" + message.getLivePush().getTitle() + "\n频道：" + r + "\n时间: " + timeStr;
@@ -610,9 +579,8 @@ public class Pocket48Sender extends Sender {
                     if (coverFile != null && coverFile.exists() && !coverFile.getAbsolutePath().contains("cache")) {
                         try {
                             coverFile.delete();
-                            livePushLogger.info("清理临时文件: " + coverFile.getAbsolutePath());
                         } catch (Exception e) {
-                            livePushLogger.warning("删除临时直播封面文件失败: " + e.getMessage());
+                            // 静默处理文件删除失败
                         }
                     }
                     
@@ -620,9 +588,8 @@ public class Pocket48Sender extends Sender {
                     if (convertedCoverFile != null && convertedCoverFile.exists()) {
                         try {
                             convertedCoverFile.delete();
-                            livePushLogger.info("清理转换后的临时文件: " + convertedCoverFile.getAbsolutePath());
                         } catch (Exception e) {
-                            livePushLogger.warning("删除转换后的临时直播封面文件失败: " + e.getMessage());
+                            // 静默处理文件删除失败
                         }
                     }
                 }
@@ -959,7 +926,7 @@ public class Pocket48Sender extends Sender {
         long startTime = System.currentTimeMillis();
         
         // 直接按时间顺序流式处理，避免批量等待
-        sendMessagesInTimeOrder(messages, group);
+        sendMessagesOptimized(messages, group);
         
         long endTime = System.currentTimeMillis();
         PerformanceMonitor.getInstance().recordQuery(endTime - startTime);
@@ -1060,43 +1027,60 @@ public class Pocket48Sender extends Sender {
     }
 
     /**
-     * 按时间顺序发送消息（流式处理版）- 彻底解决批量等待导致的延迟问题
-     * 逐条处理并立即发送，最大化降低延迟
-     * @param messages 按时间排序的消息列表
-     * @param group 目标群组
+     * 优化的快速发送方法，减少推送延迟
+     * @param messages 已排序的消息列表
+     * @param group 群组
      */
-    private void sendMessagesInTimeOrder(List<Pocket48Message> messages, Group group) {
+    private void sendMessagesOptimized(List<Pocket48Message> messages, Group group) {
         if (messages == null || messages.isEmpty()) {
             return;
         }
         
-        int baseInterval = calculateSendInterval(messages.size());
+        // 优先处理文本消息，快速发送
+        List<Pocket48Message> textMessages = new ArrayList<>();
+        List<Pocket48Message> mediaMessages = new ArrayList<>();
         
-        // 流式处理：逐条处理并立即发送
-        for (int i = 0; i < messages.size(); i++) {
-            Pocket48Message message = messages.get(i);
-            
+        // 分类消息：文本消息优先，媒体消息延后
+        for (Pocket48Message message : messages) {
+            String msgType = message.getType().toString();
+            if ("TEXT".equals(msgType) || "REPLY".equals(msgType) || "GIFTREPLY".equals(msgType)) {
+                textMessages.add(message);
+            } else {
+                mediaMessages.add(message);
+            }
+        }
+        
+        // 快速发送文本消息（无延迟）
+        for (Pocket48Message message : textMessages) {
             try {
-                // 立即处理当前消息
                 Pocket48SenderMessage senderMessage = pharseMessage(message, group, false);
-                
                 if (senderMessage != null) {
-                    // 立即发送处理后的消息
                     sendSingleMessage(senderMessage, group);
                 }
-                
-                // 智能延迟：文本消息几乎无延迟，媒体消息最小延迟
-                if (i < messages.size() - 1) {
-                    int smartDelay = calculateSmartDelay(message, messages.get(i + 1));
-                    if (smartDelay > 0) {
-                        delayAsync(smartDelay);
+            } catch (Exception e) {
+                // 静默处理发送失败，继续处理其他消息
+            }
+        }
+        
+        // 异步处理媒体消息，避免阻塞
+        if (!mediaMessages.isEmpty()) {
+            new Thread(() -> {
+                for (Pocket48Message message : mediaMessages) {
+                    try {
+                        // 媒体消息间隔发送，避免过载
+                        Thread.sleep(200);
+                        Pocket48SenderMessage senderMessage = pharseMessage(message, group, false);
+                        if (senderMessage != null) {
+                            sendSingleMessage(senderMessage, group);
+                        }
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    } catch (Exception e) {
+                        // 静默处理发送失败
                     }
                 }
-                
-            } catch (Exception e) {
-                // 静默处理单条消息的错误，继续处理下一条
-                System.err.println("[警告] 处理消息失败: " + e.getMessage());
-            }
+            }).start();
         }
         
         // 清理缓存

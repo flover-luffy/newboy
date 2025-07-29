@@ -24,7 +24,7 @@ public class Pocket48SenderCache {
 
     /**
      * 创建口袋48发送者缓存（优化版）
-     * 允许部分成功的情况下仍然创建缓存，提高缓存创建成功率
+     * 静默处理错误，减少控制台噪音
      * 
      * @param roomID 房间ID
      * @param endTime 结束时间映射
@@ -34,13 +34,15 @@ public class Pocket48SenderCache {
         Pocket48Handler pocket = Newboy.INSTANCE.getHandlerPocket48();
 
         try {
-            // 第一步：获取房间信息（关键步骤，失败则抛出异常）
+            // 第一步：获取房间信息（关键步骤，失败则静默返回null）
             Pocket48RoomInfo roomInfo = pocket.getRoomInfoByChannelID(roomID);
             if (roomInfo == null) {
-                throw new RuntimeException("无法获取房间信息，房间ID: " + roomID + "，可能原因：房间不存在、网络错误或API限制");
+                // 静默处理房间不存在的情况，不输出错误信息
+                return null;
             }
             if (roomInfo.getSeverId() == 0) {
-                throw new RuntimeException("服务器ID为0，房间ID: " + roomID + "，房间可能已被删除或无效");
+                // 静默处理无效房间，不输出错误信息
+                return null;
             }
 
             // 第二步：初始化时间戳
@@ -55,9 +57,8 @@ public class Pocket48SenderCache {
                 if (fetchedMessages != null) {
                     messages = fetchedMessages;
                 }
-                // 静默处理消息获取失败，使用空数组
             } catch (Exception e) {
-                // 静默处理消息获取异常，使用空数组继续
+                // 静默处理消息获取异常
             }
 
             // 第四步：获取语音列表（非关键步骤，失败可使用空列表）
@@ -67,22 +68,16 @@ public class Pocket48SenderCache {
                 if (fetchedVoiceList != null) {
                     voiceList = fetchedVoiceList;
                 }
-                // 静默处理语音列表获取失败，使用空列表
             } catch (Exception e) {
-                // 静默处理语音列表获取异常，使用空列表继续
+                // 静默处理语音列表获取异常
             }
 
             // 创建缓存对象
-            Pocket48SenderCache cache = new Pocket48SenderCache(roomInfo, messages, voiceList);
+            return new Pocket48SenderCache(roomInfo, messages, voiceList);
             
-            return cache;
-            
-        } catch (RuntimeException e) {
-            // 重新抛出运行时异常
-            throw e;
         } catch (Exception e) {
-            // 将其他异常包装为运行时异常
-            throw new RuntimeException("缓存创建失败，房间ID: " + roomID + "，异常: " + e.getMessage(), e);
+            // 静默处理所有异常，避免控制台噪音
+            return null;
         }
     }
 

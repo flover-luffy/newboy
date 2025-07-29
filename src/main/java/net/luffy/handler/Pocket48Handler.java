@@ -285,10 +285,10 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
                 return new Pocket48RoomInfo.LockedRoomInfo(message.getStr("question") + "？",
                         properties.pocket48_serverID.get(roomID), roomID);
             } else {
-                logError("[API错误] 房间ID: " + roomID + ", 状态码: " + object.getInt("status") + ", 错误信息: " + object.getStr("message"));
+                // 静默处理API错误，避免控制台噪音
             }
         } catch (Exception e) {
-            logError("[网络异常] 获取房间信息失败，房间ID: " + roomID + ", 异常: " + e.getMessage());
+            // 静默处理网络异常，避免控制台噪音
         }
         return null;
     }
@@ -419,10 +419,10 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
                 return out;
 
             } else {
-                logError("[API错误] 获取消息失败，房间ID: " + roomID + ", 服务器ID: " + serverID + ", 状态码: " + object.getInt("status") + ", 错误信息: " + object.getStr("message"));
+                // 静默处理API错误，避免控制台噪音
             }
         } catch (Exception e) {
-            logError("[网络异常] 获取消息失败，房间ID: " + roomID + ", 服务器ID: " + serverID + ", 异常: " + e.getMessage());
+            // 静默处理网络异常，避免控制台噪音
         }
         return null;
     }
