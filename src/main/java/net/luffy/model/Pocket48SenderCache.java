@@ -40,10 +40,8 @@ public class Pocket48SenderCache {
                 // 静默处理房间不存在的情况，不输出错误信息
                 return null;
             }
-            if (roomInfo.getSeverId() == 0) {
-                // 静默处理无效房间，不输出错误信息
-                return null;
-            }
+            // 移除对serverId的检查，允许加密房间（serverId为0或null）正常创建缓存
+            // 加密房间现在可以正常处理，只是消息和语音列表会为空
 
             // 第二步：初始化时间戳
             if (!endTime.containsKey(roomID)) {

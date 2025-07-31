@@ -505,13 +505,31 @@ public class CommandOperator extends AsyncWebHandlerBase {
                                 if (!Newboy.INSTANCE.getProperties().pocket48_subscribe.containsKey(group))
                                     return new PlainText("本群暂无房间关注，先添加一个吧~");
 
-                                if (Newboy.INSTANCE.getConfig().rmPocket48RoomSubscribe(Long.valueOf(args[2]), group)) {
-                                    Pocket48RoomInfo roomInfo = Newboy.INSTANCE.getHandlerPocket48().getRoomInfoByChannelID(Long.valueOf(args[2]));
+                                long roomId = Long.valueOf(args[2]);
+                                if (Newboy.INSTANCE.getConfig().rmPocket48RoomSubscribe(roomId, group)) {
+                                    // 检查是否是加密房间并移除连接配置
+                                    boolean connectionRemoved = false;
+                                    if (Newboy.INSTANCE.getProperties().pocket48_serverID.containsKey(roomId)) {
+                                        long serverId = Newboy.INSTANCE.getProperties().pocket48_serverID.get(roomId);
+                                        connectionRemoved = Newboy.INSTANCE.getConfig().rmRoomIDConnection(roomId, serverId);
+                                    }
+                                    
+                                    Pocket48RoomInfo roomInfo = Newboy.INSTANCE.getHandlerPocket48().getRoomInfoByChannelID(roomId);
                                     if (roomInfo != null) {
                                         String roomName = roomInfo.getRoomName();
                                         String ownerName = roomInfo.getOwnerName();
-                                        return new PlainText("本群取消关注：" + roomName + "(" + ownerName + ")");
-                                    } else return new PlainText("本群取消关注：未知房间");
+                                        String message = "本群取消关注：" + roomName + "(" + ownerName + ")";
+                                        if (connectionRemoved) {
+                                            message += "\n🔒 已同时移除加密房间连接配置";
+                                        }
+                                        return new PlainText(message);
+                                    } else {
+                                        String message = "本群取消关注：未知房间";
+                                        if (connectionRemoved) {
+                                            message += "\n🔒 已同时移除加密房间连接配置";
+                                        }
+                                        return new PlainText(message);
+                                    }
                                 } else
                                     return new PlainText("本群没有关注此房间捏~");
 
@@ -1756,7 +1774,18 @@ public class CommandOperator extends AsyncWebHandlerBase {
             
             boolean success = Newboy.INSTANCE.getConfig().rmPocket48RoomSubscribe(roomId, groupId);
             if (success) {
-                return new PlainText(String.format("✅ 成功为群 %d 移除口袋48订阅\n🆔 房间ID：%d", groupId, roomId));
+                // 检查是否是加密房间并移除连接配置
+                boolean connectionRemoved = false;
+                if (Newboy.INSTANCE.getProperties().pocket48_serverID.containsKey(roomId)) {
+                    long serverId = Newboy.INSTANCE.getProperties().pocket48_serverID.get(roomId);
+                    connectionRemoved = Newboy.INSTANCE.getConfig().rmRoomIDConnection(roomId, serverId);
+                }
+                
+                String message = String.format("✅ 成功为群 %d 移除口袋48订阅\n🆔 房间ID：%d", groupId, roomId);
+                if (connectionRemoved) {
+                    message += "\n🔒 已同时移除加密房间连接配置";
+                }
+                return new PlainText(message);
             } else {
                 return new PlainText(String.format("❌ 群 %d 未订阅房间 %d", groupId, roomId));
             }

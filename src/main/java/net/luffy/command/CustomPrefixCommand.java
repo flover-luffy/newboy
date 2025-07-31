@@ -399,7 +399,50 @@ public class CustomPrefixCommand {
                 for (Map.Entry<Long, Pocket48Subscribe> entry : properties.pocket48_subscribe.entrySet()) {
                     Long groupId = entry.getKey();
                     Pocket48Subscribe subscribe = entry.getValue();
-                    subscribeInfo.append(String.format("  群 %d: 已配置口袋48订阅\n", groupId));
+                    
+                    // 统计房间和成员数量
+                    int roomCount = subscribe.getRoomIDs() != null ? subscribe.getRoomIDs().size() : 0;
+                    int starCount = subscribe.getStarIDs() != null ? subscribe.getStarIDs().size() : 0;
+                    String atAllStatus = subscribe.showAtOne() ? "✅" : "❌";
+                    
+                    subscribeInfo.append(String.format("  群 %d: %d个房间, %d个成员\n", groupId, roomCount, starCount));
+                    subscribeInfo.append(String.format("    - @全体成员: %s\n", atAllStatus));
+                    
+                    // 显示房间详情
+                    if (roomCount > 0) {
+                        subscribeInfo.append("    - 订阅房间:\n");
+                        for (Long roomId : subscribe.getRoomIDs()) {
+                            try {
+                                net.luffy.model.Pocket48RoomInfo roomInfo = instance.getHandlerPocket48().getRoomInfoByChannelID(roomId);
+                                if (roomInfo != null) {
+                                    subscribeInfo.append(String.format("      • %s (%s) - ID: %d\n", 
+                                        roomInfo.getRoomName(), roomInfo.getOwnerName(), roomId));
+                                } else {
+                                    subscribeInfo.append(String.format("      • 未知房间 - ID: %d\n", roomId));
+                                }
+                            } catch (Exception e) {
+                                subscribeInfo.append(String.format("      • 获取失败 - ID: %d\n", roomId));
+                            }
+                        }
+                    }
+                    
+                    // 显示成员详情
+                    if (starCount > 0) {
+                        subscribeInfo.append("    - 订阅成员:\n");
+                        for (Long starId : subscribe.getStarIDs()) {
+                            try {
+                                cn.hutool.json.JSONObject userInfo = instance.getHandlerPocket48().getUserInfo(starId);
+                                if (userInfo != null) {
+                                    subscribeInfo.append(String.format("      • %s - ID: %d\n", userInfo.getStr("nickname"), starId));
+                                } else {
+                                    subscribeInfo.append(String.format("      • 未知成员 - ID: %d\n", starId));
+                                }
+                            } catch (Exception e) {
+                                subscribeInfo.append(String.format("      • 获取失败 - ID: %d\n", starId));
+                            }
+                        }
+                    }
+                    subscribeInfo.append("\n");
                 }
             } else {
                 subscribeInfo.append("  ❌ 暂无订阅\n");

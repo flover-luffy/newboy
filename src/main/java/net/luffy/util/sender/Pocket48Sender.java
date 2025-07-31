@@ -6,7 +6,6 @@ import net.luffy.handler.Pocket48Handler;
 import net.luffy.util.sender.Pocket48UnifiedResourceManager;
 import net.luffy.util.PerformanceMonitor;
 import net.luffy.util.MessageDelayConfig;
-// UnifiedClientMigrationHelper已删除，直接使用UnifiedHttpClient
 import net.luffy.model.*;
 import net.mamoe.mirai.Bot;
 import net.mamoe.mirai.contact.Group;
@@ -118,21 +117,33 @@ public class Pocket48Sender extends Sender {
                     if (r[0] != null || r[1] != null) {
                         boolean private_ = Pocket48Handler.getOwnerOrTeamName(roomInfo).equals(roomInfo.getOwnerName());
                         String currentTime = cn.hutool.core.date.DateUtil.format(new java.util.Date(), "yyyy-MM-dd HH:mm:ss");
-                        String message = "【" + roomInfo.getRoomName() + "房间语音】\n";
                         
+                        // 使用与消息推送一致的格式模板
                         if (r[0] != null) {
-                            message += private_ ?
-                                    "上麦啦~ (" + currentTime + ")" //成员房间
-                                    : "★ 上麦：" + r[0] + " (" + currentTime + ")\n"; //队伍房间
-                        }
-                        if (r[1] != null) {
-                            message += private_ ?
-                                    "下麦了捏~ (" + currentTime + ")"
-                                    : "☆ 下麦：" + r[1] + " (" + currentTime + ")";
+                            String upMessage;
+                            if (private_) {
+                                // 成员房间：使用统一的消息格式
+                                upMessage = "【" + roomInfo.getOwnerName() + "】: 上麦啦~\n频道：" + roomInfo.getRoomName() + "\n时间: " + currentTime;
+                            } else {
+                                // 队伍房间：显示具体上麦成员
+                                upMessage = "【" + r[0] + "】: 上麦啦~\n频道：" + roomInfo.getRoomName() + "\n时间: " + currentTime;
+                            }
+                            Message upMsg = new PlainText(upMessage);
+                            group.sendMessage(toNotification(upMsg)); // 上麦时@全体
                         }
                         
-                        Message m = new PlainText(message);
-                        group.sendMessage(r[0] != null ? toNotification(m) : m); //有人上麦时才@all
+                        if (r[1] != null) {
+                            String downMessage;
+                            if (private_) {
+                                // 成员房间：使用统一的消息格式
+                                downMessage = "【" + roomInfo.getOwnerName() + "】: 下麦了捏~\n频道：" + roomInfo.getRoomName() + "\n时间: " + currentTime;
+                            } else {
+                                // 队伍房间：显示具体下麦成员
+                                downMessage = "【" + r[1] + "】: 下麦了捏~\n频道：" + roomInfo.getRoomName() + "\n时间: " + currentTime;
+                            }
+                            Message downMsg = new PlainText(downMessage);
+                            group.sendMessage(downMsg); // 下麦时不@全体
+                        }
                     }
                 }
                 voiceStatus.put(roomID, n);
@@ -151,8 +162,8 @@ public class Pocket48Sender extends Sender {
                 // 按消息时间戳排序（从旧到新）
                 allMessages.sort((a, b) -> Long.compare(a.getTime(), b.getTime()));
                 
-                // 使用优化的快速发送方法
-                sendMessagesOptimized(allMessages, group);
+                // 使用现有的消息发送方法
+                sendMessages(allMessages, group);
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -913,8 +924,8 @@ public class Pocket48Sender extends Sender {
     }
 
     /**
-     * 发送消息列表（流式处理版）- 解决批量等待导致的延迟问题
-     * 改为流式处理：处理完一条立即发送一条，而不是等待所有消息处理完毕
+     * 发送消息列表（顺序保证版）- 确保消息按时间顺序发送的同时维持实时性
+     * 核心改进：按时间戳严格排序，使用队列机制确保顺序发送
      * @param messages 消息列表
      * @param group 目标群组
      */
@@ -925,8 +936,8 @@ public class Pocket48Sender extends Sender {
         
         long startTime = System.currentTimeMillis();
         
-        // 直接按时间顺序流式处理，避免批量等待
-        sendMessagesOptimized(messages, group);
+        // 按时间戳严格排序，确保消息顺序
+        sendMessagesInOrder(messages, group);
         
         long endTime = System.currentTimeMillis();
         PerformanceMonitor.getInstance().recordQuery(endTime - startTime);
@@ -946,141 +957,79 @@ public class Pocket48Sender extends Sender {
         }
     }
     
-    /**
-     * 预处理消息列表，优化发送顺序和合并相似消息
-     * @param messages 原始消息列表
-     * @return 优化后的消息列表
-     */
-    private List<Pocket48Message> preprocessMessages(List<Pocket48Message> messages) {
-        // 按消息类型分组
-        Map<String, List<Pocket48Message>> grouped = new HashMap<>();
-        for (Pocket48Message msg : messages) {
-            String type = msg.getType() != null ? msg.getType().toString() : "UNKNOWN";
-            grouped.computeIfAbsent(type, k -> new ArrayList<>()).add(msg);
-        }
-        
-        List<Pocket48Message> result = new ArrayList<>();
-        
-        // 优先处理文本类消息（响应更快）
-        addMessagesInOrder(result, grouped, "TEXT");
-        addMessagesInOrder(result, grouped, "GIFT_TEXT");
-        addMessagesInOrder(result, grouped, "FLIPCARD");
-        addMessagesInOrder(result, grouped, "PASSWORD_REDPACKAGE");
-        addMessagesInOrder(result, grouped, "VOTE");
-        addMessagesInOrder(result, grouped, "REPLY");
-        addMessagesInOrder(result, grouped, "GIFTREPLY");
-        
-        // 然后处理媒体类消息
-        addMessagesInOrder(result, grouped, "IMAGE");
-        addMessagesInOrder(result, grouped, "EXPRESSIMAGE");
-        addMessagesInOrder(result, grouped, "AUDIO");
-        addMessagesInOrder(result, grouped, "FLIPCARD_AUDIO");
-        addMessagesInOrder(result, grouped, "VIDEO");
-        addMessagesInOrder(result, grouped, "FLIPCARD_VIDEO");
-        addMessagesInOrder(result, grouped, "LIVEPUSH");
-        
-        // 添加其他类型的消息
-        for (Map.Entry<String, List<Pocket48Message>> entry : grouped.entrySet()) {
-            if (!isProcessedType(entry.getKey())) {
-                result.addAll(entry.getValue());
-            }
-        }
-        
-        return result;
-    }
-    
-    /**
-     * 按顺序添加指定类型的消息
-     * @param result 结果列表
-     * @param grouped 分组的消息
-     * @param type 消息类型
-     */
-    private void addMessagesInOrder(List<Pocket48Message> result, 
-                                   Map<String, List<Pocket48Message>> grouped, 
-                                   String type) {
-        List<Pocket48Message> typeMessages = grouped.get(type);
-        if (typeMessages != null && !typeMessages.isEmpty()) {
-            result.addAll(typeMessages);
-        }
-    }
-    
-    /**
-     * 检查消息类型是否已被处理
-     * @param type 消息类型
-     * @return 是否已处理
-     */
-    private boolean isProcessedType(String type) {
-        return "TEXT".equals(type) ||
-               "GIFT_TEXT".equals(type) ||
-               "FLIPCARD".equals(type) ||
-               "PASSWORD_REDPACKAGE".equals(type) ||
-               "VOTE".equals(type) ||
-               "REPLY".equals(type) ||
-               "GIFTREPLY".equals(type) ||
-               "IMAGE".equals(type) ||
-               "EXPRESSIMAGE".equals(type) ||
-               "AUDIO".equals(type) ||
-               "FLIPCARD_AUDIO".equals(type) ||
-               "VIDEO".equals(type) ||
-               "FLIPCARD_VIDEO".equals(type) ||
-               "LIVEPUSH".equals(type);
-    }
+    // 已移除preprocessMessages及相关方法
+    // 这些方法会破坏消息的时间顺序，现在改为严格按时间戳排序发送
 
     /**
-     * 优化的快速发送方法，减少推送延迟
-     * @param messages 已排序的消息列表
+     * 按时间顺序发送消息，确保顺序的同时维持实时性
+     * 核心策略：严格按时间戳排序，异步处理避免排队延迟累积
+     * @param messages 消息列表
      * @param group 群组
      */
-    private void sendMessagesOptimized(List<Pocket48Message> messages, Group group) {
+    private void sendMessagesInOrder(List<Pocket48Message> messages, Group group) {
         if (messages == null || messages.isEmpty()) {
             return;
         }
         
-        // 优先处理文本消息，快速发送
-        List<Pocket48Message> textMessages = new ArrayList<>();
-        List<Pocket48Message> mediaMessages = new ArrayList<>();
+        // 按时间戳严格排序，确保消息顺序
+        messages.sort((m1, m2) -> Long.compare(m1.getTime(), m2.getTime()));
         
-        // 分类消息：文本消息优先，媒体消息延后
-        for (Pocket48Message message : messages) {
-            String msgType = message.getType().toString();
-            if ("TEXT".equals(msgType) || "REPLY".equals(msgType) || "GIFTREPLY".equals(msgType)) {
-                textMessages.add(message);
-            } else {
-                mediaMessages.add(message);
-            }
-        }
+        // 异步处理机制：避免消息过多时排队延迟累积
+        CompletableFuture<Void> previousTask = CompletableFuture.completedFuture(null);
         
-        // 快速发送文本消息（无延迟）
-        for (Pocket48Message message : textMessages) {
-            try {
-                Pocket48SenderMessage senderMessage = pharseMessage(message, group, false);
-                if (senderMessage != null) {
-                    sendSingleMessage(senderMessage, group);
-                }
-            } catch (Exception e) {
-                // 静默处理发送失败，继续处理其他消息
-            }
-        }
-        
-        // 异步处理媒体消息，避免阻塞
-        if (!mediaMessages.isEmpty()) {
-            new Thread(() -> {
-                for (Pocket48Message message : mediaMessages) {
+        for (int i = 0; i < messages.size(); i++) {
+            final int index = i;
+            final Pocket48Message message = messages.get(i);
+            final Pocket48Message nextMessage = (i < messages.size() - 1) ? messages.get(i + 1) : null;
+            
+            // 链式异步处理：每条消息处理完立即发送，避免排队累积
+            previousTask = previousTask.thenCompose(v -> 
+                CompletableFuture.supplyAsync(() -> {
                     try {
-                        // 媒体消息间隔发送，避免过载
-                        Thread.sleep(200);
-                        Pocket48SenderMessage senderMessage = pharseMessage(message, group, false);
+                        // 根据消息类型选择处理策略
+                        Pocket48SenderMessage senderMessage;
+                        if (isTextMessage(message)) {
+                            // 文本消息：快速处理和发送
+                            senderMessage = pharseMessageFast(message, group, false);
+                        } else {
+                            // 媒体消息：完整处理但保持顺序
+                            senderMessage = pharseMessage(message, group, false);
+                        }
+                        
+                        // 立即发送处理完的消息
                         if (senderMessage != null) {
                             sendSingleMessage(senderMessage, group);
                         }
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        break;
+                        
+                        return senderMessage;
                     } catch (Exception e) {
-                        // 静默处理发送失败
+                        System.err.println("[警告] 消息处理失败: " + e.getMessage());
+                        return null;
+                    }
+                })
+            ).thenCompose(senderMessage -> {
+                // 智能延迟：仅在需要时添加延迟，避免阻塞后续消息处理
+                 if (nextMessage != null) {
+                     int delay = calculateOrderedSendDelay(message, nextMessage, messages.size(), index);
+                     if (delay > 0) {
+                        return CompletableFuture.runAsync(() -> {
+                            try {
+                                Thread.sleep(delay);
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                            }
+                        }, delayExecutor);
                     }
                 }
-            }).start();
+                return CompletableFuture.completedFuture(null);
+            });
+        }
+        
+        // 等待所有消息处理完成，但不阻塞主线程过久
+        try {
+            previousTask.get(30, TimeUnit.SECONDS); // 最多等待30秒
+        } catch (Exception e) {
+            System.err.println("[警告] 消息发送超时或异常: " + e.getMessage());
         }
         
         // 清理缓存
@@ -1195,6 +1144,67 @@ public class Pocket48Sender extends Sender {
         // 应用CPU负载调整，但确保文本消息延迟极小
         int dynamicDelay = loadBalancer.getDynamicDelay(baseInterval);
         return Math.max(minInterval, Math.min(dynamicDelay, Math.max(1, baseInterval * 2))); // 最大延迟不超过baseInterval*2，但至少1ms
+    }
+    
+    /**
+     * 计算有序发送延迟，平衡顺序保证和实时性
+     * 优化：减少不必要延迟，避免消息过多时累积延迟过高
+     * @param currentMessage 当前消息
+     * @param nextMessage 下一条消息
+     * @param totalMessageCount 总消息数量
+     * @param currentIndex 当前消息索引
+     * @return 延迟毫秒数
+     */
+    private int calculateOrderedSendDelay(Pocket48Message currentMessage, Pocket48Message nextMessage, int totalMessageCount, int currentIndex) {
+        if (currentMessage == null || nextMessage == null) {
+            return 20; // 减少默认延迟
+        }
+        
+        // 根据消息类型和时间间隔智能调整延迟
+        boolean currentIsText = isTextMessage(currentMessage);
+        boolean nextIsText = isTextMessage(nextMessage);
+        
+        // 计算消息间的时间差
+        long timeDiff = nextMessage.getTime() - currentMessage.getTime();
+        
+        // 优化的基础延迟策略：大幅减少延迟时间
+        int baseDelay;
+        if (currentIsText && nextIsText) {
+            baseDelay = 10; // 文本到文本：极小延迟，优先实时性
+        } else if (currentIsText && !nextIsText) {
+            baseDelay = 30; // 文本到媒体：减少延迟
+        } else if (!currentIsText && nextIsText) {
+            baseDelay = 20; // 媒体到文本：快速切换
+        } else {
+            baseDelay = 50; // 媒体到媒体：适度延迟避免过载
+        }
+        
+        // 根据时间差调整：更激进的优化策略
+        if (timeDiff < 500) { // 0.5秒内的消息
+            baseDelay += 20; // 轻微增加延迟确保顺序
+        } else if (timeDiff > 3000) { // 3秒以上的消息
+            baseDelay = Math.max(baseDelay - 15, 5); // 大幅减少延迟
+        }
+        
+        // 动态队列长度调整：消息越多，延迟越小，避免累积延迟
+        if (totalMessageCount > 20) {
+            // 大量消息时，大幅减少延迟
+            baseDelay = Math.max(baseDelay / 3, 2);
+        } else if (totalMessageCount > 10) {
+            // 中等消息量时，适度减少延迟
+            baseDelay = Math.max(baseDelay / 2, 5);
+        } else if (totalMessageCount > 5) {
+            // 少量消息时，轻微减少延迟
+            baseDelay = Math.max(baseDelay * 3 / 4, 8);
+        }
+        
+        // 队列后期加速：越接近队列末尾，延迟越小
+        double progressRatio = (double) currentIndex / totalMessageCount;
+        if (progressRatio > 0.7) { // 处理到70%后开始加速
+            baseDelay = Math.max(baseDelay / 2, 3);
+        }
+        
+        return Math.min(baseDelay, 80); // 最大延迟进一步降低到80ms
     }
     
     /**

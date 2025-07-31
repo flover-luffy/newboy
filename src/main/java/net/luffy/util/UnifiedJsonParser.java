@@ -197,7 +197,7 @@ public class UnifiedJsonParser {
             objectNode.fields().forEachRemaining(entry -> {
                 String key = entry.getKey();
                 JsonNode value = entry.getValue();
-                jsonObject.put(key, convertJsonNodeToValue(value));
+                jsonObject.set(key, convertJsonNodeToValue(value));
             });
         }
         

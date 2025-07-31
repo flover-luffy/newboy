@@ -271,19 +271,20 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
     public Pocket48RoomInfo getRoomInfoByChannelID(long roomID) {
         try {
             String requestBody = String.format("{\"channelId\":\"%d\"}", roomID);
-            String s = post(APIChannel2Server, requestBody, getPocket48Headers());
-            JSONObject object = jsonParser.parseObj(s);
-
+            String response = post(APIChannel2Server, requestBody, getPocket48Headers());
+            JSONObject object = jsonParser.parseObj(response);
             if (object.getInt("status") == 200) {
                 JSONObject content = jsonParser.parseObj(object.getObj("content").toString());
                 JSONObject roomInfo = jsonParser.parseObj(content.getObj("channelInfo").toString());
                 return new Pocket48RoomInfo(roomInfo);
 
             } else if (object.getInt("status") == 2001
-                    && object.getStr("message").indexOf("question") != -1) { //只有配置中存有severID的加密房间会被解析
+                    && object.getStr("message").indexOf("question") != -1) {
+                // 对于加密房间，解析question信息并返回LockedRoomInfo
                 JSONObject message = jsonParser.parseObj(object.getObj("message").toString());
-                return new Pocket48RoomInfo.LockedRoomInfo(message.getStr("question") + "？",
-                        properties.pocket48_serverID.get(roomID), roomID);
+                String question = message.getStr("question");
+                return new Pocket48RoomInfo.LockedRoomInfo(question + "？",
+                        null, roomID);
             } else {
                 // 静默处理API错误，避免控制台噪音
             }
@@ -397,6 +398,16 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
 
     //获取未整理的消息（优化版）
     private List<Object> getOriMessages(long roomID, long serverID) {
+        // 对于加密房间（serverId为0或负数），尝试从配置中获取serverId
+        if (serverID <= 0) {
+            if (properties.pocket48_serverID.containsKey(roomID)) {
+                serverID = properties.pocket48_serverID.get(roomID);
+            } else {
+                // 如果配置中没有对应的serverId，返回空列表
+                return new ArrayList<>();
+            }
+        }
+        
         try {
             // 优化：添加更多请求参数以提高API响应速度
             String requestBody = String.format(
@@ -428,6 +439,16 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
     }
 
     public List<Long> getRoomVoiceList(long roomID, long serverID) {
+        // 对于加密房间（serverId为0或负数），尝试从配置中获取serverId
+        if (serverID <= 0) {
+            if (properties.pocket48_serverID.containsKey(roomID)) {
+                serverID = properties.pocket48_serverID.get(roomID);
+            } else {
+                // 如果配置中没有对应的serverId，返回空列表
+                return new ArrayList<>();
+            }
+        }
+        
         try {
             String requestBody = String.format("{\"channelId\":%d,\"serverId\":%d,\"operateCode\":2}", roomID, serverID);
             String s = post(APIRoomVoice, requestBody, getPocket48Headers());
