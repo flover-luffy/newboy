@@ -292,9 +292,18 @@ public class AsyncWebHandlerBase {
         int failures = failureCount.get();
         double successRate = total > 0 ? ((double)(total - failures) / total) * 100 : 0;
         
+        // 格式化时间为统一格式 yyyy-MM-dd HH:mm:ss
+        String formattedTime = "无";
+        if (lastRequestTime > 0) {
+            java.time.LocalDateTime dateTime = java.time.LocalDateTime.ofInstant(
+                java.time.Instant.ofEpochMilli(lastRequestTime), 
+                java.time.ZoneId.systemDefault()
+            );
+            formattedTime = dateTime.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        }
+        
         return String.format("异步请求统计: 总计 %d, 失败 %d, 成功率 %.1f%%, 最后请求: %s",
-            total, failures, successRate, 
-            lastRequestTime > 0 ? new java.util.Date(lastRequestTime).toString() : "无");
+            total, failures, successRate, formattedTime);
     }
     
     /**

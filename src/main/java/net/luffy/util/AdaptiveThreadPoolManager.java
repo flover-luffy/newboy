@@ -22,14 +22,14 @@ public class AdaptiveThreadPoolManager {
     private final AtomicLong lastAdjustTime = new AtomicLong(0);
     private final AtomicInteger adjustmentCount = new AtomicInteger(0);
     
-    // 配置参数 - 使用更保守的固定值以避免JDK 24兼容性问题
-    private static final int MIN_POOL_SIZE = 2;
-    private static final int MAX_POOL_SIZE = 4; // 固定值，避免动态计算
-    private static final int INITIAL_POOL_SIZE = 2; // 固定值，确保 <= MAX_POOL_SIZE
+    // 配置参数 - 增加线程池大小以适应低CPU占用率
+    private static final int MIN_POOL_SIZE = 3; // 从2增加到3
+    private static final int MAX_POOL_SIZE = 8; // 从4增加到8，适应低CPU占用率
+    private static final int INITIAL_POOL_SIZE = 4; // 从2增加到4
     private static final long ADJUSTMENT_INTERVAL_MS = 30000; // 30秒调整间隔
     private static final double HIGH_CPU_THRESHOLD = 0.75; // 75% CPU使用率阈值
     private static final double LOW_CPU_THRESHOLD = 0.4;   // 40% CPU使用率阈值
-    private static final int HIGH_QUEUE_THRESHOLD = 20;    // 队列长度阈值
+    private static final int HIGH_QUEUE_THRESHOLD = 40;    // 从20增加到40，适应更大的队列
     
     private AdaptiveThreadPoolManager() {
         // 线程池参数初始化完成
@@ -47,7 +47,7 @@ public class AdaptiveThreadPoolManager {
             INITIAL_POOL_SIZE,
             MAX_POOL_SIZE,
             60L, TimeUnit.SECONDS,
-            new LinkedBlockingQueue<>(100),
+            new LinkedBlockingQueue<>(200), // 从100增加到200
             r -> {
                 Thread t = new Thread(r, "Adaptive-Pool-" + System.currentTimeMillis());
                 t.setDaemon(true);

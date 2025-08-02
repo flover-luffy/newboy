@@ -19,13 +19,13 @@ public class Pocket48ResourceManager {
     private static volatile Pocket48ResourceManager instance;
     private final Object lock = new Object();
     
-    // 异步媒体队列配置
+    // 异步媒体队列配置 - 增加线程池和队列大小以适应低CPU占用率
     private final AtomicBoolean mediaQueueEnabled = new AtomicBoolean(true);
-    private final AtomicInteger mediaQueueSize = new AtomicInteger(100);
-    private final AtomicInteger mediaThreadPoolSize = new AtomicInteger(2);
+    private final AtomicInteger mediaQueueSize = new AtomicInteger(200); // 从100增加到200
+    private final AtomicInteger mediaThreadPoolSize = new AtomicInteger(4); // 从2增加到4
     private final AtomicInteger mediaProcessingTimeout = new AtomicInteger(10);
     private final AtomicBoolean prioritizeTextMessages = new AtomicBoolean(true);
-    private final AtomicInteger mediaBatchSize = new AtomicInteger(5);
+    private final AtomicInteger mediaBatchSize = new AtomicInteger(8); // 从5增加到8
     private final AtomicInteger mediaRetryAttempts = new AtomicInteger(3);
     
     // 动态调整参数

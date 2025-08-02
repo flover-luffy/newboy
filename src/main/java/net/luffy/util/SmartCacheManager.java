@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Collections;
+import net.luffy.util.sender.Pocket48ActivityMonitor;
 
 /**
  * 智能缓存管理器
@@ -22,7 +23,7 @@ public class SmartCacheManager {
     
     // 缓存配置
     private static final int DEFAULT_MAX_SIZE = 1000;
-    private static final long DEFAULT_TTL_MS = 30 * 60 * 1000; // 30分钟
+    private static final long DEFAULT_TTL_MS = 10 * 60 * 1000; // 10分钟（从30分钟降低）
     private static final double MEMORY_PRESSURE_THRESHOLD = 0.8; // 80%内存使用率
     
     // 多级缓存存储
@@ -38,7 +39,11 @@ public class SmartCacheManager {
     // 清理队列
     private final ConcurrentLinkedQueue<String> cleanupQueue = new ConcurrentLinkedQueue<>();
     
+    // 活跃度监控器
+    private final Pocket48ActivityMonitor activityMonitor;
+    
     private SmartCacheManager() {
+        this.activityMonitor = Pocket48ActivityMonitor.getInstance();
         // 启动后台清理任务
         startBackgroundCleanup();
     }
@@ -60,7 +65,9 @@ public class SmartCacheManager {
     public LRUCache<String, CacheEntry> getCache(String cacheName, int maxSize, long ttlMs) {
         return caches.computeIfAbsent(cacheName, k -> {
             activeCaches.incrementAndGet();
-            return new LRUCache<>(maxSize, ttlMs);
+            // 根据活跃度动态调整TTL
+            long dynamicTtl = activityMonitor.getCurrentCacheTTL();
+            return new LRUCache<>(maxSize, dynamicTtl);
         });
     }
     
@@ -68,6 +75,10 @@ public class SmartCacheManager {
      * 存储到弱引用缓存（用于大对象）
      */
     public void putWeak(String key, Object value) {
+        // 在活跃期间，如果缓存被禁用，不进行缓存
+        if (activityMonitor.isGlobalActive() && !activityMonitor.isCacheEnabled()) {
+            return;
+        }
         weakCache.put(key, new WeakReference<>(value));
     }
     
@@ -75,6 +86,12 @@ public class SmartCacheManager {
      * 从弱引用缓存获取
      */
     public Object getWeak(String key) {
+        // 在活跃期间，如果缓存被禁用，直接返回null
+        if (activityMonitor.isGlobalActive() && !activityMonitor.isCacheEnabled()) {
+            totalMisses.incrementAndGet();
+            return null;
+        }
+        
         WeakReference<Object> ref = weakCache.get(key);
         if (ref != null) {
             Object value = ref.get();

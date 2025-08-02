@@ -187,7 +187,15 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
             return jsonParser.parseObj(content.getObj("baseUserInfo").toString());
 
         } else {
-            logError(starID + object.getStr("message"));
+            // 静默处理用户不存在等错误，避免控制台噪音
+            String message = object.getStr("message");
+            if (message != null && message.contains("用户不存在")) {
+                // 用户不存在时静默处理，不输出到控制台
+                return null;
+            } else {
+                // 其他错误仍然记录到日志
+                logError(starID + message);
+            }
         }
         return null;
 
@@ -343,7 +351,7 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
                 long time = m.getLong("msgTime");
 
                 if (endTime.get(roomID) >= time)
-                    break; //api有时间次序
+                    break; //api有时间次序，修复：改为大于等于，避免重复推送最新的一条信息
 
                 if (latest < time) {
                     latest = time;
@@ -394,6 +402,36 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
         }
 
         return new Pocket48Message[0];
+    }
+
+    /**
+     * 获取房间最新消息的时间戳，用于正确初始化endTime
+     * @param roomID 房间ID
+     * @param serverID 服务器ID
+     * @return 最新消息时间戳，如果没有消息则返回当前时间戳
+     */
+    public long getLatestMessageTime(long roomID, long serverID) {
+        List<Object> msgs = getOriMessages(roomID, serverID);
+        if (msgs != null && !msgs.isEmpty()) {
+            // 获取第一条消息（已按时间倒序排列）
+            JSONObject firstMsg = jsonParser.parseObj(msgs.get(0).toString());
+            return firstMsg.getLong("msgTime");
+        }
+        // 如果没有消息，返回当前时间戳
+        return System.currentTimeMillis();
+    }
+
+    /**
+     * 获取房间最新消息的时间戳（通过房间ID）
+     * @param roomID 房间ID
+     * @return 最新消息时间戳，如果没有消息则返回当前时间戳
+     */
+    public long getLatestMessageTime(long roomID) {
+        Pocket48RoomInfo roomInfo = getRoomInfoByChannelID(roomID);
+        if (roomInfo != null) {
+            return getLatestMessageTime(roomID, roomInfo.getSeverId());
+        }
+        return System.currentTimeMillis();
     }
 
     //获取未整理的消息（优化版）

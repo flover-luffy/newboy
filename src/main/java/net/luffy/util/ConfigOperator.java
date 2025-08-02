@@ -325,6 +325,7 @@ public class ConfigOperator {
         properties.douyin_max_retries = setting.getInt("douyin", "max_retries", 3);
         
 
+
         
         // 配置验证 - 仅在错误时输出
         // 抖音Cookie配置检查完成
@@ -631,6 +632,8 @@ public class ConfigOperator {
         setting.setByGroup("subscribe", "douyin", (a.length() > 1 ? a.substring(0, a.length() - 1) : a) + "]");
         safeStoreConfig("抖音订阅配置");
     }
+
+
 
 
 

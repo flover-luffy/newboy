@@ -37,8 +37,8 @@ public class Pocket48AsyncMessageProcessor {
     static {
         int cores = Runtime.getRuntime().availableProcessors();
         CPU_CORES = Math.max(1, cores); // 确保至少为1
-        // 文本消息处理线程池：用于处理文本消息等轻量级任务
-        MESSAGE_THREAD_POOL_SIZE = Math.max(1, Math.min(CPU_CORES / 2 + 1, 3)); // 最多3个线程，最少1个
+        // 文本消息处理线程池：增加线程数以适应低CPU占用率
+        MESSAGE_THREAD_POOL_SIZE = Math.max(2, Math.min(CPU_CORES + 1, 6)); // 最多6个线程，最少2个
         
         // 静态初始化完成，不输出调试信息
     }

@@ -157,7 +157,7 @@ public class AsyncWebHandler {
      */
     private java.util.Map<String, String> getXox48Headers() {
         java.util.Map<String, String> headers = new java.util.HashMap<>();
-        headers.put("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+        headers.put("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
         headers.put("Accept", "application/json, text/plain, */*");
         headers.put("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
         headers.put("X-Requested-With", "XMLHttpRequest");
@@ -255,12 +255,32 @@ public class AsyncWebHandler {
      * 获取性能统计信息 - 整合统一客户端统计
      */
     public String getPerformanceStats() {
+        long total = totalRequests.get();
+        long successful = successfulRequests.get();
+        long failed = failedRequests.get();
+        long totalTime = totalResponseTime.get();
+        long avgResponseTime = total > 0 ? totalTime / total : 0;
+        double successRate = total > 0 ? (double) successful / total * 100 : 0;
+        
+        // 格式化时间为统一格式 yyyy-MM-dd HH:mm:ss
+        String formattedTime = "无";
+        if (lastRequestTime > 0) {
+            java.time.LocalDateTime dateTime = java.time.LocalDateTime.ofInstant(
+                java.time.Instant.ofEpochMilli(lastRequestTime), 
+                java.time.ZoneId.systemDefault()
+            );
+            formattedTime = dateTime.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        }
+        
         return String.format(
-                "异步HTTP性能统计:\n" +
+                "异步HTTP统计: 总请求 %d, 成功 %d, 失败 %d, 成功率 %.1f%%, 平均响应时间 %dms\n" +
+                "异步HTTP性能统计: 最后请求时间 %s\n" +
                 "最后请求时间: %s\n" +
                 "\n统一客户端统计:\n%s\n" +
                 "\n统一JSON解析器统计:\n%s",
-                lastRequestTime > 0 ? new java.util.Date(lastRequestTime).toString() : "无",
+                total, successful, failed, successRate, avgResponseTime,
+                formattedTime,
+                formattedTime,
                 unifiedClient.getPerformanceStats(),
                 jsonParser.getPerformanceStats()
         );

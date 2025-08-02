@@ -43,9 +43,10 @@ public class Pocket48SenderCache {
             // 移除对serverId的检查，允许加密房间（serverId为0或null）正常创建缓存
             // 加密房间现在可以正常处理，只是消息和语音列表会为空
 
-            // 第二步：初始化时间戳
+            // 第二步：初始化时间戳 - 回退：使用当前时间避免反复推送最后一条消息
             if (!endTime.containsKey(roomID)) {
-                endTime.put(roomID, newTime());
+                // 使用当前时间戳，避免处理历史消息和反复推送最新消息
+                endTime.put(roomID, System.currentTimeMillis());
             }
 
             // 第三步：获取消息列表（非关键步骤，失败可使用空数组）

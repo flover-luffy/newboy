@@ -19,9 +19,9 @@ public class UnifiedSchedulerManager {
     private final Map<String, ScheduledFuture<?>> scheduledTasks = new ConcurrentHashMap<>();
     private final AtomicInteger taskCounter = new AtomicInteger(0);
     
-    // 配置参数
-    private static final int SCHEDULER_CORE_POOL_SIZE = 2; // 减少核心线程数
-    private static final int MAX_CONCURRENT_TASKS = 10; // 限制并发任务数
+    // 配置参数 - 增加线程池大小以适应低CPU占用率
+    private static final int SCHEDULER_CORE_POOL_SIZE = 4; // 从2增加到4
+    private static final int MAX_CONCURRENT_TASKS = 20; // 从10增加到20
     
     private UnifiedSchedulerManager() {
         this.globalScheduler = Executors.newScheduledThreadPool(SCHEDULER_CORE_POOL_SIZE, r -> {

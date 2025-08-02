@@ -107,7 +107,7 @@ public class MonitorConfig {
         batchQueryEnabled = getBooleanProperty("monitor.batch.query.enabled", true);
         batchQuerySize = getIntProperty("monitor.batch.query.size", 5);
         asyncProcessingEnabled = getBooleanProperty("monitor.async.processing.enabled", true);
-        asyncThreadPoolSize = getIntProperty("monitor.async.thread.pool.size", 3);
+        asyncThreadPoolSize = getIntProperty("monitor.async.thread.pool.size", 6); // 从3增加到6以适应低CPU占用率
         
         // 初始化批量查询配置 - 优化响应速度
         batchQueryInterval = getLongProperty("monitor.batch.query.interval", 1000L);

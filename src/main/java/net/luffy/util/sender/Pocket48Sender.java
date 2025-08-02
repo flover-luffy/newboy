@@ -4,6 +4,7 @@ import cn.hutool.core.date.DateUtil;
 import net.luffy.Newboy;
 import net.luffy.handler.Pocket48Handler;
 import net.luffy.util.sender.Pocket48UnifiedResourceManager;
+import net.luffy.util.sender.Pocket48ActivityMonitor;
 import net.luffy.util.PerformanceMonitor;
 import net.luffy.util.MessageDelayConfig;
 import net.luffy.model.*;
@@ -41,6 +42,7 @@ public class Pocket48Sender extends Sender {
     private final MessageDelayConfig delayConfig;
     private final net.luffy.util.CpuLoadBalancer loadBalancer;
     private final Pocket48MediaQueue mediaQueue;
+    private final Pocket48ActivityMonitor activityMonitor;
     private final ScheduledExecutorService delayExecutor;
 
     public Pocket48Sender(Bot bot, long group, HashMap<Long, Long> endTime, HashMap<Long, List<Long>> voiceStatus, HashMap<Long, Pocket48SenderCache> cache) {
@@ -53,6 +55,7 @@ public class Pocket48Sender extends Sender {
         this.delayConfig = MessageDelayConfig.getInstance();
         this.loadBalancer = net.luffy.util.CpuLoadBalancer.getInstance();
         this.mediaQueue = new Pocket48MediaQueue();
+        this.activityMonitor = Pocket48ActivityMonitor.getInstance();
         this.delayExecutor = Executors.newScheduledThreadPool(1, r -> {
             Thread t = new Thread(r, "Pocket48-Delay-Executor");
             t.setDaemon(true);
@@ -107,6 +110,8 @@ public class Pocket48Sender extends Sender {
                 //房间消息预处理
                 Pocket48Message[] a = cache.get(roomID).messages;
                 if (a.length > 0) {
+                    // 记录消息活跃度
+                    activityMonitor.recordBatchMessageActivity(roomID, java.util.Arrays.asList(a));
                     totalMessages.add(a);
                 }
 
@@ -372,28 +377,64 @@ public class Pocket48Sender extends Sender {
                 // 口袋表情处理：解析表情信息并优化显示
                 try {
                     String emotionName = parseEmotionName(message);
+                    String resUrl = message.getResLoc();
                     
                     // 尝试获取表情图片资源
-                    if (message.getResLoc() != null && !message.getResLoc().trim().isEmpty()) {
-                        try (ExternalResource emotionResource = ExternalResource.create(getRes(message.getResLoc()))) {
-                            Image emotionImage = group.uploadImage(emotionResource);
-                            // 创建包含表情图片的消息链
-                            MessageChain messageChain = new PlainText("【" + n + "】: " + emotionName + "\n")
-                                    .plus(emotionImage)
-                                    .plus("\n频道：" + r + "\n时间: " + timeStr);
-                            return new Pocket48SenderMessage(false, null, new Message[]{messageChain});
+                    if (resUrl != null && !resUrl.trim().isEmpty()) {
+                        Newboy.INSTANCE.getLogger().info("开始处理口袋48表情图片: " + resUrl);
+                        
+                        try {
+                            // 首先验证资源可用性
+                             Pocket48ResourceHandler.Pocket48ResourceInfo resourceInfo = 
+                                 unifiedResourceManager.checkResourceAvailability(resUrl);
+                            
+                            if (!resourceInfo.isAvailable()) {
+                                Newboy.INSTANCE.getLogger().warning("口袋48表情资源不可用: " + resUrl + 
+                                    ", 状态码: " + resourceInfo.getStatusCode() + 
+                                    ", 错误: " + resourceInfo.getErrorMessage());
+                                throw new RuntimeException("资源不可用: " + resourceInfo.getErrorMessage());
+                            }
+                            
+                            // 获取资源流
+                            try (ExternalResource emotionResource = ExternalResource.create(getRes(resUrl))) {
+                                // 使用带重试机制的图片上传方法
+                                Image emotionImage = uploadImageWithRetry(emotionResource, 3);
+                                // 创建包含表情图片的消息链
+                                MessageChain messageChain = new PlainText("【" + n + "】: " + emotionName + "\n")
+                                        .plus(emotionImage)
+                                        .plus("\n频道：" + r + "\n时间: " + timeStr);
+                                Newboy.INSTANCE.getLogger().info("口袋48表情图片处理成功: " + resUrl);
+                                return new Pocket48SenderMessage(false, null, new Message[]{messageChain});
+                            }
                         } catch (Exception imageEx) {
-                            // 图片加载失败，仅显示文本
-                            System.err.println("表情图片加载失败: " + imageEx.getMessage());
+                            // 图片加载或上传失败，仅显示文本
+                            String errorMsg = "表情图片处理失败: " + imageEx.getMessage();
+                            System.err.println(errorMsg);
+                            Newboy.INSTANCE.getLogger().warning("口袋48表情图片处理失败: " + resUrl + 
+                                ", 表情名: " + emotionName + 
+                                ", 错误类型: " + imageEx.getClass().getSimpleName() + 
+                                ", 错误信息: " + imageEx.getMessage());
+                            
+                            // 如果是rich media transfer failed错误，记录更详细信息
+                            if (imageEx.getMessage() != null && imageEx.getMessage().contains("rich media transfer failed")) {
+                                Newboy.INSTANCE.getLogger().warning("检测到OneBot富媒体传输失败，可能的原因: " +
+                                    "1. 图片文件损坏或格式不支持; " +
+                                    "2. 网络连接问题; " +
+                                    "3. OneBot服务异常; " +
+                                    "4. 图片尺寸过大或过小");
+                            }
                         }
+                    } else {
+                        Newboy.INSTANCE.getLogger().info("口袋48表情消息无图片资源URL，仅显示文本: " + emotionName);
                     }
                     
-                    // 如果没有图片资源或图片加载失败，仅显示文本
+                    // 如果没有图片资源或图片处理失败，仅显示文本
                     String expressContent = "【" + n + "】: " + emotionName + "\n频道：" + r + "\n时间: " + timeStr;
                     return new Pocket48SenderMessage(false, null, new Message[]{new PlainText(expressContent)});
                 } catch (Exception e) {
                     // 异常情况下的兜底处理
                     String fallbackContent = "【" + n + "】: [表情]\n频道：" + r + "\n时间: " + timeStr;
+                    Newboy.INSTANCE.getLogger().warning("口袋48表情处理异常: " + e.getClass().getSimpleName() + ": " + e.getMessage());
                     return new Pocket48SenderMessage(false, null, new Message[]{new PlainText(fallbackContent)});
                 }
             }
@@ -942,17 +983,29 @@ public class Pocket48Sender extends Sender {
         long endTime = System.currentTimeMillis();
         PerformanceMonitor.getInstance().recordQuery(endTime - startTime);
         
-        // 智能缓存清理：减少清理频率
+        // 智能缓存清理：基于活跃度和消息数量动态调整
         if (messages.size() > 30) {
             PerformanceMonitor monitor = PerformanceMonitor.getInstance();
             
-            if (monitor.shouldForceCleanup()) {
-                unifiedResourceManager.cleanupExpiredCache(5);
-                System.gc();
-            } else if (monitor.shouldCleanup() && monitor.getTotalQueries() % 50 == 0) {
-                unifiedResourceManager.cleanupExpiredCache(30);
-            } else if (monitor.getTotalQueries() % 100 == 0) {
-                unifiedResourceManager.cleanupExpiredCache(60);
+            // 根据活跃度调整清理策略
+            if (activityMonitor.isGlobalActive()) {
+                // 活跃期：更频繁的清理，避免缓存积累
+                if (monitor.shouldForceCleanup()) {
+                    unifiedResourceManager.cleanupExpiredCache(2); // 2分钟内的缓存
+                    System.gc();
+                } else if (monitor.getTotalQueries() % 20 == 0) {
+                    unifiedResourceManager.cleanupExpiredCache(5); // 5分钟内的缓存
+                }
+            } else {
+                // 非活跃期：正常清理策略
+                if (monitor.shouldForceCleanup()) {
+                    unifiedResourceManager.cleanupExpiredCache(5);
+                    System.gc();
+                } else if (monitor.shouldCleanup() && monitor.getTotalQueries() % 50 == 0) {
+                    unifiedResourceManager.cleanupExpiredCache(30);
+                } else if (monitor.getTotalQueries() % 100 == 0) {
+                    unifiedResourceManager.cleanupExpiredCache(60);
+                }
             }
         }
     }

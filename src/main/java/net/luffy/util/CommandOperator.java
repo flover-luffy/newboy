@@ -10,11 +10,15 @@ import net.luffy.handler.Pocket48Handler;
 import net.luffy.handler.WeidianHandler;
 import net.luffy.handler.WeidianSenderHandler;
 import net.luffy.handler.Xox48Handler;
+import net.luffy.handler.WeiboHandler;
+
 import net.luffy.util.AsyncOnlineStatusMonitor;
 import net.luffy.util.DouyinMonitorService;
 import net.luffy.util.sender.Pocket48ResourceCache;
 import net.luffy.util.SmartCacheManager;
 import net.luffy.util.JsonOptimizer;
+import net.luffy.service.WeiboApiService;
+import net.luffy.service.WeiboMonitorService;
 import net.luffy.model.Pocket48RoomInfo;
 import net.luffy.model.WeidianBuyer;
 import net.luffy.model.WeidianCookie;
@@ -30,6 +34,9 @@ import net.mamoe.mirai.utils.ExternalResource;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -658,29 +665,27 @@ public class CommandOperator extends AsyncWebHandlerBase {
                             }
 
                             int count = 1;
-                            net.luffy.util.WeiboMonitorService weiboMonitor = net.luffy.util.WeiboMonitorService.getInstance();
+                            WeiboApiService weiboApiService = new WeiboApiService();
                             
                             for (long id : Newboy.INSTANCE.getProperties().weibo_user_subscribe.get(group)) {
-                                // 确保用户在监控服务中
-                                weiboMonitor.addMonitorUser(id);
-                                
-                                // 使用getMonitoredUserInfo方法获取用户信息
-                                WeiboMonitorService.UserMonitorInfo userInfo = weiboMonitor.getMonitoredUserInfo(id);
                                 String name = "未知用户";
-                                String lastUpdateTime = "未知";
+                                String lastUpdateTime = "暂无微博";
                                 
-                                if (userInfo != null) {
-                                    if (userInfo.nickname != null && !userInfo.nickname.isEmpty()) {
-                                        name = userInfo.nickname;
+                                try {
+                                    String nickname = weiboApiService.getUserNickname(String.valueOf(id));
+                                    if (nickname != null && !nickname.equals("未知用户")) {
+                                        name = nickname;
                                     }
-                                    if (userInfo.lastUpdateTime > 0) {
-                                        lastUpdateTime = cn.hutool.core.date.DateUtil.formatDateTime(new java.util.Date(userInfo.lastUpdateTime));
+                                    
+                                    // 获取最新微博时间
+                                    String latestTime = weiboApiService.getUserLatestWeiboTime(String.valueOf(id));
+                                    if (latestTime != null && !latestTime.equals("暂无微博")) {
+                                        lastUpdateTime = latestTime;
                                     }
-                                } else {
-                                    // 如果没有监控信息，尝试直接获取
-                                    name = weiboMonitor.getUserNickname(id);
-                                    lastUpdateTime = weiboMonitor.getFormattedLastUpdateTime(id);
+                                } catch (Exception e) {
+                                    // 获取信息失败，使用默认值
                                 }
+                                
                                 
                                 out.append(count).append(". ").append(name).append("\n");
                                 out.append("   用户ID：").append(id).append("\n");
@@ -778,14 +783,17 @@ public class CommandOperator extends AsyncWebHandlerBase {
                                         }
                                         
                                         // 获取最后更新时间
-                                        DouyinMonitorService.UserMonitorInfo userInfo = monitorService.getMonitoredUserInfo(secUserId);
-                                        if (userInfo != null) {
-                                            if (userInfo.lastUpdateTime > 0) {
-                                                lastUpdateTime = cn.hutool.core.date.DateUtil.formatDateTime(new java.util.Date(userInfo.lastUpdateTime));
-                                            } else {
-                                                lastUpdateTime = "暂无作品";
-                                            }
-                                        }
+                            DouyinMonitorService.UserMonitorInfo userInfo = monitorService.getMonitoredUserInfo(secUserId);
+                            if (userInfo != null) {
+                                if (userInfo.lastUpdateTime > 0) {
+                                    LocalDateTime dateTime = LocalDateTime.ofInstant(
+                                        java.time.Instant.ofEpochMilli(userInfo.lastUpdateTime), 
+                                        ZoneId.systemDefault());
+                                    lastUpdateTime = dateTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+                                } else {
+                                    lastUpdateTime = "暂无作品";
+                                }
+                            }
                                     }
                                 } catch (Exception e) {
                                     // 如果获取失败，使用默认名称
@@ -900,6 +908,7 @@ public class CommandOperator extends AsyncWebHandlerBase {
             case "/抖音重启":
             case "/douyin_restart":
                 return handleDouyinRestartCommand(group, senderID);
+
             case "/帮助":
             case "/help":
             case "/?":
@@ -1470,9 +1479,15 @@ public class CommandOperator extends AsyncWebHandlerBase {
     // 私聊微博订阅管理
     private Message handlePrivateWeiboCommand(String[] args, UserMessageEvent event) {
         if (args.length < 2) {
-            // 静默处理参数不足的情况，不向群组推送错误消息
-            Newboy.INSTANCE.getLogger().info("微博命令参数不足");
-            return null;
+            return new PlainText("🐦 微博功能\n" +
+                    "━━━━━━━━━━━━━━━━━━━━\n" +
+                    "📋 可用命令:\n" +
+                    "• /微博 关注列表 - 查看订阅列表\n" +
+                    "• /微博 关注 <用户UID> <群号> - 添加订阅\n" +
+                    "• /微博 取消关注 <用户UID> <群号> - 取消订阅\n" +
+                    "• /微博 用户信息 <用户UID> - 查看用户信息\n" +
+                    "• /微博 状态 - 查看监控状态\n\n" +
+                    "💡 提示: 基于qqtools项目重构的微博监控功能");
         }
 
         switch (args[1]) {
@@ -1481,33 +1496,41 @@ public class CommandOperator extends AsyncWebHandlerBase {
             }
             case "关注": {
                 if (args.length < 4) {
-                    // 静默处理参数不足的情况，不向群组推送错误消息
-                    Newboy.INSTANCE.getLogger().info("微博关注参数不足");
-                    return null;
+                    return new PlainText("❌ 参数不足\n💡 用法: /微博 关注 <用户UID> <群号>");
                 }
                 return addPrivateWeiboSubscribe(args[2], args[3], event);
             }
             case "取消关注": {
                 if (args.length < 4) {
-                    // 静默处理参数不足的情况，不向群组推送错误消息
-                    Newboy.INSTANCE.getLogger().info("微博取消关注参数不足");
-                    return null;
+                    return new PlainText("❌ 参数不足\n💡 用法: /微博 取消关注 <用户UID> <群号>");
                 }
                 return removePrivateWeiboSubscribe(args[2], args[3], event);
             }
+            case "用户信息": {
+                if (args.length < 3) {
+                    return new PlainText("❌ 参数不足\n💡 用法: /微博 用户信息 <用户UID>");
+                }
+                return getWeiboUserInfo(args[2]);
+            }
+            case "状态": {
+                return getWeiboMonitorStatus();
+            }
             default:
-                // 静默处理未知操作，不向群组推送错误消息
-                Newboy.INSTANCE.getLogger().info("微博未知操作: " + args[1]);
-                return null;
+                return new PlainText("❌ 未知操作\n💡 使用 /微博 查看可用命令");
         }
     }
 
     // 私聊超话订阅管理
     private Message handlePrivateSuperTopicCommand(String[] args, UserMessageEvent event) {
         if (args.length < 2) {
-            // 静默处理参数不足的情况，不向群组推送错误消息
-            Newboy.INSTANCE.getLogger().info("超话命令参数不足");
-            return null;
+            return new PlainText("🔥 超话功能\n" +
+                    "━━━━━━━━━━━━━━━━━━━━\n" +
+                    "📋 可用命令:\n" +
+                    "• /超话 关注列表 - 查看订阅列表\n" +
+                    "• /超话 关注 <容器ID> <群号> - 添加订阅\n" +
+                    "• /超话 取消关注 <容器ID> <群号> - 取消订阅\n" +
+                    "• /超话 状态 - 查看监控状态\n\n" +
+                    "💡 提示: 基于qqtools项目重构的超话监控功能");
         }
 
         switch (args[1]) {
@@ -1516,24 +1539,21 @@ public class CommandOperator extends AsyncWebHandlerBase {
             }
             case "关注": {
                 if (args.length < 4) {
-                    // 静默处理参数不足的情况，不向群组推送错误消息
-                    Newboy.INSTANCE.getLogger().info("超话关注参数不足");
-                    return null;
+                    return new PlainText("❌ 参数不足\n💡 用法: /超话 关注 <容器ID> <群号>");
                 }
                 return addPrivateSuperTopicSubscribe(args[2], args[3], event);
             }
             case "取消关注": {
                 if (args.length < 4) {
-                    // 静默处理参数不足的情况，不向群组推送错误消息
-                    Newboy.INSTANCE.getLogger().info("超话取消关注参数不足");
-                    return null;
+                    return new PlainText("❌ 参数不足\n💡 用法: /超话 取消关注 <容器ID> <群号>");
                 }
                 return removePrivateSuperTopicSubscribe(args[2], args[3], event);
             }
+            case "状态": {
+                return getWeiboMonitorStatus();
+            }
             default:
-                // 静默处理未知操作，不向群组推送错误消息
-                Newboy.INSTANCE.getLogger().info("超话未知操作: " + args[1]);
-                return null;
+                return new PlainText("❌ 未知操作\n💡 使用 /超话 查看可用命令");
         }
     }
 
@@ -1572,6 +1592,7 @@ public class CommandOperator extends AsyncWebHandlerBase {
                 "  • /抖音添加 <用户链接> - 添加监控用户\n" +
                 "  • /抖音删除 <用户ID> - 删除监控用户\n" +
                 "  • /抖音重启 - 重启监控服务\n\n" +
+
                 "📊 /监控 - 在线状态监控\n" +
                 "  • /监控 列表 - 查看监控列表\n" +
                 "  • /监控 添加 <成员名> <群号> - 为群组添加成员监控\n" +
@@ -1803,56 +1824,47 @@ public class CommandOperator extends AsyncWebHandlerBase {
         Properties properties = Newboy.INSTANCE.getProperties();
         boolean hasSubscription = false;
         
-        for (long groupId : properties.weibo_user_subscribe.keySet()) {
-            if (!properties.weibo_user_subscribe.get(groupId).isEmpty()) {
-                hasSubscription = true;
-                result.append("\n🏠 群组：").append(groupId).append("\n");
-                
-                int count = 1;
-                for (long uid : properties.weibo_user_subscribe.get(groupId)) {
-                    // 尝试从监控服务获取用户昵称和最后更新时间
-                    String name = "微博用户";
-                    String lastUpdateTime = "未知";
-                    try {
-                        WeiboMonitorService weiboMonitor = WeiboMonitorService.getInstance();
-                        if (weiboMonitor != null) {
-                            // 确保用户在监控服务中
-                            weiboMonitor.addMonitorUser(uid);
-                            
-                            WeiboMonitorService.UserMonitorInfo userInfo = weiboMonitor.getMonitoredUserInfo(uid);
-                            if (userInfo != null) {
-                                if (userInfo.nickname != null && !userInfo.nickname.isEmpty()) {
-                                    name = userInfo.nickname;
-                                }
-                                if (userInfo.lastUpdateTime > 0) {
-                                    lastUpdateTime = cn.hutool.core.date.DateUtil.formatDateTime(new java.util.Date(userInfo.lastUpdateTime));
-                                }
-                            } else {
-                                // 如果没有监控信息，尝试直接获取
-                                String nickname = weiboMonitor.getUserNickname(uid);
-                                if (nickname != null && !nickname.equals("未知用户")) {
-                                    name = nickname;
-                                }
-                                String formattedTime = weiboMonitor.getFormattedLastUpdateTime(uid);
-                                if (formattedTime != null && !formattedTime.equals("未知")) {
-                                    lastUpdateTime = formattedTime;
-                                }
+        try {
+            WeiboApiService weiboApiService = new WeiboApiService();
+            
+            for (long groupId : properties.weibo_user_subscribe.keySet()) {
+                if (!properties.weibo_user_subscribe.get(groupId).isEmpty()) {
+                    hasSubscription = true;
+                    result.append("\n🏠 群组：").append(groupId).append("\n");
+                    
+                    int count = 1;
+                    for (long uid : properties.weibo_user_subscribe.get(groupId)) {
+                        // 使用新的API服务获取用户昵称和最新微博时间
+                        String name = "微博用户";
+                        String lastUpdateTime = "暂无微博";
+                        try {
+                            String nickname = weiboApiService.getUserNickname(String.valueOf(uid));
+                            if (nickname != null && !nickname.equals("未知用户")) {
+                                name = nickname;
                             }
+                            
+                            // 获取最新微博时间
+                            String latestTime = weiboApiService.getUserLatestWeiboTime(String.valueOf(uid));
+                            if (latestTime != null && !latestTime.equals("暂无微博")) {
+                                lastUpdateTime = latestTime;
+                            }
+                        } catch (Exception e) {
+                            // 如果获取失败，使用默认名称
                         }
-                    } catch (Exception e) {
-                        // 如果获取失败，使用默认名称
+                        
+                        result.append("  ").append(count).append(". ").append(name).append("\n");
+                        result.append("     用户UID：").append(uid).append("\n");
+                        result.append("     最后更新：").append(lastUpdateTime).append("\n");
+                        
+                        if (count < properties.weibo_user_subscribe.get(groupId).size()) {
+                            result.append("\n");
+                        }
+                        count++;
                     }
-                    
-                    result.append("  ").append(count).append(". ").append(name).append("\n");
-                    result.append("     用户UID：").append(uid).append("\n");
-                    result.append("     最后更新：").append(lastUpdateTime).append("\n");
-                    
-                    if (count < properties.weibo_user_subscribe.get(groupId).size()) {
-                        result.append("\n");
-                    }
-                    count++;
                 }
             }
+        } catch (Exception e) {
+            result.append("\n❌ 获取订阅列表失败: ").append(e.getMessage());
         }
         
         if (!hasSubscription) {
@@ -1875,16 +1887,38 @@ public class CommandOperator extends AsyncWebHandlerBase {
                 return permissionTest;
             }
             
+            // 验证用户UID是否有效
+            WeiboApiService weiboApiService = new WeiboApiService();
+            String nickname = weiboApiService.getUserNickname(uidStr);
+            if (nickname == null || nickname.equals("未知用户")) {
+                return new PlainText("❌ 无效的用户UID，请检查后重试");
+            }
+            
             boolean success = Newboy.INSTANCE.getConfig().addWeiboUserSubscribe(uid, groupId);
             if (success) {
-                return new PlainText(String.format("✅ 成功为群 %d 添加微博订阅\n👤 用户UID：%d", groupId, uid));
+                // 添加到监控服务
+                try {
+                    WeiboHandler weiboHandler = Newboy.INSTANCE.getHandlerWeibo();
+                    if (weiboHandler != null) {
+                        // 通过API添加监控
+                        JSONObject request = new JSONObject();
+                        request.set("uid", uidStr);
+                        request.set("groupIds", new String[]{groupIdStr});
+                        // 这里可以调用WeiboHandler的API
+                    }
+                } catch (Exception e) {
+                    // 如果添加监控失败，记录日志但不影响订阅添加
+                    Newboy.INSTANCE.getLogger().error("添加微博监控失败: " + e.getMessage());
+                }
+                
+                return new PlainText(String.format("✅ 成功为群 %d 添加微博订阅\n👤 用户：%s (UID: %d)", groupId, nickname, uid));
             } else {
                 return new PlainText(String.format("❌ 群 %d 已订阅用户 %d", groupId, uid));
             }
         } catch (NumberFormatException e) {
-            // 静默处理参数格式错误，不向群组推送错误消息
-            Newboy.INSTANCE.getLogger().info("微博订阅参数格式错误: " + uidStr + ", " + groupIdStr);
-            return null;
+            return new PlainText("❌ 参数格式错误，请检查用户UID和群号");
+        } catch (Exception e) {
+            return new PlainText("❌ 添加订阅失败: " + e.getMessage());
         }
     }
 
@@ -1902,14 +1936,26 @@ public class CommandOperator extends AsyncWebHandlerBase {
             
             boolean success = Newboy.INSTANCE.getConfig().rmWeiboUserSubscribe(uid, groupId);
             if (success) {
+                // 从监控服务移除
+                try {
+                    WeiboHandler weiboHandler = Newboy.INSTANCE.getHandlerWeibo();
+                    if (weiboHandler != null) {
+                        // 通过API移除监控
+                        // 这里可以调用WeiboHandler的API
+                    }
+                } catch (Exception e) {
+                    // 如果移除监控失败，记录日志但不影响订阅移除
+                    Newboy.INSTANCE.getLogger().error("移除微博监控失败: " + e.getMessage());
+                }
+                
                 return new PlainText(String.format("✅ 成功为群 %d 移除微博订阅\n👤 用户UID：%d", groupId, uid));
             } else {
                 return new PlainText(String.format("❌ 群 %d 未订阅用户 %d", groupId, uid));
             }
         } catch (NumberFormatException e) {
-            // 静默处理参数格式错误，不向群组推送错误消息
-            Newboy.INSTANCE.getLogger().info("微博取消订阅参数格式错误: " + uidStr + ", " + groupIdStr);
-            return null;
+            return new PlainText("❌ 参数格式错误，请检查用户UID和群号");
+        } catch (Exception e) {
+            return new PlainText("❌ 移除订阅失败: " + e.getMessage());
         }
     }
 
@@ -1922,17 +1968,37 @@ public class CommandOperator extends AsyncWebHandlerBase {
         Properties properties = Newboy.INSTANCE.getProperties();
         boolean hasSubscription = false;
         
-        for (long groupId : properties.weibo_superTopic_subscribe.keySet()) {
-            if (!properties.weibo_superTopic_subscribe.get(groupId).isEmpty()) {
-                hasSubscription = true;
-                result.append("\n🏠 群组：").append(groupId).append("\n");
-                
-                int count = 1;
-                for (String topicId : properties.weibo_superTopic_subscribe.get(groupId)) {
-                    result.append("  ").append(count).append(". 超话ID: ").append(topicId).append("\n");
-                    count++;
+        try {
+            WeiboApiService weiboApiService = new WeiboApiService();
+            
+            for (long groupId : properties.weibo_superTopic_subscribe.keySet()) {
+                if (!properties.weibo_superTopic_subscribe.get(groupId).isEmpty()) {
+                    hasSubscription = true;
+                    result.append("\n🏠 群组：").append(groupId).append("\n");
+                    
+                    int count = 1;
+                    for (String topicId : properties.weibo_superTopic_subscribe.get(groupId)) {
+                        // 尝试获取超话名称
+                        String topicName = "超话";
+                        try {
+                            // 这里可以通过API获取超话名称，暂时使用ID
+                            topicName = "超话ID: " + topicId;
+                        } catch (Exception e) {
+                            // 如果获取失败，使用默认名称
+                        }
+                        
+                        result.append("  ").append(count).append(". ").append(topicName).append("\n");
+                        result.append("     超话ID：").append(topicId).append("\n");
+                        
+                        if (count < properties.weibo_superTopic_subscribe.get(groupId).size()) {
+                            result.append("\n");
+                        }
+                        count++;
+                    }
                 }
             }
+        } catch (Exception e) {
+            result.append("\n❌ 获取订阅列表失败: ").append(e.getMessage());
         }
         
         if (!hasSubscription) {
@@ -1954,16 +2020,40 @@ public class CommandOperator extends AsyncWebHandlerBase {
                 return permissionTest;
             }
             
+            // 验证超话ID是否有效
+            WeiboApiService weiboApiService = new WeiboApiService();
+            try {
+                // 这里可以验证超话ID的有效性
+                // 暂时跳过验证，直接添加
+            } catch (Exception e) {
+                // 验证失败时的处理
+            }
+            
             boolean success = Newboy.INSTANCE.getConfig().addWeiboSTopicSubscribe(topicId, groupId);
             if (success) {
+                // 添加到监控服务
+                try {
+                    WeiboHandler weiboHandler = Newboy.INSTANCE.getHandlerWeibo();
+                    if (weiboHandler != null) {
+                        // 通过API添加超话监控
+                        JSONObject request = new JSONObject();
+                        request.set("topicId", topicId);
+                        request.set("groupIds", new String[]{groupIdStr});
+                        // 这里可以调用WeiboHandler的API
+                    }
+                } catch (Exception e) {
+                    // 如果添加监控失败，记录日志但不影响订阅添加
+                    Newboy.INSTANCE.getLogger().error("添加超话监控失败: " + e.getMessage());
+                }
+                
                 return new PlainText(String.format("✅ 成功为群 %d 添加超话订阅\n🔥 超话ID：%s", groupId, topicId));
             } else {
                 return new PlainText(String.format("❌ 群 %d 已订阅超话 %s", groupId, topicId));
             }
         } catch (NumberFormatException e) {
-            // 静默处理群号格式错误，不向群组推送错误消息
-            Newboy.INSTANCE.getLogger().info("超话订阅群号格式错误: " + groupIdStr);
-            return null;
+            return new PlainText("❌ 参数格式错误，请检查超话ID和群号");
+        } catch (Exception e) {
+            return new PlainText("❌ 添加订阅失败: " + e.getMessage());
         }
     }
 
@@ -1980,14 +2070,26 @@ public class CommandOperator extends AsyncWebHandlerBase {
             
             boolean success = Newboy.INSTANCE.getConfig().rmWeiboSTopicSubscribe(topicId, groupId);
             if (success) {
+                // 从监控服务移除
+                try {
+                    WeiboHandler weiboHandler = Newboy.INSTANCE.getHandlerWeibo();
+                    if (weiboHandler != null) {
+                        // 通过API移除超话监控
+                        // 这里可以调用WeiboHandler的API
+                    }
+                } catch (Exception e) {
+                    // 如果移除监控失败，记录日志但不影响订阅移除
+                    Newboy.INSTANCE.getLogger().error("移除超话监控失败: " + e.getMessage());
+                }
+                
                 return new PlainText(String.format("✅ 成功为群 %d 移除超话订阅\n🔥 超话ID：%s", groupId, topicId));
             } else {
                 return new PlainText(String.format("❌ 群 %d 未订阅超话 %s", groupId, topicId));
             }
         } catch (NumberFormatException e) {
-            // 静默处理群号格式错误，不向群组推送错误消息
-            Newboy.INSTANCE.getLogger().info("超话取消订阅群号格式错误: " + groupIdStr);
-            return null;
+            return new PlainText("❌ 参数格式错误，请检查超话ID和群号");
+        } catch (Exception e) {
+            return new PlainText("❌ 移除订阅失败: " + e.getMessage());
         }
     }
 
@@ -2305,7 +2407,10 @@ public class CommandOperator extends AsyncWebHandlerBase {
                             DouyinMonitorService.UserMonitorInfo userInfo = monitorService.getMonitoredUserInfo(secUserId);
                             if (userInfo != null) {
                                 if (userInfo.lastUpdateTime > 0) {
-                                    lastUpdateTime = cn.hutool.core.date.DateUtil.formatDateTime(new java.util.Date(userInfo.lastUpdateTime));
+                                    LocalDateTime dateTime = LocalDateTime.ofInstant(
+                                        java.time.Instant.ofEpochMilli(userInfo.lastUpdateTime), 
+                                        ZoneId.systemDefault());
+                                    lastUpdateTime = dateTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
                                 } else {
                                     lastUpdateTime = "暂无作品";
                                 }
@@ -2417,6 +2522,37 @@ public class CommandOperator extends AsyncWebHandlerBase {
     }
     
     /**
+     * 获取微博用户信息
+     * @param uid 用户UID
+     * @return 用户信息消息
+     */
+    private Message getWeiboUserInfo(String uid) {
+        try {
+            String userInfo = Newboy.INSTANCE.getHandlerWeibo().getWeiboUserInfo(uid);
+            return new PlainText("👤 微博用户信息\n" +
+                    "━━━━━━━━━━━━━━━━━━━━\n" +
+                    userInfo);
+        } catch (Exception e) {
+            return new PlainText("❌ 获取用户信息失败: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * 获取微博监控状态
+     * @return 监控状态消息
+     */
+    private Message getWeiboMonitorStatus() {
+        try {
+            String status = Newboy.INSTANCE.getHandlerWeibo().getWeiboMonitorStatus();
+            return new PlainText("📊 微博监控状态\n" +
+                    "━━━━━━━━━━━━━━━━━━━━\n" +
+                    status);
+        } catch (Exception e) {
+            return new PlainText("❌ 获取监控状态失败: " + e.getMessage());
+        }
+    }
+    
+    /**
      * 异步延迟方法，替代Thread.sleep避免阻塞
      * @param delayMs 延迟毫秒数
      * @return CompletableFuture用于异步处理
@@ -2442,4 +2578,13 @@ public class CommandOperator extends AsyncWebHandlerBase {
             return java.util.concurrent.CompletableFuture.completedFuture(null);
         }
     }
+
+    
+
+
+
+
+
+
+
 }

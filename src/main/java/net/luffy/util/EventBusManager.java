@@ -18,7 +18,7 @@ public class EventBusManager {
     
     static {
         int processors = Runtime.getRuntime().availableProcessors();
-        PROCESSOR_THREADS = Math.max(1, Math.min(processors, 3));
+        PROCESSOR_THREADS = Math.max(2, Math.min(processors + 1, 6)); // 从最多3个增加到6个，最少从1个增加到2个
         // EventBusManager初始化完成
     }
     
@@ -28,7 +28,7 @@ public class EventBusManager {
     private final Map<Class<?>, List<EventHandler<?>>> eventHandlers = new ConcurrentHashMap<>();
     
     // 事件队列和处理器
-    private final BlockingQueue<Event> eventQueue = new LinkedBlockingQueue<>(1000);
+    private final BlockingQueue<Event> eventQueue = new LinkedBlockingQueue<>(2000); // 从1000增加到2000
     private final ExecutorService eventProcessor;
     
     // 性能监控

@@ -5,6 +5,7 @@ import net.luffy.util.UnifiedResourceManager;
 import net.luffy.util.AdaptiveThreadPoolManager;
 import net.luffy.util.CpuLoadBalancer;
 import net.luffy.util.UnifiedSchedulerManager;
+import net.luffy.util.sender.Pocket48ActivityMonitor;
 import net.luffy.model.Pocket48Message;
 
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -32,6 +33,7 @@ public class Pocket48UnifiedResourceManager {
     private final Pocket48ResourceCache cacheManager;
     private final Pocket48ResourceHandler resourceHandler;
     private final Pocket48ResourceOptimizer optimizer;
+    private final Pocket48ActivityMonitor activityMonitor;
     
     // 统一资源管理器引用
     private final UnifiedResourceManager unifiedManager;
@@ -51,6 +53,7 @@ public class Pocket48UnifiedResourceManager {
         this.cacheManager = Pocket48ResourceCache.getInstance();
         this.resourceHandler = new Pocket48ResourceHandler();
         this.optimizer = new Pocket48ResourceOptimizer(resourceHandler);
+        this.activityMonitor = Pocket48ActivityMonitor.getInstance();
         
         initialize();
     }

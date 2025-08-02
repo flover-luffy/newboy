@@ -17,6 +17,9 @@ import java.text.DecimalFormat;
 import java.io.File;
 import java.util.Map;
 import java.util.List;
+import java.util.Set;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.lang.management.MemoryUsage;
 import net.luffy.util.PerformanceMonitor;
 import net.luffy.util.EnhancedPerformanceMonitor;
@@ -25,7 +28,11 @@ import net.luffy.util.Properties;
 import net.luffy.model.WeidianCookie;
 import net.luffy.model.Pocket48Subscribe;
 import net.luffy.util.DouyinMonitorService;
-import net.luffy.util.WeiboMonitorService;
+import net.luffy.service.WeiboApiService;
+import net.luffy.util.sender.Pocket48ActivityMonitor;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 
 /**
  * 自定义前缀命令处理器
@@ -456,39 +463,24 @@ public class CustomPrefixCommand {
                     List<Long> userIds = entry.getValue();
                     subscribeInfo.append(String.format("  群 %d: %d个用户\n", groupId, userIds.size()));
                     for (Long userId : userIds) {
-                        // 尝试从监控服务获取用户昵称和最后更新时间
+                        // 使用新的微博API服务获取用户昵称和最新微博时间
                         String name = "微博用户";
-                        String lastUpdateTime = "未知";
+                        String lastUpdateTime = "暂无微博";
                         try {
-                            WeiboMonitorService weiboMonitor = WeiboMonitorService.getInstance();
-                            if (weiboMonitor != null) {
-                                // 确保用户在监控服务中
-                                weiboMonitor.addMonitorUser(userId);
-                                
-                                WeiboMonitorService.UserMonitorInfo userInfo = weiboMonitor.getMonitoredUserInfo(userId);
-                                if (userInfo != null) {
-                                    if (userInfo.nickname != null && !userInfo.nickname.isEmpty()) {
-                                        name = userInfo.nickname;
-                                    }
-                                    if (userInfo.lastUpdateTime > 0) {
-                                        lastUpdateTime = cn.hutool.core.date.DateUtil.formatDateTime(new java.util.Date(userInfo.lastUpdateTime));
-                                    } else {
-                                        lastUpdateTime = "暂无微博";
-                                    }
-                                } else {
-                                    // 如果没有监控信息，尝试直接获取
-                                    String nickname = weiboMonitor.getUserNickname(userId);
-                                    if (nickname != null && !nickname.equals("未知用户")) {
-                                        name = nickname;
-                                    }
-                                    String formattedTime = weiboMonitor.getFormattedLastUpdateTime(userId);
-                                    if (formattedTime != null && !formattedTime.equals("未知")) {
-                                        lastUpdateTime = formattedTime;
-                                    }
-                                }
+                            WeiboApiService weiboApiService = new WeiboApiService();
+                            
+                            String nickname = weiboApiService.getUserNickname(String.valueOf(userId));
+                            if (nickname != null && !nickname.equals("未知用户")) {
+                                name = nickname;
+                            }
+                            
+                            // 获取最新微博时间
+                            String latestTime = weiboApiService.getUserLatestWeiboTime(String.valueOf(userId));
+                            if (latestTime != null && !latestTime.equals("暂无微博")) {
+                                lastUpdateTime = latestTime;
                             }
                         } catch (Exception e) {
-                            // 忽略异常，使用默认值
+                            // 如果获取失败，使用默认名称
                         }
                         
                         subscribeInfo.append(String.format("    - %s (UID: %d)\n", name, userId));
@@ -507,7 +499,20 @@ public class CustomPrefixCommand {
                     List<String> topicIds = entry.getValue();
                     subscribeInfo.append(String.format("  群 %d: %d个超话\n", groupId, topicIds.size()));
                     for (String topicId : topicIds) {
+                        // 获取超话最新微博时间
+                        String lastUpdateTime = "暂无微博";
+                        try {
+                            WeiboApiService weiboApiService = new WeiboApiService();
+                            String latestTime = weiboApiService.getSuperTopicLatestWeiboTime(topicId);
+                            if (latestTime != null && !latestTime.equals("暂无微博")) {
+                                lastUpdateTime = latestTime;
+                            }
+                        } catch (Exception e) {
+                            // 忽略异常，使用默认值
+                        }
+                        
                         subscribeInfo.append(String.format("    - 超话ID: %s\n", topicId));
+                        subscribeInfo.append(String.format("      最后更新: %s\n", lastUpdateTime));
                     }
                 }
             } else {
@@ -538,6 +543,8 @@ public class CustomPrefixCommand {
                 subscribeInfo.append("  ❌ 暂无订阅\n");
             }
             
+
+            
             // 抖音订阅
             subscribeInfo.append("\n📱 抖音订阅:\n");
             if (properties.douyin_user_subscribe != null && !properties.douyin_user_subscribe.isEmpty()) {
@@ -563,7 +570,10 @@ public class CustomPrefixCommand {
                                 DouyinMonitorService.UserMonitorInfo userInfo = monitorService.getMonitoredUserInfo(userId);
                                 if (userInfo != null) {
                                     if (userInfo.lastUpdateTime > 0) {
-                                        lastUpdateTime = cn.hutool.core.date.DateUtil.formatDateTime(new java.util.Date(userInfo.lastUpdateTime));
+                                        LocalDateTime dateTime = LocalDateTime.ofInstant(
+                                            java.time.Instant.ofEpochMilli(userInfo.lastUpdateTime), 
+                                            ZoneId.systemDefault());
+                                        lastUpdateTime = dateTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
                                     } else {
                                         lastUpdateTime = "暂无作品";
                                     }
@@ -619,6 +629,19 @@ public class CustomPrefixCommand {
             PerformanceMonitor basicMonitor = PerformanceMonitor.getInstance();
             report.append(basicMonitor.getPerformanceReport());
             
+            // 添加分隔符
+            report.append("\n\n");
+            
+            // 活跃度监控详细报告
+            try {
+                Pocket48ActivityMonitor activityMonitor = Pocket48ActivityMonitor.getInstance();
+                report.append("📈 消息活跃度监控详细报告\n");
+                report.append("━━━━━━━━━━━━━━━━━━━━\n");
+                report.append(activityMonitor.getActivityReport());
+            } catch (Exception e) {
+                report.append("❌ 活跃度监控详细报告获取失败: " + e.getMessage());
+            }
+            
         } catch (Exception e) {
             report.append("❌ 获取详细性能报告失败: ").append(e.getMessage());
         }
@@ -657,6 +680,15 @@ public class CustomPrefixCommand {
             // CPU状态检查
             report.append("\n\n🖥️ CPU状态:\n");
             report.append(monitor.checkCpuStatus());
+            
+            // 活跃度监控报告
+            report.append("\n\n📈 消息活跃度监控:\n");
+            try {
+                Pocket48ActivityMonitor activityMonitor = Pocket48ActivityMonitor.getInstance();
+                report.append(activityMonitor.getActivityReport());
+            } catch (Exception e) {
+                report.append("❌ 活跃度监控获取失败: " + e.getMessage());
+            }
             
         } catch (Exception e) {
             report.append("\n❌ 获取监控报告失败: ").append(e.getMessage());

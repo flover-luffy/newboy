@@ -8,6 +8,7 @@ import net.luffy.handler.WeidianHandler;
 import net.luffy.handler.WeidianSenderHandler;
 import net.luffy.handler.Xox48Handler;
 
+
 // import net.luffy.util.OnlineStatusMonitor; // 传统监控器已移除
 import net.luffy.util.AsyncOnlineStatusMonitor;
 
@@ -18,7 +19,9 @@ import net.luffy.model.WeidianOrder;
 import net.luffy.util.ConfigOperator;
 import net.luffy.util.Properties;
 import net.luffy.util.PropertiesCommon;
-import net.luffy.util.sender.*;
+import net.luffy.util.sender.Pocket48Sender;
+import net.luffy.util.sender.WeidianItemSender;
+import net.luffy.util.sender.WeidianOrderSender;
 
 import net.luffy.util.UnifiedSchedulerManager;
 import net.luffy.util.PerformanceMonitor;
@@ -51,6 +54,7 @@ public final class Newboy extends JavaPlugin {
     public WeidianHandler handlerWeidian;
     public WeidianSenderHandler handlerWeidianSender;
     public Xox48Handler handlerXox48;
+
 
     // 传统在线状态监控器已移除，使用AsyncOnlineStatusMonitor替代
     private Scheduler scheduler;
@@ -86,6 +90,10 @@ public final class Newboy extends JavaPlugin {
         initProperties();
         loadConfig();
         registerPermission();
+        registerCommands();
+        
+        // 初始化处理器（包括小红书监控服务）
+        initHandlers();
 
         GlobalEventChannel.INSTANCE.registerListenerHost(new Listener());
 
@@ -105,15 +113,9 @@ public final class Newboy extends JavaPlugin {
             pocket48_has_login = false;
         }
 
-        boolean weibo_has_login = false;
-        try {
-            this.handlerWeibo.updateLoginToSuccess();
-            weibo_has_login = true;
-        } catch (Exception e) {
-            // 微博Cookie更新失败，静默处理
-        }
-        boolean finalWeibo_has_login = weibo_has_login;
-        listenBroadcast(pocket48_has_login, finalWeibo_has_login);
+        // 新的微博Handler会自动初始化，无需手动登录检查
+        boolean weibo_has_login = true; // 新的微博监控服务总是可用的
+        listenBroadcast(pocket48_has_login, weibo_has_login);
 
         // 启动定期性能报告（发送给第一个管理员）
         if (properties.admins != null && properties.admins.length > 0) {
@@ -137,6 +139,7 @@ public final class Newboy extends JavaPlugin {
         handlerWeidian = new WeidianHandler();
         handlerWeidianSender = new WeidianSenderHandler();
         handlerXox48 = new Xox48Handler();
+
 
         // 传统在线状态监控器初始化已移除
 
@@ -173,7 +176,6 @@ public final class Newboy extends JavaPlugin {
     }
 
 
-    
 
     
     // 传统在线状态监控器已移除，使用AsyncOnlineStatusMonitor替代
@@ -222,6 +224,8 @@ public final class Newboy extends JavaPlugin {
         handlerWeidian = new WeidianHandler();
         handlerWeidianSender = new WeidianSenderHandler();
         handlerXox48 = new Xox48Handler();
+
+        
         // 传统在线状态监控器已移除，使用AsyncOnlineStatusMonitor替代
 
     }
@@ -242,13 +246,8 @@ public final class Newboy extends JavaPlugin {
             pocket48_has_login = handlerPocket48.login(properties.pocket48_account, properties.pocket48_password);
         }
         
-        try {
-            handlerWeibo.updateLoginToSuccess();
-            weibo_has_login = true;
-        } catch (Exception e) {
-            getLogger().warning("微博登录失败: " + e.getMessage());
-            weibo_has_login = false;
-        }
+        // 新的微博Handler会自动管理连接状态
+        weibo_has_login = true;
         
         // 重新启动监听广播
         listenBroadcast(pocket48_has_login, weibo_has_login);
@@ -259,6 +258,8 @@ public final class Newboy extends JavaPlugin {
         try {
             // 停止所有定时任务
             stopAllScheduledTasks();
+            
+
             
             // 停止定期性能报告
             PerformanceMonitor.getInstance().disablePeriodicReporting();
@@ -312,12 +313,19 @@ public final class Newboy extends JavaPlugin {
             }
         }
     }
+    
+    /**
+     * 注册命令
+     */
+    private void registerCommands() {
+        // 命令注册已移除
+    }
 
     private void listenBroadcast(boolean pocket48_has_login, boolean weibo_has_login) {
 
         // endTime: 已发送房间消息的最晚时间
         HashMap<Long, HashMap<Long, Long>> pocket48RoomEndTime = new HashMap<>();
-        HashMap<Long, HashMap<String, Long>> weiboEndTime = new HashMap<>(); // 同时包含超话和个人(long -> String)
+        // 微博相关的endTime已移除，新的微博监控服务会自动管理状态
         HashMap<Long, EndTime> weidianEndTime = new HashMap<>();
         // status: 上次检测的开播状态
         HashMap<Long, HashMap<Long, List<Long>>> pocket48VoiceStatus = new HashMap<>();
@@ -362,24 +370,7 @@ public final class Newboy extends JavaPlugin {
             }));
         }
 
-        if (weibo_has_login) {
-            handlerWeibo.setCronScheduleID(scheduler.schedule(properties.weibo_pattern, new Runnable() {
-                @Override
-                public void run() {
-                    for (Bot b : Bot.getInstances()) {
-                        for (long group : properties.weibo_user_subscribe.keySet()) {
-                            if (b.getGroup(group) == null)
-                                continue;
-
-                            if (!weiboEndTime.containsKey(group))
-                                weiboEndTime.put(group, new HashMap<>());
-
-                            new Thread(new WeiboSender(b, group, weiboEndTime.get(group))).start();
-                        }
-                    }
-                }
-            }));
-        }
+        // 新的微博监控服务已在WeiboHandler中自动启动，无需在此处重复调度
 
         // 抖音监听已移除 - 使用新的DouyinMonitorService替代
 

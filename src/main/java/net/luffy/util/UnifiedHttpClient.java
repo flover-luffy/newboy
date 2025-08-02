@@ -71,7 +71,7 @@ public class UnifiedHttpClient {
     public String get(String url) throws IOException {
         Request request = new Request.Builder()
                 .url(url)
-                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
                 .addHeader("Accept", "application/json, text/plain, */*")
                 .addHeader("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
                 .addHeader("Connection", "keep-alive")
@@ -93,7 +93,7 @@ public class UnifiedHttpClient {
         Request.Builder builder = new Request.Builder().url(url);
         
         // 添加默认请求头
-        builder.addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        builder.addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
                .addHeader("Accept", "application/json, text/plain, */*")
                .addHeader("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
                .addHeader("Connection", "keep-alive");
@@ -124,7 +124,7 @@ public class UnifiedHttpClient {
         Request request = new Request.Builder()
                 .url(url)
                 .post(body)
-                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
                 .addHeader("Accept", "application/json, text/plain, */*")
                 .addHeader("Content-Type", "application/json")
                 .build();
@@ -154,7 +154,7 @@ public class UnifiedHttpClient {
                 .post(requestBody);
         
         // 添加默认请求头
-        builder.addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        builder.addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
                .addHeader("Accept", "application/json, text/plain, */*");
         
         // 添加自定义请求头
@@ -183,7 +183,7 @@ public class UnifiedHttpClient {
         
         Request request = new Request.Builder()
                 .url(url)
-                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
                 .addHeader("Accept", "application/json, text/plain, */*")
                 .build();
         
@@ -222,7 +222,7 @@ public class UnifiedHttpClient {
         
         Request.Builder builder = new Request.Builder()
                 .url(url)
-                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
                 .addHeader("Accept", "application/json, text/plain, */*");
         
         // 添加自定义请求头
@@ -271,7 +271,7 @@ public class UnifiedHttpClient {
         Request request = new Request.Builder()
                 .url(url)
                 .post(body)
-                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
                 .addHeader("Content-Type", "application/json")
                 .build();
         
@@ -314,7 +314,7 @@ public class UnifiedHttpClient {
                 .post(requestBody);
         
         // 添加默认请求头
-        builder.addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        builder.addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
                .addHeader("Accept", "application/json, text/plain, */*");
         
         // 添加自定义请求头
@@ -359,7 +359,7 @@ public class UnifiedHttpClient {
     public InputStream getInputStream(String url) throws IOException {
         Request request = new Request.Builder()
                 .url(url)
-                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
                 .build();
         
         Response response = client.newCall(request).execute();
@@ -383,7 +383,7 @@ public class UnifiedHttpClient {
     public InputStream getInputStreamWithHeaders(String url, java.util.Map<String, String> headers) throws IOException {
         Request.Builder builder = new Request.Builder()
                 .url(url)
-                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
         
         // 添加自定义请求头
         if (headers != null) {
@@ -474,12 +474,12 @@ public class UnifiedHttpClient {
                     }
                 }
                 
-                // 记录到全局性能监控器
-                try {
-                    net.luffy.util.PerformanceMonitor.getInstance().recordQuery(responseTime);
-                } catch (Exception e) {
-                    // 忽略性能监控记录失败，避免因为Mirai依赖问题导致HTTP请求失败
-                }
+                // 记录到全局性能监控器 - 暂时注释掉避免Mirai依赖问题
+                // try {
+                //     net.luffy.util.PerformanceMonitor.getInstance().recordQuery(responseTime);
+                // } catch (Exception e) {
+                //     // 忽略性能监控记录失败，避免因为Mirai依赖问题导致HTTP请求失败
+                // }
                 
                 return response;
             } catch (IOException e) {
@@ -492,12 +492,12 @@ public class UnifiedHttpClient {
                         currentFailed, e.getMessage());
                 }
                 
-                // 记录到全局性能监控器
-                try {
-                    net.luffy.util.PerformanceMonitor.getInstance().recordQuery(responseTime);
-                } catch (Exception ex) {
-                    // 忽略性能监控记录失败，避免因为Mirai依赖问题导致HTTP请求失败
-                }
+                // 记录到全局性能监控器 - 暂时注释掉避免Mirai依赖问题
+                // try {
+                //     net.luffy.util.PerformanceMonitor.getInstance().recordQuery(responseTime);
+                // } catch (Exception ex) {
+                //     // 忽略性能监控记录失败，避免因为Mirai依赖问题导致HTTP请求失败
+                // }
                 
                 throw e;
             }
