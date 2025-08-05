@@ -51,13 +51,7 @@ dependencies {
     
     // JSR-250注解支持
     implementation("javax.annotation:javax.annotation-api:1.3.2")
-    
-
 }
-
-
-
-
 
 tasks.withType<JavaCompile> {
     options.encoding = "UTF-8"

@@ -92,7 +92,7 @@ public final class Newboy extends JavaPlugin {
         registerPermission();
         registerCommands();
         
-        // 初始化处理器（包括小红书监控服务）
+        // 初始化处理器
         initHandlers();
 
         GlobalEventChannel.INSTANCE.registerListenerHost(new Listener());

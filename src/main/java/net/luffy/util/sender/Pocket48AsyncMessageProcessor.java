@@ -6,7 +6,7 @@ import net.luffy.model.Pocket48SenderMessage;
 import net.luffy.util.AdaptiveThreadPoolManager;
 import net.luffy.util.CpuLoadBalancer;
 import net.luffy.util.EventBusManager;
-import net.luffy.util.MessageDelayConfig;
+
 import net.mamoe.mirai.contact.Group;
 import net.mamoe.mirai.message.data.Message;
 
@@ -27,7 +27,7 @@ public class Pocket48AsyncMessageProcessor {
     private final Pocket48Sender sender;
     private final AdaptiveThreadPoolManager adaptivePoolManager;
     private final CpuLoadBalancer loadBalancer;
-    private final MessageDelayConfig delayConfig;
+
     private final ScheduledExecutorService delayExecutor;
     
     // 文本消息处理线程池：专门处理文本消息等轻量级任务
@@ -47,7 +47,7 @@ public class Pocket48AsyncMessageProcessor {
         this.sender = sender;
         this.adaptivePoolManager = AdaptiveThreadPoolManager.getInstance();
         this.loadBalancer = CpuLoadBalancer.getInstance();
-        this.delayConfig = MessageDelayConfig.getInstance();
+
         
         // 验证线程池参数
         if (MESSAGE_THREAD_POOL_SIZE <= 0) {
@@ -254,8 +254,8 @@ public class Pocket48AsyncMessageProcessor {
         for (Pocket48SenderMessage message : messages) {
             try {
                 sendMessage(message, group);
-                // 添加适当的间隔
-                delayAsync(delayConfig.getTextDelay());
+                // 移除延迟配置
+                // 无延迟发送
             } catch (Exception e) {
                 // 静默处理发送错误
             }
@@ -301,11 +301,8 @@ public class Pocket48AsyncMessageProcessor {
                 sendMessage(messages.get(i), group);
                 // 高优先级消息（文本消息）间无延迟，低优先级消息使用最小延迟
                 if (i < messages.size() - 1) {
-                    // 如果是高优先级延迟（文本消息），则不等待
-                    if (baseDelay > 0) {
-                        delayAsync(Math.max(0, baseDelay));
-                    }
-                    // 如果baseDelay为0，则不执行任何延迟
+                    // 移除延迟配置，所有消息无延迟发送
+                    // 无延迟发送
                 }
             } catch (Exception e) {
                 // 静默处理发送错误
@@ -397,12 +394,8 @@ public class Pocket48AsyncMessageProcessor {
                 sendMessageWithRetry(unjointMessages[i], group, 3);
                 // 文本消息部分间0延迟，媒体消息使用最小延迟
                 if (i < unjointMessages.length - 1) {
-                    // 如果是媒体消息，使用最小延迟；文本消息则0延迟
-                    if (isMediaMessage(unjointMessages[i])) {
-                        int partDelay = Math.max(2, delayConfig.getTextDelay() / 5); // 媒体消息使用最小延迟
-                        delayAsync(partDelay);
-                    }
-                    // 文本消息不执行任何延迟
+                    // 移除延迟配置，所有消息无延迟发送
+                    // 无延迟发送
                 }
             }
         } catch (Exception e) {

@@ -74,16 +74,6 @@ public class ConfigOperator {
             // 设置异步监控配置默认值
             tempSetting.setByGroup("async_monitor", "schedule_pattern", "*/30 * * * * *");
             
-            // 设置消息延迟优化配置默认值 - 超激进模式，文本消息0延迟
-            tempSetting.setByGroup("message_delay", "optimization_mode", "ULTRA_AGGRESSIVE");
-            tempSetting.setByGroup("message_delay", "text", "0");
-            tempSetting.setByGroup("message_delay", "media", "1");
-            tempSetting.setByGroup("message_delay", "group_high_priority", "0");
-            tempSetting.setByGroup("message_delay", "group_low_priority", "1");
-            tempSetting.setByGroup("message_delay", "processing_timeout", "2");
-            tempSetting.setByGroup("message_delay", "high_load_multiplier", "1.0");
-            tempSetting.setByGroup("message_delay", "critical_load_multiplier", "1.2");
-            
             // 口袋48异步处理队列配置已迁移到 Pocket48ResourceManager
             
             // 设置订阅配置默认值
@@ -141,16 +131,6 @@ public class ConfigOperator {
         
         // 异步监控配置
         properties.async_monitor_schedule_pattern = setting.getStr("async_monitor", "schedule_pattern", "*/30 * * * * *");
-        
-        // 消息延迟优化配置 - 超级优化：文本消息0延迟
-        properties.message_delay_optimization_mode = setting.getStr("message_delay", "optimization_mode", "ULTRA_AGGRESSIVE");
-        properties.message_delay_text = setting.getInt("message_delay", "text", 0);  // 文本消息0延迟，实现真正无延迟
-        properties.message_delay_media = setting.getInt("message_delay", "media", 1);  // 媒体消息最小延迟1ms
-        properties.message_delay_group_high_priority = setting.getInt("message_delay", "group_high_priority", 0);  // 高优先级0延迟
-        properties.message_delay_group_low_priority = setting.getInt("message_delay", "group_low_priority", 1);  // 低优先级最小延迟1ms
-        properties.message_delay_processing_timeout = setting.getInt("message_delay", "processing_timeout", 2);  // 处理超时减少到2秒
-        properties.message_delay_high_load_multiplier = setting.getDouble("message_delay", "high_load_multiplier", 1.0);
-        properties.message_delay_critical_load_multiplier = setting.getDouble("message_delay", "critical_load_multiplier", 1.2);  // 进一步减少临界负载倍数
         
         // 口袋48异步处理队列配置已迁移到 Pocket48ResourceManager
 

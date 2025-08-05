@@ -55,7 +55,7 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
      */
     private String getFileExtensionFromUrl(String url) {
         if (url == null || url.isEmpty()) {
-            return ".dat";
+            return ".jpg"; // 默认为图片格式
         }
         
         // 移除查询参数
@@ -73,7 +73,9 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
         
         // 根据URL路径推断类型
         String lowerUrl = url.toLowerCase();
-        if (lowerUrl.contains("/image/") || lowerUrl.contains("/img/") || lowerUrl.contains("/cover/")) {
+        if (lowerUrl.contains("/image/") || lowerUrl.contains("/img/") || lowerUrl.contains("/cover/") || 
+            lowerUrl.contains("cover") || lowerUrl.contains("thumb") || lowerUrl.contains("emotion") ||
+            lowerUrl.contains("express") || lowerUrl.contains("emoji")) {
             return ".jpg";
         } else if (lowerUrl.contains("/video/") || lowerUrl.contains("/mp4/")) {
             return ".mp4";
@@ -81,8 +83,8 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
             return ".amr";
         }
         
-        // 默认扩展名
-        return ".dat";
+        // 对于口袋48的资源，默认为图片格式
+        return ".jpg";
     }
     
     /**

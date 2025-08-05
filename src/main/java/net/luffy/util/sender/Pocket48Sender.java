@@ -6,7 +6,7 @@ import net.luffy.handler.Pocket48Handler;
 import net.luffy.util.sender.Pocket48UnifiedResourceManager;
 import net.luffy.util.sender.Pocket48ActivityMonitor;
 import net.luffy.util.PerformanceMonitor;
-import net.luffy.util.MessageDelayConfig;
+
 import net.luffy.model.*;
 import net.mamoe.mirai.Bot;
 import net.mamoe.mirai.contact.Group;
@@ -39,7 +39,7 @@ public class Pocket48Sender extends Sender {
     private final HashMap<Long, Pocket48SenderCache> cache;
     private final Pocket48UnifiedResourceManager unifiedResourceManager;
     private final Pocket48AsyncMessageProcessor asyncProcessor;
-    private final MessageDelayConfig delayConfig;
+
     private final net.luffy.util.CpuLoadBalancer loadBalancer;
     private final Pocket48MediaQueue mediaQueue;
     private final Pocket48ActivityMonitor activityMonitor;
@@ -52,7 +52,7 @@ public class Pocket48Sender extends Sender {
         this.cache = cache;
         this.unifiedResourceManager = Pocket48UnifiedResourceManager.getInstance();
         this.asyncProcessor = new Pocket48AsyncMessageProcessor(this);
-        this.delayConfig = MessageDelayConfig.getInstance();
+
         this.loadBalancer = net.luffy.util.CpuLoadBalancer.getInstance();
         this.mediaQueue = new Pocket48MediaQueue();
         this.activityMonitor = Pocket48ActivityMonitor.getInstance();
@@ -366,7 +366,11 @@ public class Pocket48Sender extends Sender {
                 }
             }
             case IMAGE: {
-                try (ExternalResource imageResource = ExternalResource.create(getRes(message.getResLoc()))) {
+                // 推断文件扩展名并下载到临时文件
+                String inferredExt = inferImageExtensionFromUrl(message.getResLoc());
+                File imageFile = unifiedResourceManager.downloadToTempFileWithRetry(message.getResLoc(), inferredExt, 3);
+                
+                try (ExternalResource imageResource = ExternalResource.create(imageFile)) {
                     Image image = group.uploadImage(imageResource);
                     // 创建包含图片的消息链，图片嵌入到消息中
                     MessageChain messageChain = new PlainText("【" + n + "】: 发送了一张图片\n").plus(image).plus("\n频道：" + r + "\n时间: " + timeStr);
@@ -395,8 +399,12 @@ public class Pocket48Sender extends Sender {
                                 throw new RuntimeException("资源不可用: " + resourceInfo.getErrorMessage());
                             }
                             
+                            // 推断文件扩展名并下载到临时文件
+                            String inferredExt = inferImageExtensionFromUrl(resUrl);
+                            File emotionFile = unifiedResourceManager.downloadToTempFileWithRetry(resUrl, inferredExt, 3);
+                            
                             // 获取资源流
-                            try (ExternalResource emotionResource = ExternalResource.create(getRes(resUrl))) {
+                            try (ExternalResource emotionResource = ExternalResource.create(emotionFile)) {
                                 // 使用带重试机制的图片上传方法
                                 Image emotionImage = uploadImageWithRetry(emotionResource, 3);
                                 // 创建包含表情图片的消息链
@@ -1163,10 +1171,8 @@ public class Pocket48Sender extends Sender {
                     // 立即发送消息
                     sendSingleMessage(senderMessage, group);
                     
-                    // 添加发送间隔（除了最后一条消息）
-                    if (i < mediaMessages.size() - 1) {
-                        delayAsync(baseInterval);
-                    }
+                    // 移除延迟配置，无延迟发送
+                    // 无延迟发送
                 }
                 
             } catch (Exception e) {
@@ -1182,21 +1188,8 @@ public class Pocket48Sender extends Sender {
      * @return 发送间隔（毫秒）
      */
     private int calculateSendInterval(int messageCount) {
-        // 对于文本消息使用极小的基础间隔，接近0延迟
-        int baseInterval = Math.max(0, delayConfig.getTextDelay() / 10); // 使用配置值的1/10，允许0延迟
-        
-        // 根据消息数量调整间隔：消息越多，间隔越短，最小0ms
-        int minInterval = 0; // 最小间隔0ms，实现真正的无延迟
-        
-        if (messageCount > 10) {
-            baseInterval = Math.max(minInterval, baseInterval - (messageCount - 10));
-        } else if (messageCount > 5) {
-            baseInterval = Math.max(minInterval, baseInterval - (messageCount - 5));
-        }
-        
-        // 应用CPU负载调整，但确保文本消息延迟极小
-        int dynamicDelay = loadBalancer.getDynamicDelay(baseInterval);
-        return Math.max(minInterval, Math.min(dynamicDelay, Math.max(1, baseInterval * 2))); // 最大延迟不超过baseInterval*2，但至少1ms
+        // 移除延迟配置，使用固定的最小延迟
+        return 0; // 无延迟发送
     }
     
     /**
@@ -1282,8 +1275,8 @@ public class Pocket48Sender extends Sender {
             return 1; // 1ms延迟
         }
         
-        // 媒体消息之间：使用配置的最小延迟
-        return Math.max(1, delayConfig.getMediaDelay() / 4); // 媒体延迟的1/4
+        // 媒体消息之间：移除延迟配置
+        return 0; // 无延迟发送
     }
     
     /**
@@ -1384,8 +1377,10 @@ public class Pocket48Sender extends Sender {
             return ".bmp";
         } else if (cleanUrl.contains(".webp")) {
             return ".webp";
-        } else if (cleanUrl.contains("/image/") || cleanUrl.contains("cover") || cleanUrl.contains("thumb")) {
-            // 如果URL路径包含图片相关关键词，默认为jpg
+        } else if (cleanUrl.contains("/image/") || cleanUrl.contains("cover") || cleanUrl.contains("thumb") ||
+                   cleanUrl.contains("emotion") || cleanUrl.contains("express") || cleanUrl.contains("emoji") ||
+                   cleanUrl.contains("/img/") || cleanUrl.contains("live")) {
+            // 如果URL路径包含图片相关关键词（包括表情和直播封面），默认为jpg
             return ".jpg";
         }
         

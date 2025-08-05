@@ -8,7 +8,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import net.luffy.Newboy;
-import net.luffy.util.MessageDelayConfig;
+
 
 /**
  * CPU负载均衡器
@@ -152,16 +152,9 @@ public class CpuLoadBalancer {
         String adjustmentInfo = "";
         
         // 尝试获取配置化的延迟倍数，如果获取失败则使用默认值
+        // 使用固定的默认值，移除延迟配置依赖
         int configuredHighMultiplier = 1;
         int configuredCriticalMultiplier = 2;
-        
-        try {
-            MessageDelayConfig delayConfig = MessageDelayConfig.getInstance();
-            configuredHighMultiplier = delayConfig.getHighLoadMultiplier();
-            configuredCriticalMultiplier = delayConfig.getCriticalLoadMultiplier();
-        } catch (Exception e) {
-            // 如果配置获取失败，使用默认值
-        }
         
         switch (newLevel) {
             case CRITICAL:
