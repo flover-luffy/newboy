@@ -22,16 +22,16 @@ public class Pocket48ActivityMonitor {
     private static volatile Pocket48ActivityMonitor instance;
     private final Object lock = new Object();
     
-    // 活跃度检测配置
+    // 活跃度检测配置 - 优化版
     private static final long ACTIVITY_WINDOW_MS = 5 * 60 * 1000; // 5分钟活跃度窗口
-    private static final int ACTIVE_THRESHOLD = 10; // 5分钟内超过10条消息视为活跃
-    private static final int INACTIVE_THRESHOLD = 3; // 5分钟内少于3条消息视为非活跃
-    private static final long MONITOR_INTERVAL_MS = 30 * 1000; // 30秒检查一次
+    private static final int ACTIVE_THRESHOLD = 15; // 5分钟内超过15条消息视为活跃（提高阈值）
+    private static final int INACTIVE_THRESHOLD = 5; // 5分钟内少于5条消息视为非活跃（提高阈值）
+    private static final long MONITOR_INTERVAL_MS = 60 * 1000; // 60秒检查一次（降低频率）
     
-    // 缓存TTL配置
-    private static final long ACTIVE_CACHE_TTL = 2 * 60 * 1000; // 活跃期：2分钟TTL
-    private static final long INACTIVE_CACHE_TTL = 10 * 60 * 1000; // 非活跃期：10分钟TTL
-    private static final long DEFAULT_CACHE_TTL = 10 * 60 * 1000; // 默认：10分钟TTL
+    // 缓存TTL配置 - 优化版
+    private static final long ACTIVE_CACHE_TTL = 5 * 60 * 1000; // 活跃期：5分钟TTL（延长）
+    private static final long INACTIVE_CACHE_TTL = 20 * 60 * 1000; // 非活跃期：20分钟TTL（延长）
+    private static final long DEFAULT_CACHE_TTL = 15 * 60 * 1000; // 默认：15分钟TTL（延长）
     
     // 消息统计
     private final Map<Long, List<Long>> roomMessageTimes = new ConcurrentHashMap<>();
@@ -196,12 +196,13 @@ public class Pocket48ActivityMonitor {
     }
     
     /**
-     * 检查活跃度状态
+     * 检查活跃度状态 - 优化版
      */
     private void checkActivityStatus() {
         try {
             long currentTime = System.currentTimeMillis();
             int currentActiveRooms = 0;
+            boolean hasSignificantChange = false;
             
             // 检查每个房间的活跃度
             for (Map.Entry<Long, List<Long>> entry : roomMessageTimes.entrySet()) {
@@ -216,16 +217,20 @@ public class Pocket48ActivityMonitor {
                 boolean wasActive = roomActiveStatus.getOrDefault(roomId, new AtomicBoolean(false)).get();
                 boolean isActive;
                 
+                // 增加滞后机制，避免频繁状态切换
                 if (wasActive) {
-                    // 如果之前是活跃的，使用较低的阈值避免频繁切换
+                    // 如果之前是活跃的，需要消息数量显著下降才变为非活跃
                     isActive = recentMessageCount >= INACTIVE_THRESHOLD;
                 } else {
-                    // 如果之前不活跃，使用较高的阈值确认活跃
+                    // 如果之前不活跃，需要消息数量显著上升才变为活跃
                     isActive = recentMessageCount >= ACTIVE_THRESHOLD;
                 }
                 
-                // 更新房间活跃状态
-                roomActiveStatus.computeIfAbsent(roomId, k -> new AtomicBoolean(false)).set(isActive);
+                // 只有状态真正改变时才更新
+                if (wasActive != isActive) {
+                    roomActiveStatus.computeIfAbsent(roomId, k -> new AtomicBoolean(false)).set(isActive);
+                    hasSignificantChange = true;
+                }
                 
                 if (isActive) {
                     currentActiveRooms++;
@@ -237,11 +242,13 @@ public class Pocket48ActivityMonitor {
             boolean wasGlobalActive = globalActiveStatus.get();
             boolean isGlobalActive = currentActiveRooms > 0;
             
-            if (wasGlobalActive != isGlobalActive) {
+            // 只有在有显著变化或全局状态改变时才更新缓存配置
+            if ((wasGlobalActive != isGlobalActive) || hasSignificantChange) {
                 globalActiveStatus.set(isGlobalActive);
-                updateCacheConfiguration();
-                
-                // 状态变化已记录，仅在错误时输出日志
+                // 减少缓存配置更新频率
+                if (wasGlobalActive != isGlobalActive) {
+                    updateCacheConfiguration();
+                }
             }
             
         } catch (Exception e) {

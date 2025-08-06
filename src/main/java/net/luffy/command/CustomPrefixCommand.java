@@ -725,25 +725,45 @@ public class CustomPrefixCommand {
                 (double) usedMemory / maxMemory * 100));
             
             // 2. 异步在线状态监控统计
-            report.append("\n🟢 异步在线状态监控统计:\n");
-            try {
-                AsyncOnlineStatusMonitor asyncMonitor = AsyncOnlineStatusMonitor.INSTANCE;
-                if (asyncMonitor != null) {
-                    String monitorStats = asyncMonitor.getStatistics();
-                    report.append("  ").append(monitorStats.replace("\n", "\n  ")).append("\n");
-                    
-                    // 批量查询性能报告
-                    report.append("\n📈 批量查询性能:\n");
-                    String batchReport = asyncMonitor.getBatchQueryReport();
-                    report.append("  ").append(batchReport.replace("\n", "\n  ")).append("\n");
-                } else {
-                    report.append("  ❌ 异步监控未启用\n");
-                }
-            } catch (Exception e) {
-                report.append("  ❌ 获取异步监控统计失败: ").append(e.getMessage()).append("\n");
+        report.append("\n🟢 异步在线状态监控统计:\n");
+        try {
+            AsyncOnlineStatusMonitor asyncMonitor = AsyncOnlineStatusMonitor.INSTANCE;
+            if (asyncMonitor != null) {
+                String monitorStats = asyncMonitor.getStatistics();
+                report.append("  ").append(monitorStats.replace("\n", "\n  ")).append("\n");
+                
+                // 批量查询性能报告
+                report.append("\n📈 批量查询性能:\n");
+                String batchReport = asyncMonitor.getBatchQueryReport();
+                report.append("  ").append(batchReport.replace("\n", "\n  ")).append("\n");
+            } else {
+                report.append("  ❌ 异步监控未启用\n");
             }
-            
-            // 3. 性能监控器统计
+        } catch (Exception e) {
+            report.append("  ❌ 获取异步监控统计失败: ").append(e.getMessage()).append("\n");
+        }
+        
+        // 添加口袋48活跃度监控报告
+        report.append("\n📱 口袋48消息活跃度监控:\n");
+        try {
+            Pocket48ActivityMonitor activityMonitor = Pocket48ActivityMonitor.getInstance();
+            if (activityMonitor != null) {
+                String activityReport = activityMonitor.getActivityReport();
+                // 格式化输出，添加缩进
+                String[] lines = activityReport.split("\n");
+                for (String line : lines) {
+                    if (!line.trim().isEmpty()) {
+                        report.append("  ").append(line).append("\n");
+                    }
+                }
+            } else {
+                report.append("  ❌ 口袋48活跃度监控未启用\n");
+            }
+        } catch (Exception e) {
+            report.append("  ❌ 获取口袋48活跃度报告失败: ").append(e.getMessage()).append("\n");
+        }
+        
+        // 3. 性能监控器统计
             report.append("\n📊 性能监控器统计:\n");
             try {
                 PerformanceMonitor monitor = PerformanceMonitor.getInstance();

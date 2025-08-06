@@ -61,6 +61,50 @@ public class Pocket48Sender extends Sender {
             t.setDaemon(true);
             return t;
         });
+        
+        // 初始化缓存设置（从配置文件读取）
+        initializeCacheSettings();
+    }
+    
+    /**
+     * 初始化缓存设置
+     */
+    private void initializeCacheSettings() {
+        try {
+            // 从配置文件读取缓存启用状态，默认启用
+            boolean cacheEnabled = Newboy.INSTANCE.getConfig().getSetting().getBool("pocket48", "cache.enabled", true);
+            setCacheEnabled(cacheEnabled);
+        } catch (Exception e) {
+            // 配置读取失败时默认启用缓存
+            setCacheEnabled(true);
+        }
+    }
+    
+    /**
+     * 设置缓存启用状态
+     * @param enabled true启用缓存，false禁用缓存
+     */
+    public void setCacheEnabled(boolean enabled) {
+        if (unifiedResourceManager != null) {
+            unifiedResourceManager.setCacheEnabled(enabled);
+        }
+    }
+    
+    /**
+     * 检查缓存是否启用
+     * @return true如果缓存启用
+     */
+    public boolean isCacheEnabled() {
+        return unifiedResourceManager != null && unifiedResourceManager.isCacheEnabled();
+    }
+    
+    /**
+     * 清空所有缓存
+     */
+    public void clearAllCache() {
+        if (unifiedResourceManager != null) {
+            unifiedResourceManager.clearAllCache();
+        }
     }
 
     @Override
@@ -995,24 +1039,30 @@ public class Pocket48Sender extends Sender {
         if (messages.size() > 30) {
             PerformanceMonitor monitor = PerformanceMonitor.getInstance();
             
-            // 根据活跃度调整清理策略
+            // 根据活跃度调整清理策略 - 优化版
             if (activityMonitor.isGlobalActive()) {
-                // 活跃期：更频繁的清理，避免缓存积累
+                // 活跃期：适度清理，避免过度清理影响性能
                 if (monitor.shouldForceCleanup()) {
-                    unifiedResourceManager.cleanupExpiredCache(2); // 2分钟内的缓存
-                    System.gc();
-                } else if (monitor.getTotalQueries() % 20 == 0) {
-                    unifiedResourceManager.cleanupExpiredCache(5); // 5分钟内的缓存
+                    unifiedResourceManager.cleanupExpiredCache(5); // 5分钟内的缓存（延长）
+                    // 减少GC调用频率
+                    if (monitor.getTotalQueries() % 100 == 0) {
+                        System.gc();
+                    }
+                } else if (monitor.getTotalQueries() % 100 == 0) { // 降低清理频率
+                    unifiedResourceManager.cleanupExpiredCache(10); // 10分钟内的缓存（延长）
                 }
             } else {
-                // 非活跃期：正常清理策略
+                // 非活跃期：更宽松的清理策略
                 if (monitor.shouldForceCleanup()) {
-                    unifiedResourceManager.cleanupExpiredCache(5);
-                    System.gc();
-                } else if (monitor.shouldCleanup() && monitor.getTotalQueries() % 50 == 0) {
-                    unifiedResourceManager.cleanupExpiredCache(30);
-                } else if (monitor.getTotalQueries() % 100 == 0) {
-                    unifiedResourceManager.cleanupExpiredCache(60);
+                    unifiedResourceManager.cleanupExpiredCache(15); // 15分钟（延长）
+                    // 减少GC调用频率
+                    if (monitor.getTotalQueries() % 200 == 0) {
+                        System.gc();
+                    }
+                } else if (monitor.shouldCleanup() && monitor.getTotalQueries() % 200 == 0) { // 降低频率
+                    unifiedResourceManager.cleanupExpiredCache(60); // 60分钟
+                } else if (monitor.getTotalQueries() % 500 == 0) { // 大幅降低频率
+                    unifiedResourceManager.cleanupExpiredCache(120); // 2小时
                 }
             }
         }
@@ -1023,7 +1073,7 @@ public class Pocket48Sender extends Sender {
 
     /**
      * 按时间顺序发送消息，确保顺序的同时维持实时性
-     * 核心策略：严格按时间戳排序，异步处理避免排队延迟累积
+     * 核心策略：严格按时间戳排序，智能批次分组发送
      * @param messages 消息列表
      * @param group 群组
      */
@@ -1032,6 +1082,110 @@ public class Pocket48Sender extends Sender {
             return;
         }
         
+        // 智能选择发送策略
+        if (messages.size() > 8) {
+            // 大量消息：使用批次分组发送
+            sendMessagesInBatches(messages, group);
+        } else {
+            // 少量消息：使用原有的顺序发送
+            sendMessagesSequentially(messages, group);
+        }
+        
+        // 清理缓存
+        if (messages.size() > 10) {
+            unifiedResourceManager.cleanupExpiredCache(60);
+        }
+    }
+    
+    /**
+     * 智能分批发送：避免瞬时大量消息
+     * @param messages 消息列表
+     * @param group 群组
+     */
+    private void sendMessagesInBatches(List<Pocket48Message> messages, Group group) {
+        if (messages == null || messages.isEmpty()) {
+            return;
+        }
+        
+        // 按时间戳排序
+        messages.sort((m1, m2) -> Long.compare(m1.getTime(), m2.getTime()));
+        
+        // 分批处理：每批最多5条消息
+        int batchSize = Math.min(5, Math.max(2, messages.size() / 4));
+        List<List<Pocket48Message>> batches = new ArrayList<>();
+        
+        for (int i = 0; i < messages.size(); i += batchSize) {
+            int endIndex = Math.min(i + batchSize, messages.size());
+            batches.add(messages.subList(i, endIndex));
+        }
+        
+        // 批次间延迟：2-3秒
+        for (int batchIndex = 0; batchIndex < batches.size(); batchIndex++) {
+            final List<Pocket48Message> batch = batches.get(batchIndex);
+            final int currentBatchIndex = batchIndex;
+            
+            // 异步处理每个批次
+            CompletableFuture.runAsync(() -> {
+                sendBatchWithSmoothing(batch, group, currentBatchIndex);
+            }).thenRun(() -> {
+                // 批次间延迟
+                if (currentBatchIndex < batches.size() - 1) {
+                    try {
+                        Thread.sleep(2000 + (int)(Math.random() * 1000)); // 2-3秒随机延迟
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+            });
+        }
+    }
+    
+    /**
+     * 批次内平滑发送
+     * @param batch 批次消息
+     * @param group 群组
+     * @param batchIndex 批次索引
+     */
+    private void sendBatchWithSmoothing(List<Pocket48Message> batch, Group group, int batchIndex) {
+        for (int i = 0; i < batch.size(); i++) {
+            try {
+                Pocket48Message message = batch.get(i);
+                
+                // 根据消息类型选择处理策略
+                Pocket48SenderMessage senderMessage;
+                if (isTextMessage(message)) {
+                    senderMessage = pharseMessageFast(message, group, false);
+                } else {
+                    senderMessage = pharseMessage(message, group, false);
+                }
+                
+                // 立即发送处理完的消息
+                if (senderMessage != null) {
+                    sendSingleMessage(senderMessage, group);
+                }
+                
+                // 批次内消息间的平滑延迟：800-1200ms
+                if (i < batch.size() - 1) {
+                    try {
+                        Thread.sleep(800 + (int)(Math.random() * 400));
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+                
+            } catch (Exception e) {
+                System.err.println("[警告] 批次消息处理失败: " + e.getMessage());
+            }
+        }
+    }
+    
+    /**
+     * 顺序发送消息（原有逻辑，用于少量消息）
+     * @param messages 消息列表
+     * @param group 群组
+     */
+    private void sendMessagesSequentially(List<Pocket48Message> messages, Group group) {
         // 按时间戳严格排序，确保消息顺序
         messages.sort((m1, m2) -> Long.compare(m1.getTime(), m2.getTime()));
         
@@ -1091,11 +1245,6 @@ public class Pocket48Sender extends Sender {
             previousTask.get(30, TimeUnit.SECONDS); // 最多等待30秒
         } catch (Exception e) {
             System.err.println("[警告] 消息发送超时或异常: " + e.getMessage());
-        }
-        
-        // 清理缓存
-        if (messages.size() > 10) {
-            unifiedResourceManager.cleanupExpiredCache(60);
         }
     }
     
@@ -1203,7 +1352,7 @@ public class Pocket48Sender extends Sender {
      */
     private int calculateOrderedSendDelay(Pocket48Message currentMessage, Pocket48Message nextMessage, int totalMessageCount, int currentIndex) {
         if (currentMessage == null || nextMessage == null) {
-            return 20; // 减少默认延迟
+            return getAdaptiveDelay(20); // 减少默认延迟
         }
         
         // 根据消息类型和时间间隔智能调整延迟
@@ -1213,16 +1362,16 @@ public class Pocket48Sender extends Sender {
         // 计算消息间的时间差
         long timeDiff = nextMessage.getTime() - currentMessage.getTime();
         
-        // 优化的基础延迟策略：大幅减少延迟时间
+        // 优化后的基础延迟策略：更平滑的发送间隔
         int baseDelay;
         if (currentIsText && nextIsText) {
-            baseDelay = 10; // 文本到文本：极小延迟，优先实时性
+            baseDelay = 1200; // 文本到文本：1.2秒间隔，确保平滑
         } else if (currentIsText && !nextIsText) {
-            baseDelay = 30; // 文本到媒体：减少延迟
+            baseDelay = 1800; // 文本到媒体：1.8秒间隔
         } else if (!currentIsText && nextIsText) {
-            baseDelay = 20; // 媒体到文本：快速切换
+            baseDelay = 1500; // 媒体到文本：1.5秒间隔
         } else {
-            baseDelay = 50; // 媒体到媒体：适度延迟避免过载
+            baseDelay = 2000; // 媒体到媒体：2秒间隔，避免过载
         }
         
         // 根据时间差调整：更激进的优化策略
@@ -1244,11 +1393,24 @@ public class Pocket48Sender extends Sender {
             baseDelay = Math.max(baseDelay * 3 / 4, 8);
         }
         
-        // 队列后期加速：越接近队列末尾，延迟越小
+        // 渐进式延迟：根据队列位置动态调整
         double progressRatio = (double) currentIndex / totalMessageCount;
-        if (progressRatio > 0.7) { // 处理到70%后开始加速
-            baseDelay = Math.max(baseDelay / 2, 3);
+        
+        // 队列前期：较短延迟，快速响应
+        if (progressRatio < 0.3) {
+            baseDelay = Math.max(baseDelay * 2 / 3, 500); // 前30%消息适度加速
         }
+        // 队列中期：标准延迟，保持平滑
+        else if (progressRatio < 0.7) {
+            // 保持baseDelay不变
+        }
+        // 队列后期：逐渐减少延迟，避免积压
+        else {
+            baseDelay = Math.max(baseDelay * 4 / 5, 300); // 后30%消息适度加速
+        }
+        
+        // 应用自适应延迟调节
+        baseDelay = getAdaptiveDelay(baseDelay);
         
         return Math.min(baseDelay, 80); // 最大延迟进一步降低到80ms
     }
@@ -1260,23 +1422,20 @@ public class Pocket48Sender extends Sender {
      * @return 延迟时间（毫秒）
      */
     private int calculateSmartDelay(Pocket48Message currentMessage, Pocket48Message nextMessage) {
-        // 文本消息之间几乎无延迟
+        // 移除0延迟设置，确保最小间隔
         if (isTextMessage(currentMessage) && isTextMessage(nextMessage)) {
-            return 0; // 文本消息间无延迟
+            return 600; // 文本消息间600ms延迟
         }
         
-        // 文本消息到媒体消息：极小延迟
         if (isTextMessage(currentMessage) && !isTextMessage(nextMessage)) {
-            return 1; // 1ms延迟
+            return 1000; // 文本到媒体1秒延迟
         }
         
-        // 媒体消息到文本消息：极小延迟
         if (!isTextMessage(currentMessage) && isTextMessage(nextMessage)) {
-            return 1; // 1ms延迟
+            return 800; // 媒体到文本800ms延迟
         }
         
-        // 媒体消息之间：移除延迟配置
-        return 0; // 无延迟发送
+        return 1200; // 媒体消息间1.2秒延迟
     }
     
     /**
@@ -1432,6 +1591,23 @@ public class Pocket48Sender extends Sender {
         throw new RuntimeException("图片上传失败，重试" + maxRetries + "次后仍然失败", lastException);
     }
     
+    /**
+     * 自适应延迟调节：根据活跃度动态调整延迟
+     * @param baseDelay 基础延迟时间
+     * @return 调整后的延迟时间
+     */
+    private int getAdaptiveDelay(int baseDelay) {
+        boolean isActive = activityMonitor.isGlobalActive();
+        
+        if (isActive) {
+            // 活跃期：适度增加延迟，避免刷屏
+            return (int)(baseDelay * 1.1);
+        } else {
+            // 非活跃期：可以稍微加快发送
+            return (int)(baseDelay * 0.9);
+        }
+    }
+
     /**
      * 关闭发送器，释放资源
      */

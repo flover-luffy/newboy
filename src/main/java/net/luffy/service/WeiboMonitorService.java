@@ -4,9 +4,11 @@ import cn.hutool.json.JSONObject;
 import net.luffy.model.WeiboData;
 import net.luffy.util.WeiboUtils;
 import net.luffy.util.sender.MessageSender;
+import net.luffy.Newboy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -21,6 +23,7 @@ public class WeiboMonitorService {
     
     private static final Logger logger = LoggerFactory.getLogger(WeiboMonitorService.class);
     private static final int MONITOR_INTERVAL = 45; // 监控间隔45秒
+    private static final String WEIBO_IDS_FILE = "weibo_latest_ids.properties"; // 微博ID持久化文件
     
     private final WeiboApiService weiboApiService;
     private final MessageSender messageSender;
@@ -45,14 +48,15 @@ public class WeiboMonitorService {
         this.weiboApiService = weiboApiService;
         this.messageSender = messageSender;
         this.scheduler = Executors.newScheduledThreadPool(2);
+        
+        // 加载持久化的微博ID
+        loadPersistedWeiboIds();
     }
     
     /**
      * 启动监控服务
      */
     public void startMonitoring() {
-        logger.info("启动微博监控服务");
-        
         // 启动普通微博监控
         scheduler.scheduleWithFixedDelay(this::monitorWeibo, 0, MONITOR_INTERVAL, TimeUnit.SECONDS);
         
@@ -88,7 +92,10 @@ public class WeiboMonitorService {
         // 预加载用户信息
         loadUserInfo(uid);
         
-        logger.info("添加用户监控: {} -> {}", uid, groupIds);
+        // 初始化最新微博ID，避免发送旧微博
+        initializeUserLatestWeiboId(uid);
+        
+        logger.info("添加用户监控成功: {}", uid);
     }
     
     /**
@@ -114,7 +121,10 @@ public class WeiboMonitorService {
         monitoredSuperTopics.add(lfid);
         superTopicGroupMapping.put(lfid, new HashSet<>(groupIds));
         
-        logger.info("添加超话监控: {} -> {}", lfid, groupIds);
+        // 初始化最新微博ID，避免发送旧微博
+        initializeSuperTopicLatestWeiboId(lfid);
+        
+        logger.info("添加超话监控成功: {}", lfid);
     }
     
     /**
@@ -198,6 +208,9 @@ public class WeiboMonitorService {
             // 更新最新微博ID
             userLatestWeiboId.put(uid, cards.get(0)._id);
             
+            // 持久化最新微博ID
+            savePersistedWeiboIds();
+            
             // 发送新微博
             Set<String> groupIds = userGroupMapping.get(uid);
             if (groupIds != null) {
@@ -252,6 +265,9 @@ public class WeiboMonitorService {
             // 更新最新微博ID
             superTopicLatestWeiboId.put(lfid, cards.get(0)._id);
             
+            // 持久化最新微博ID
+            savePersistedWeiboIds();
+            
             // 发送新微博
             Set<String> groupIds = superTopicGroupMapping.get(lfid);
             if (groupIds != null) {
@@ -273,19 +289,17 @@ public class WeiboMonitorService {
         
         for (String groupId : groupIds) {
             try {
-                // 发送文本消息
-                messageSender.sendGroupMessage(groupId, messageText);
-                
-                // 发送图片（如果有）
+                // 检查是否有图片，如果有则只发送第一张图片
+                String firstImageUrl = null;
                 if (weiboData.pics != null && !weiboData.pics.isEmpty()) {
-                    for (String picUrl : weiboData.pics) {
-                        // 处理图片URL（添加代理前缀等）
-                        String processedUrl = WeiboUtils.processImageUrl(picUrl, null);
-                        messageSender.sendGroupImage(groupId, processedUrl);
-                    }
+                    // 只取第一张图片
+                    firstImageUrl = WeiboUtils.processImageUrl(weiboData.pics.get(0), null);
                 }
                 
-                logger.info("发送微博消息到群组{}: {}", groupId, weiboData.name);
+                // 发送文本消息和图片（如果有图片，图片会嵌入到文本消息的最后）
+                messageSender.sendGroupMessageWithImage(groupId, messageText, firstImageUrl);
+                
+                // 微博消息发送成功
             } catch (Exception e) {
                 logger.error("发送微博消息到群组{}失败", groupId, e);
             }
@@ -324,6 +338,102 @@ public class WeiboMonitorService {
     }
     
     /**
+     * 初始化用户最新微博ID
+     * 获取当前最新微博ID作为基准，避免发送旧微博
+     * @param uid 用户UID
+     */
+    private void initializeUserLatestWeiboId(String uid) {
+        try {
+            // 如果已经有记录的最新ID，则不需要重新初始化
+            if (userLatestWeiboId.containsKey(uid)) {
+                logger.info("用户{}已有最新微博ID记录，跳过初始化", uid);
+                return;
+            }
+            
+            String lfid = getUserLfid(uid);
+            if (lfid == null) {
+                logger.warn("无法获取用户{}的lfid，跳过初始化", uid);
+                return;
+            }
+            
+            JSONObject containerData = weiboApiService.requestWeiboContainer(lfid);
+            if (containerData == null || containerData.getInt("ok", 0) != 1) {
+                logger.warn("获取用户{}微博容器数据失败，跳过初始化", uid);
+                return;
+            }
+            
+            JSONObject data = containerData.getJSONObject("data");
+            if (data == null || !data.containsKey("cards")) {
+                logger.info("用户{}暂无微博数据", uid);
+                return;
+            }
+            
+            // 过滤微博卡片
+            List<WeiboData.WeiboCard> cards = WeiboUtils.filterCards(data.getJSONArray("cards"));
+            if (!cards.isEmpty()) {
+                // 设置最新微博ID为当前最新的微博ID
+                Long latestId = cards.get(0)._id;
+                if (latestId != null) {
+                    userLatestWeiboId.put(uid, latestId);
+                    savePersistedWeiboIds();
+                    logger.info("初始化用户{}最新微博ID: {}", uid, latestId);
+                } else {
+                    logger.warn("用户{}的最新微博ID为空", uid);
+                }
+            } else {
+                logger.info("用户{}暂无有效微博数据", uid);
+            }
+        } catch (Exception e) {
+            logger.error("初始化用户{}最新微博ID失败", uid, e);
+        }
+    }
+    
+    /**
+     * 初始化超话最新微博ID
+     * 获取当前最新微博ID作为基准，避免发送旧微博
+     * @param lfid 超话容器ID
+     */
+    private void initializeSuperTopicLatestWeiboId(String lfid) {
+        try {
+            // 如果已经有记录的最新ID，则不需要重新初始化
+            if (superTopicLatestWeiboId.containsKey(lfid)) {
+                logger.info("超话{}已有最新微博ID记录，跳过初始化", lfid);
+                return;
+            }
+            
+            JSONObject containerData = weiboApiService.requestWeiboContainer(lfid);
+            if (containerData == null || containerData.getInt("ok", 0) != 1) {
+                logger.warn("获取超话{}容器数据失败，跳过初始化", lfid);
+                return;
+            }
+            
+            JSONObject data = containerData.getJSONObject("data");
+            if (data == null || !data.containsKey("cards")) {
+                logger.info("超话{}暂无微博数据", lfid);
+                return;
+            }
+            
+            // 过滤超话微博卡片
+            List<WeiboData.WeiboCard> cards = WeiboUtils.filterSuperTopicCards(data.getJSONArray("cards"));
+            if (!cards.isEmpty()) {
+                // 设置最新微博ID为当前最新的微博ID
+                Long latestId = cards.get(0)._id;
+                if (latestId != null) {
+                    superTopicLatestWeiboId.put(lfid, latestId);
+                    savePersistedWeiboIds();
+                    logger.info("初始化超话{}最新微博ID: {}", lfid, latestId);
+                } else {
+                    logger.warn("超话{}的最新微博ID为空", lfid);
+                }
+            } else {
+                logger.info("超话{}暂无有效微博数据", lfid);
+            }
+        } catch (Exception e) {
+            logger.error("初始化超话{}最新微博ID失败", lfid, e);
+        }
+    }
+    
+    /**
      * 获取监控状态
      * @return 监控状态信息
      */
@@ -334,5 +444,77 @@ public class WeiboMonitorService {
         status.put("userGroupMappings", userGroupMapping.size());
         status.put("superTopicGroupMappings", superTopicGroupMapping.size());
         return status;
+    }
+    
+    /**
+     * 加载持久化的微博ID
+     */
+    private void loadPersistedWeiboIds() {
+        try {
+            File configDir = Newboy.INSTANCE.getProperties().configData.getParentFile();
+            File weiboIdsFile = new File(configDir, WEIBO_IDS_FILE);
+            
+            if (!weiboIdsFile.exists()) {
+                logger.info("微博ID持久化文件不存在，将从头开始监控");
+                return;
+            }
+            
+            Properties props = new Properties();
+            try (FileInputStream fis = new FileInputStream(weiboIdsFile)) {
+                props.load(fis);
+            }
+            
+            // 加载用户微博ID
+            for (String key : props.stringPropertyNames()) {
+                String value = props.getProperty(key);
+                try {
+                    Long weiboId = Long.parseLong(value);
+                    if (key.startsWith("user.")) {
+                        String uid = key.substring(5); // 移除"user."前缀
+                        userLatestWeiboId.put(uid, weiboId);
+                    } else if (key.startsWith("supertopic.")) {
+                        String lfid = key.substring(11); // 移除"supertopic."前缀
+                        superTopicLatestWeiboId.put(lfid, weiboId);
+                    }
+                } catch (NumberFormatException e) {
+                    logger.warn("解析微博ID失败: {} = {}", key, value);
+                }
+            }
+            
+            logger.info("加载持久化微博ID完成 - 用户: {}, 超话: {}", 
+                       userLatestWeiboId.size(), superTopicLatestWeiboId.size());
+                       
+        } catch (Exception e) {
+            logger.error("加载持久化微博ID失败", e);
+        }
+    }
+    
+    /**
+     * 保存微博ID到持久化文件
+     */
+    private void savePersistedWeiboIds() {
+        try {
+            File configDir = Newboy.INSTANCE.getProperties().configData.getParentFile();
+            File weiboIdsFile = new File(configDir, WEIBO_IDS_FILE);
+            
+            Properties props = new Properties();
+            
+            // 保存用户微博ID
+            for (Map.Entry<String, Long> entry : userLatestWeiboId.entrySet()) {
+                props.setProperty("user." + entry.getKey(), entry.getValue().toString());
+            }
+            
+            // 保存超话微博ID
+            for (Map.Entry<String, Long> entry : superTopicLatestWeiboId.entrySet()) {
+                props.setProperty("supertopic." + entry.getKey(), entry.getValue().toString());
+            }
+            
+            try (FileOutputStream fos = new FileOutputStream(weiboIdsFile)) {
+                props.store(fos, "微博最新ID持久化文件 - 自动生成，请勿手动修改");
+            }
+            
+        } catch (Exception e) {
+            logger.error("保存持久化微博ID失败", e);
+        }
     }
 }

@@ -2,8 +2,10 @@ package net.luffy.handler;
 
 import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
+import net.luffy.Newboy;
 import net.luffy.service.WeiboApiService;
 import net.luffy.service.WeiboMonitorService;
+import net.luffy.util.Properties;
 import net.luffy.util.UnifiedJsonParser;
 import net.luffy.util.sender.MessageSender;
 import org.slf4j.Logger;
@@ -26,7 +28,6 @@ public class WeiboHandler {
     
     private static final Logger logger = LoggerFactory.getLogger(WeiboHandler.class);
     
-    @Autowired
     private MessageSender messageSender;
     
     private WeiboApiService weiboApiService;
@@ -35,18 +36,80 @@ public class WeiboHandler {
     
     @PostConstruct
     public void init() {
-        logger.info("初始化微博处理器");
+        logger.info("=== 开始初始化微博处理器 ===");
         
-        // 初始化微博API服务
-        weiboApiService = new WeiboApiService();
-        
-        // 初始化微博监控服务
-        weiboMonitorService = new WeiboMonitorService(weiboApiService, messageSender);
-        
-        // 启动监控服务
-        weiboMonitorService.startMonitoring();
-        
-        logger.info("微博处理器初始化完成");
+        try {
+            // 初始化MessageSender
+            this.messageSender = new MessageSender();
+            
+            // 初始化微博API服务
+            weiboApiService = new WeiboApiService();
+            
+            // 初始化微博监控服务
+            weiboMonitorService = new WeiboMonitorService(weiboApiService, messageSender);
+            
+            // 从Properties加载现有订阅数据
+            loadExistingSubscriptions();
+            
+            // 启动监控服务
+            weiboMonitorService.startMonitoring();
+            
+            logger.info("=== 微博处理器初始化完成 ===");
+        } catch (Exception e) {
+            logger.error("微博处理器初始化失败", e);
+        }
+    }
+    
+    /**
+     * 从Properties加载现有的微博订阅数据
+     */
+    private void loadExistingSubscriptions() {
+        try {
+            Properties properties = Newboy.INSTANCE.getProperties();
+            if (properties == null) {
+                logger.warn("Properties为空，跳过微博订阅数据加载");
+                return;
+            }
+            
+            int loadedUserSubscriptions = 0;
+            int loadedTopicSubscriptions = 0;
+            
+            // 加载微博用户订阅
+            if (properties.weibo_user_subscribe != null) {
+                for (Map.Entry<Long, List<Long>> entry : properties.weibo_user_subscribe.entrySet()) {
+                    Long groupId = entry.getKey();
+                    List<Long> userIds = entry.getValue();
+                    
+                    for (Long userId : userIds) {
+                        Set<String> groupIds = new HashSet<>();
+                        groupIds.add(String.valueOf(groupId));
+                        weiboMonitorService.addUserMonitor(String.valueOf(userId), groupIds);
+                        loadedUserSubscriptions++;
+                    }
+                }
+            }
+            
+            // 加载微博超话订阅
+            if (properties.weibo_superTopic_subscribe != null) {
+                for (Map.Entry<Long, List<String>> entry : properties.weibo_superTopic_subscribe.entrySet()) {
+                    Long groupId = entry.getKey();
+                    List<String> topicIds = entry.getValue();
+                    
+                    for (String topicId : topicIds) {
+                        Set<String> groupIds = new HashSet<>();
+                        groupIds.add(String.valueOf(groupId));
+                        weiboMonitorService.addSuperTopicMonitor(topicId, groupIds);
+                        loadedTopicSubscriptions++;
+                    }
+                }
+            }
+            
+            logger.info("微博订阅数据加载完成 - 用户订阅: {}, 超话订阅: {}", 
+                       loadedUserSubscriptions, loadedTopicSubscriptions);
+                       
+        } catch (Exception e) {
+            logger.error("加载微博订阅数据失败", e);
+        }
     }
     
     @PreDestroy
@@ -302,7 +365,7 @@ public class WeiboHandler {
             }
             
             // 调用微博API服务获取超话信息
-            JSONObject containerInfo = weiboApiService.getContainerContent(lfid);
+            JSONObject containerInfo = weiboApiService.requestWeiboContainer(lfid);
             if (containerInfo != null && containerInfo.getBool("success", false)) {
                 JSONObject data = containerInfo.getJSONObject("data");
                 if (data != null) {
@@ -365,20 +428,16 @@ public class WeiboHandler {
      */
     public String getWeiboMonitorStatus() {
         try {
-            JSONObject status = new JSONObject();
-            status.put("weiboMonitorEnabled", weiboMonitorService != null);
-            status.put("timestamp", System.currentTimeMillis());
-            
-            if (weiboMonitorService != null) {
-                status.put("message", "微博监控服务正在运行");
+            Map<String, Object> status = weiboMonitorService.getMonitorStatus();
+            if (status != null) {
+                JSONObject jsonStatus = new JSONObject(status);
+                return jsonStatus.toString();
             } else {
-                status.put("message", "微博监控服务未启动");
+                return "{\"error\": \"获取监控状态失败\"}";
             }
-            
-            return status.toString();
         } catch (Exception e) {
-            logger.error("获取微博监控状态失败: " + e.getMessage(), e);
-            return "{\"error\": \"获取监控状态异常: " + e.getMessage() + "\"}";
+            logger.error("获取微博监控状态异常", e);
+            return "{\"error\": \"获取监控状态异常: \" + e.getMessage() + \"}\"";
         }
     }
 }

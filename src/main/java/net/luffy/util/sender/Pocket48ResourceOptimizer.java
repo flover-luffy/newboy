@@ -9,12 +9,16 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.List;
 import java.util.ArrayList;
 
 /**
- * 口袋48资源优化器
- * 提供资源预加载、缓存管理和批量处理功能
+ * 口袋48资源优化器 - 优化版
+ * 提供资源预加载、异步缓存管理和批量处理功能
+ * 新增：异步缓存清理、缓存开关控制、智能清理策略
  */
 public class Pocket48ResourceOptimizer {
     
@@ -24,12 +28,24 @@ public class Pocket48ResourceOptimizer {
     // 预加载线程池
     private final ExecutorService preloadExecutor = Executors.newFixedThreadPool(4);
     
+    // 异步缓存清理线程池
+    private final ScheduledExecutorService cacheCleanupExecutor = Executors.newSingleThreadScheduledExecutor();
+    
     // 资源处理器引用
     private final Pocket48ResourceHandler resourceHandler;
     
     // 缓存统计
     private volatile int cacheHits = 0;
     private volatile int cacheMisses = 0;
+    
+    // 缓存控制开关
+    private final AtomicBoolean cacheEnabled = new AtomicBoolean(true);
+    
+    // 上次清理时间
+    private final AtomicLong lastCleanupTime = new AtomicLong(0);
+    
+    // 清理频率控制（毫秒）
+    private static final long MIN_CLEANUP_INTERVAL = 5 * 60 * 1000; // 5分钟
     
     public Pocket48ResourceOptimizer(Pocket48ResourceHandler resourceHandler) {
         this.resourceHandler = resourceHandler;
@@ -81,11 +97,22 @@ public class Pocket48ResourceOptimizer {
     }
     
     /**
-     * 智能获取资源（优先使用缓存，缓存未命中时下载）
+     * 智能获取资源 - 优化版
+     * 支持缓存开关控制，优先使用缓存，缓存未命中时下载
      * @param resourceUrl 资源URL
      * @return 资源文件
      */
     public File getResourceSmart(String resourceUrl) {
+        // 如果缓存被禁用，直接下载资源
+        if (!cacheEnabled.get()) {
+            try {
+                String fileExtension = getFileExtensionFromUrl(resourceUrl);
+                return resourceHandler.downloadToTempFile(resourceUrl, fileExtension);
+            } catch (Exception e) {
+                return null;
+            }
+        }
+        
         // 先检查缓存
         File cachedFile = getCachedResource(resourceUrl);
         if (cachedFile != null) {
@@ -98,8 +125,10 @@ public class Pocket48ResourceOptimizer {
             String fileExtension = getFileExtensionFromUrl(resourceUrl);
             File downloadedFile = resourceHandler.downloadToTempFile(resourceUrl, fileExtension);
             if (downloadedFile != null && downloadedFile.exists()) {
-                // 添加到缓存
-                resourceCache.put(resourceUrl, downloadedFile);
+                // 仅在缓存启用时添加到缓存
+                if (cacheEnabled.get()) {
+                    resourceCache.put(resourceUrl, downloadedFile);
+                }
                 return downloadedFile;
             }
         } catch (Exception e) {
@@ -184,27 +213,112 @@ public class Pocket48ResourceOptimizer {
     }
     
     /**
-     * 清理过期的缓存文件
+     * 异步清理过期的缓存文件 - 优化版
      * @param maxAgeMinutes 最大缓存时间（分钟）
      */
     public void cleanupExpiredCache(int maxAgeMinutes) {
+        // 如果缓存被禁用，直接清空所有缓存
+        if (!cacheEnabled.get()) {
+            clearAllCache();
+            return;
+        }
+        
+        // 智能频率控制：避免频繁清理
+        long currentTime = System.currentTimeMillis();
+        long lastCleanup = lastCleanupTime.get();
+        
+        if (currentTime - lastCleanup < MIN_CLEANUP_INTERVAL) {
+            // 距离上次清理时间太短，跳过本次清理
+            return;
+        }
+        
+        // 异步执行清理操作，避免阻塞主线程
+        cacheCleanupExecutor.submit(() -> {
+            try {
+                performCacheCleanup(maxAgeMinutes);
+                lastCleanupTime.set(currentTime);
+            } catch (Exception e) {
+                // 静默处理清理异常，避免影响主流程
+            }
+        });
+    }
+    
+    /**
+     * 执行实际的缓存清理操作
+     * @param maxAgeMinutes 最大缓存时间（分钟）
+     */
+    private void performCacheCleanup(int maxAgeMinutes) {
         long maxAge = System.currentTimeMillis() - (maxAgeMinutes * 60 * 1000L);
         
-        resourceCache.entrySet().removeIf(entry -> {
-            File file = entry.getValue();
+        // 批量收集需要删除的条目，减少锁竞争
+        List<String> keysToRemove = new ArrayList<>();
+        List<File> filesToDelete = new ArrayList<>();
+        
+        resourceCache.forEach((key, file) -> {
             if (file == null || !file.exists() || file.lastModified() < maxAge) {
+                keysToRemove.add(key);
                 if (file != null && file.exists()) {
-                    try {
-                        file.delete();
-                        // 删除过期文件
-                    } catch (Exception e) {
-                        // 静默处理缓存清理失败
+                    filesToDelete.add(file);
+                }
+            }
+        });
+        
+        // 批量删除缓存条目
+        keysToRemove.forEach(resourceCache::remove);
+        
+        // 批量删除文件（在后台线程中执行）
+        for (File file : filesToDelete) {
+            try {
+                file.delete();
+            } catch (Exception e) {
+                // 静默处理文件删除失败
+            }
+        }
+    }
+    
+    /**
+     * 清空所有缓存
+     */
+    public void clearAllCache() {
+        cacheCleanupExecutor.submit(() -> {
+            try {
+                List<File> filesToDelete = new ArrayList<>(resourceCache.values());
+                resourceCache.clear();
+                
+                // 删除所有缓存文件
+                for (File file : filesToDelete) {
+                    if (file != null && file.exists()) {
+                        try {
+                            file.delete();
+                        } catch (Exception e) {
+                            // 静默处理
+                        }
                     }
                 }
-                return true;
+            } catch (Exception e) {
+                // 静默处理清理异常
             }
-            return false;
         });
+    }
+    
+    /**
+     * 启用或禁用缓存
+     * @param enabled true启用，false禁用
+     */
+    public void setCacheEnabled(boolean enabled) {
+        cacheEnabled.set(enabled);
+        if (!enabled) {
+            // 禁用缓存时立即清空所有缓存
+            clearAllCache();
+        }
+    }
+    
+    /**
+     * 检查缓存是否启用
+     * @return true如果缓存启用
+     */
+    public boolean isCacheEnabled() {
+        return cacheEnabled.get();
     }
     
     /**
@@ -220,20 +334,26 @@ public class Pocket48ResourceOptimizer {
     }
     
     /**
-     * 关闭优化器，释放资源
+     * 关闭优化器 - 优化版
      */
     public void shutdown() {
         try {
+            // 清理所有缓存
+            clearAllCache();
+            
+            // 关闭缓存清理线程池
+            cacheCleanupExecutor.shutdown();
+            if (!cacheCleanupExecutor.awaitTermination(3, TimeUnit.SECONDS)) {
+                cacheCleanupExecutor.shutdownNow();
+            }
+            
+            // 关闭预加载线程池
             preloadExecutor.shutdown();
             if (!preloadExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
                 preloadExecutor.shutdownNow();
             }
-            
-            // 清理所有缓存文件
-            cleanupExpiredCache(0);
-            
-            // 资源优化器已关闭
         } catch (InterruptedException e) {
+            cacheCleanupExecutor.shutdownNow();
             preloadExecutor.shutdownNow();
             Thread.currentThread().interrupt();
         }

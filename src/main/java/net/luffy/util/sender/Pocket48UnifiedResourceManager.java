@@ -298,6 +298,37 @@ public class Pocket48UnifiedResourceManager {
         optimizer.cleanupExpiredCache(maxAgeMinutes);
     }
     
+    /**
+     * 设置缓存启用状态
+     * @param enabled true启用缓存，false禁用缓存
+     */
+    public void setCacheEnabled(boolean enabled) {
+        if (optimizer != null) {
+            optimizer.setCacheEnabled(enabled);
+        }
+        // 同时控制Pocket48ResourceCache
+        Pocket48ResourceCache.getInstance().setCacheEnabled(enabled);
+    }
+    
+    /**
+     * 检查缓存是否启用
+     * @return true如果缓存启用
+     */
+    public boolean isCacheEnabled() {
+        return optimizer != null && optimizer.isCacheEnabled();
+    }
+    
+    /**
+     * 清空所有缓存
+     */
+    public void clearAllCache() {
+        if (optimizer != null) {
+            optimizer.clearAllCache();
+        }
+        // 同时清空Pocket48ResourceCache
+        Pocket48ResourceCache.getInstance().clearAllCache();
+    }
+    
     public String getCacheStats() {
         return optimizer.getCacheStats();
     }

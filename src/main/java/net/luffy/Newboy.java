@@ -221,6 +221,8 @@ public final class Newboy extends JavaPlugin {
     private void initHandlers() {
         handlerPocket48 = new Pocket48Handler();
         handlerWeibo = new WeiboHandler();
+        // 手动初始化微博处理器，因为它不是Spring管理的Bean
+        handlerWeibo.init();
         handlerWeidian = new WeidianHandler();
         handlerWeidianSender = new WeidianSenderHandler();
         handlerXox48 = new Xox48Handler();

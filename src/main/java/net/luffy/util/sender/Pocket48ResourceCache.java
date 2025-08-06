@@ -35,6 +35,9 @@ public class Pocket48ResourceCache {
     // 定时清理任务
     private String cleanupTaskId;
     
+    // 缓存控制开关
+    private volatile boolean cacheEnabled = true;
+    
     private Pocket48ResourceCache() {
         // 初始化缓存目录
         this.cacheDir = Paths.get(System.getProperty("java.io.tmpdir"), "pocket48_cache");
@@ -61,11 +64,16 @@ public class Pocket48ResourceCache {
     }
     
     /**
-     * 获取缓存的文件，如果不存在则返回null
+     * 获取缓存的文件，如果不存在则返回null - 优化版
      * @param url 资源URL
      * @return 缓存的文件，如果不存在则返回null
      */
     public File getCachedFile(String url) {
+        // 如果缓存被禁用，直接返回null
+        if (!cacheEnabled) {
+            return null;
+        }
+        
         String filePath = urlToFileMap.get(url);
         if (filePath != null) {
             File file = new File(filePath);
@@ -84,13 +92,18 @@ public class Pocket48ResourceCache {
     }
     
     /**
-     * 将文件添加到缓存
+     * 将文件添加到缓存 - 优化版
      * @param url 资源URL
      * @param sourceFile 源文件
      * @param fileExtension 文件扩展名
      * @return 缓存的文件
      */
     public File cacheFile(String url, File sourceFile, String fileExtension) {
+        // 如果缓存被禁用，直接返回源文件
+        if (!cacheEnabled) {
+            return sourceFile;
+        }
+        
         Logger logger = Logger.getLogger("Pocket48ResourceCache");
         logger.setUseParentHandlers(false); // 不在控制台显示日志
         
@@ -357,6 +370,33 @@ public class Pocket48ResourceCache {
         } catch (IOException e) {
             // 静默处理缓存清空错误
         }
+    }
+    
+    /**
+     * 设置缓存启用状态
+     * @param enabled true启用缓存，false禁用缓存
+     */
+    public void setCacheEnabled(boolean enabled) {
+        this.cacheEnabled = enabled;
+        if (!enabled) {
+            // 禁用缓存时清空所有缓存
+            clearAll();
+        }
+    }
+    
+    /**
+     * 检查缓存是否启用
+     * @return true如果缓存启用
+     */
+    public boolean isCacheEnabled() {
+        return cacheEnabled;
+    }
+    
+    /**
+     * 清空所有缓存（别名方法）
+     */
+    public void clearAllCache() {
+        clearAll();
     }
     
     /**

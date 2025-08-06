@@ -130,7 +130,9 @@ public class WeiboApiService extends AsyncWebHandlerBase {
                 }
             }
         }
-        return null;
+        // 如果无法从API获取，使用备用方法构建容器ID
+        // 根据测试结果，正确的格式是 230283 + uid
+        return "230283" + uid;
     }
     
     /**
