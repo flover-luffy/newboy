@@ -297,7 +297,8 @@ public class WeiboMonitorService {
                 }
                 
                 // 发送文本消息和图片（如果有图片，图片会嵌入到文本消息的最后）
-                messageSender.sendGroupMessageWithImage(groupId, messageText, firstImageUrl);
+                // 启用@全体成员功能
+                messageSender.sendGroupMessageWithImage(groupId, messageText, firstImageUrl, true);
                 
                 // 微博消息发送成功
             } catch (Exception e) {
