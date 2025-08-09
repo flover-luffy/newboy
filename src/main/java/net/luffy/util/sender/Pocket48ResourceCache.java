@@ -198,24 +198,49 @@ public class Pocket48ResourceCache {
             
             logger.info("缓存文件写入完成: " + cacheFile.getName() + ", 大小: " + totalBytes + " bytes");
             
-            // 验证缓存的图片文件完整性
-            if (isImageFile(cacheFile)) {
-                if (!ImageFormatDetector.validateImageIntegrity(cacheFile)) {
-                    logger.warning("缓存的图片文件可能损坏: " + cacheFile.getName());
+            // 动态检测图片格式并修正文件扩展名
+            File finalCacheFile = cacheFile;
+            // 对所有文件进行格式检测，特别是那些可能是图片但扩展名不正确的文件
+            String detectedFormat = ImageFormatDetector.detectFormat(cacheFile);
+            logger.info("检测到图片格式: " + detectedFormat + ", 原始扩展名: " + fileExtension);
+            
+            // 如果检测到是图片格式，进行扩展名修正
+            if (!"UNKNOWN".equals(detectedFormat)) {
+                
+                // 根据检测到的格式确定正确的扩展名
+                String correctExtension = getCorrectExtension(detectedFormat);
+                
+                // 如果检测到的格式与原始扩展名不匹配，重命名文件
+                if (!correctExtension.equals(fileExtension.toLowerCase())) {
+                    String correctFileName = generateCacheFileName(url, correctExtension);
+                    File correctedCacheFile = new File(cacheDir.toFile(), correctFileName);
+                    
+                    if (cacheFile.renameTo(correctedCacheFile)) {
+                        finalCacheFile = correctedCacheFile;
+                        logger.info("文件扩展名已修正: " + fileExtension + " -> " + correctExtension + 
+                                  ", 新文件名: " + correctedCacheFile.getName());
+                    } else {
+                        logger.warning("无法重命名文件，使用原始文件名: " + cacheFile.getName());
+                    }
+                }
+                
+                // 验证图片完整性
+                if (!ImageFormatDetector.validateImageIntegrity(finalCacheFile)) {
+                    logger.warning("缓存的图片文件可能损坏: " + finalCacheFile.getName());
                     // 不删除文件，让上层逻辑处理
                 }
             }
             
             // 更新缓存映射
-            urlToFileMap.put(url, cacheFile.getAbsolutePath());
-            fileAccessTime.put(cacheFile.getAbsolutePath(), System.currentTimeMillis());
+            urlToFileMap.put(url, finalCacheFile.getAbsolutePath());
+            fileAccessTime.put(finalCacheFile.getAbsolutePath(), System.currentTimeMillis());
             
-            // 文件已缓存
+            logger.info("文件已缓存: " + finalCacheFile.getName());
             
             // 检查缓存大小
             checkCacheSize();
             
-            return cacheFile;
+            return finalCacheFile;
         } catch (IOException e) {
             logger.severe("[缓存错误] 无法缓存文件: " + e.getMessage());
             return null; // 缓存失败
@@ -225,6 +250,33 @@ public class Pocket48ResourceCache {
             } catch (IOException e) {
                 // 忽略关闭异常
             }
+        }
+    }
+    
+    /**
+     * 根据检测到的图片格式获取正确的文件扩展名
+     * @param detectedFormat 检测到的图片格式
+     * @return 正确的文件扩展名
+     */
+    private String getCorrectExtension(String detectedFormat) {
+        if (detectedFormat == null || "UNKNOWN".equals(detectedFormat)) {
+            return ".jpg"; // 默认为jpg
+        }
+        
+        switch (detectedFormat.toUpperCase()) {
+            case "JPEG":
+            case "JPG":
+                return ".jpg";
+            case "PNG":
+                return ".png";
+            case "GIF":
+                return ".gif";
+            case "BMP":
+                return ".bmp";
+            case "WEBP":
+                return ".webp";
+            default:
+                return ".jpg"; // 默认为jpg
         }
     }
     
