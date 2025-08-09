@@ -19,6 +19,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -614,6 +615,38 @@ public class Pocket48Sender extends Sender {
                         throw new RuntimeException("直播封面URL为空");
                     }
                     
+                    // 直播封面优化：对于source.48.cn的jpg图片，尝试直接使用URL
+                    if (coverUrl.contains("source.48.cn") && coverUrl.toLowerCase().endsWith(".jpg")) {
+                        try {
+                            java.util.logging.Logger.getLogger("Pocket48Sender").info(
+                                "尝试直接使用直播封面URL: " + coverUrl);
+                            
+                            // 直接使用URL创建图片资源
+                            try (InputStream urlStream = new java.net.URL(coverUrl).openStream();
+                                 ExternalResource coverResource = ExternalResource.create(urlStream)) {
+                                Image cover = group.uploadImage(coverResource);
+                                String livePushContent = "【" + n + "】: 直播中快来~\n直播标题：" + message.getLivePush().getTitle();
+                                
+                                // 构建消息链：文本 + 图片 + 补充信息
+                                MessageChain messageChain = new PlainText(livePushContent + "\n")
+                                        .plus(cover)
+                                        .plus("\n频道：" + r + "\n时间: " + timeStr);
+                                
+                                // 直播推送自动@全体成员
+                                Message finalMessage = toNotification(messageChain);
+                                
+                                java.util.logging.Logger.getLogger("Pocket48Sender").info(
+                                    "直接使用URL创建直播封面成功");
+                                return new Pocket48SenderMessage(false, null, new Message[]{finalMessage});
+                            }
+                        } catch (Exception urlException) {
+                            // 直接使用URL失败，记录日志并回退到下载方式
+                            java.util.logging.Logger.getLogger("Pocket48Sender").warning(
+                                "直接使用URL创建图片资源失败，回退到下载方式: " + urlException.getMessage());
+                        }
+                    }
+                    
+                    // 回退方案：使用原有的下载处理方式
                     // 优先使用缓存，缓存未命中时下载
                     coverFile = unifiedResourceManager.getResourceSmart(coverUrl);
                     
@@ -628,7 +661,24 @@ public class Pocket48Sender extends Sender {
                         throw new RuntimeException("直播封面下载失败");
                     }
                     
-                    // 简化的图片处理：直接尝试上传，失败时进行格式转换
+                    // 主动检测图片格式并修正文件扩展名
+                    String detectedFormat = net.luffy.util.ImageFormatDetector.detectFormat(coverFile);
+                    if (!"UNKNOWN".equals(detectedFormat)) {
+                        // 获取正确的扩展名
+                        String correctExtension = getCorrectExtension(detectedFormat);
+                        
+                        // 如果检测到的格式与当前文件扩展名不匹配，重命名文件
+                        String currentExt = coverFile.getName().substring(coverFile.getName().lastIndexOf('.'));
+                        if (!correctExtension.equalsIgnoreCase(currentExt)) {
+                            File correctedFile = new File(coverFile.getParent(), 
+                                coverFile.getName().substring(0, coverFile.getName().lastIndexOf('.')) + correctExtension);
+                            if (coverFile.renameTo(correctedFile)) {
+                                coverFile = correctedFile;
+                            }
+                        }
+                    }
+                    
+                    // 图片处理：直接尝试上传，失败时进行格式转换
                     try (ExternalResource coverResource = ExternalResource.create(coverFile)) {
                         Image cover = uploadImageWithRetry(coverResource, 2);
                         String livePushContent = "【" + n + "】: 直播中快来~\n直播标题：" + message.getLivePush().getTitle();
@@ -646,12 +696,20 @@ public class Pocket48Sender extends Sender {
                         try {
                             java.awt.image.BufferedImage image = javax.imageio.ImageIO.read(coverFile);
                             if (image != null) {
-                                // 创建转换后的文件
+                                // 创建转换后的文件 - 使用JPEG格式
                                 convertedCoverFile = new File(coverFile.getParent(), "converted_" + 
                                     System.currentTimeMillis() + "_cover.jpg");
                                 
                                 // 保存为JPEG格式
                                 javax.imageio.ImageIO.write(image, "JPEG", convertedCoverFile);
+                                
+                                // 验证转换后的图片格式
+                                String convertedFormat = net.luffy.util.ImageFormatDetector.detectFormat(convertedCoverFile);
+                                if (!"UNKNOWN".equals(convertedFormat) && !"JPEG".equals(convertedFormat.toUpperCase())) {
+                                    // 如果检测到的格式不是JPEG，记录警告日志
+                                    java.util.logging.Logger.getLogger("Pocket48Sender").warning(
+                                        "转换后的图片格式不是JPEG: " + convertedFormat);
+                                }
                                 
                                 // 重新尝试上传转换后的图片
                                 try (ExternalResource convertedResource = ExternalResource.create(convertedCoverFile)) {
@@ -1525,7 +1583,22 @@ public class Pocket48Sender extends Sender {
         // 移除查询参数
         String cleanUrl = url.split("\\?")[0].toLowerCase();
         
-        // 从URL路径推断扩展名
+        // 从URL路径推断扩展名 - 优先检查文件名中的扩展名
+        int lastSlash = cleanUrl.lastIndexOf('/');
+        if (lastSlash >= 0 && lastSlash < cleanUrl.length() - 1) {
+            String fileName = cleanUrl.substring(lastSlash + 1);
+            int lastDot = fileName.lastIndexOf('.');
+            if (lastDot > 0 && lastDot < fileName.length() - 1) {
+                String ext = fileName.substring(lastDot).toLowerCase();
+                // 验证是否为有效的图片扩展名
+                if (ext.equals(".jpg") || ext.equals(".jpeg") || ext.equals(".png") || 
+                    ext.equals(".gif") || ext.equals(".bmp") || ext.equals(".webp")) {
+                    return ext.equals(".jpeg") ? ".jpg" : ext;
+                }
+            }
+        }
+        
+        // 如果文件名中没有有效扩展名，则从URL路径中查找扩展名关键词
         if (cleanUrl.contains(".jpg") || cleanUrl.contains(".jpeg")) {
             return ".jpg";
         } else if (cleanUrl.contains(".png")) {
@@ -1545,6 +1618,33 @@ public class Pocket48Sender extends Sender {
         
         // 默认返回jpg扩展名
         return ".jpg";
+    }
+    
+    /**
+     * 根据检测到的图片格式获取正确的文件扩展名
+     * @param detectedFormat 检测到的图片格式
+     * @return 正确的文件扩展名
+     */
+    private String getCorrectExtension(String detectedFormat) {
+        if (detectedFormat == null || "UNKNOWN".equals(detectedFormat)) {
+            return ".jpg"; // 默认为jpg
+        }
+        
+        switch (detectedFormat.toUpperCase()) {
+            case "JPEG":
+            case "JPG":
+                return ".jpg";
+            case "PNG":
+                return ".png";
+            case "GIF":
+                return ".gif";
+            case "BMP":
+                return ".bmp";
+            case "WEBP":
+                return ".webp";
+            default:
+                return ".jpg"; // 默认为jpg
+        }
     }
     
     /**

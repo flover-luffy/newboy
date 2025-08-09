@@ -54,9 +54,9 @@ public class UnifiedHttpClient {
      */
     private OkHttpClient createOptimizedClient() {
         return new OkHttpClient.Builder()
-                .connectTimeout(10, TimeUnit.SECONDS)  // 增加连接超时为10秒，提高网络不稳定情况下的成功率
-                .readTimeout(15, TimeUnit.SECONDS)     // 增加读取超时为15秒，适应大文件下载
-                .writeTimeout(15, TimeUnit.SECONDS)    // 增加写入超时为15秒，适应大文件上传
+                .connectTimeout(30, TimeUnit.SECONDS)  // 增加连接超时为30秒，解决直播推送图片下载超时问题
+                .readTimeout(30, TimeUnit.SECONDS)     // 增加读取超时为30秒，适应大文件下载和网络不稳定情况
+                .writeTimeout(30, TimeUnit.SECONDS)    // 增加写入超时为30秒，适应大文件上传
                 .connectionPool(new ConnectionPool(50, 5, TimeUnit.MINUTES))  // 增加连接池大小到50
                 .retryOnConnectionFailure(true)      // 启用连接失败重试机制
                 .addInterceptor(new RetryInterceptor(3)) // 添加全局重试拦截器，最多重试3次

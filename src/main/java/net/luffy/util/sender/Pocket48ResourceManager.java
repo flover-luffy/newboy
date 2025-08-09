@@ -23,7 +23,7 @@ public class Pocket48ResourceManager {
     private final AtomicBoolean mediaQueueEnabled = new AtomicBoolean(true);
     private final AtomicInteger mediaQueueSize = new AtomicInteger(200); // 从100增加到200
     private final AtomicInteger mediaThreadPoolSize = new AtomicInteger(4); // 从2增加到4
-    private final AtomicInteger mediaProcessingTimeout = new AtomicInteger(10);
+    private final AtomicInteger mediaProcessingTimeout = new AtomicInteger(30);
     private final AtomicBoolean prioritizeTextMessages = new AtomicBoolean(true);
     private final AtomicInteger mediaBatchSize = new AtomicInteger(8); // 从5增加到8
     private final AtomicInteger mediaRetryAttempts = new AtomicInteger(3);
@@ -284,7 +284,7 @@ public class Pocket48ResourceManager {
         mediaQueueEnabled.set(true);
         mediaQueueSize.set(100);
         mediaThreadPoolSize.set(2);
-        mediaProcessingTimeout.set(15);  // 优化媒体处理超时为15秒
+        mediaProcessingTimeout.set(30);  // 优化媒体处理超时为30秒，解决直播推送图片下载超时问题
         prioritizeTextMessages.set(true);
         mediaBatchSize.set(5);
         mediaRetryAttempts.set(3);
