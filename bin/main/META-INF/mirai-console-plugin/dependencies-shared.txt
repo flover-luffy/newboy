@@ -1,6 +1,0 @@
-cn.hutool:hutool-all:5.8.38
-org.jetbrains.kotlin:kotlin-stdlib-common:2.0.21
-org.jetbrains.kotlin:kotlin-stdlib-jdk7:2.0.21
-org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.0.21
-org.jetbrains.kotlin:kotlin-stdlib:2.0.21
-org.jetbrains:annotations:24.0.0

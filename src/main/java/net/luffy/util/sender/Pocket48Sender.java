@@ -6,6 +6,7 @@ import net.luffy.handler.Pocket48Handler;
 import net.luffy.util.sender.Pocket48UnifiedResourceManager;
 import net.luffy.util.sender.Pocket48ActivityMonitor;
 import net.luffy.util.PerformanceMonitor;
+import net.luffy.util.MessageIntegrityChecker;
 
 import net.luffy.model.*;
 import net.mamoe.mirai.Bot;
@@ -114,9 +115,15 @@ public class Pocket48Sender extends Sender {
             Pocket48Subscribe subscribe = Newboy.INSTANCE.getProperties().pocket48_subscribe.get(group_id);
             Pocket48Handler pocket = Newboy.INSTANCE.getHandlerPocket48();
 
-            //房间消息获取 - 改进的重试机制（优化：减少重试延迟）
+            //房间消息获取 - 改进的重试机制和缓存刷新（优化：减少重试延迟）
             for (long roomID : subscribe.getRoomIDs()) {
-                if (!cache.containsKey(roomID)) {
+                Pocket48SenderCache currentCache = cache.get(roomID);
+                
+                // 检查缓存是否存在或过期
+                boolean needsRefresh = currentCache == null || currentCache.isExpired();
+                
+                if (needsRefresh) {
+                    // 移除缓存过期的信息日志，减少日志噪音
                     cache.put(roomID, Pocket48SenderCache.create(roomID, endTime));
                 }
                 
@@ -129,16 +136,23 @@ public class Pocket48Sender extends Sender {
                     for (int attempt = 1; attempt <= maxRetries && !retrySuccess; attempt++) {
                         try {
                             Thread.sleep(retryDelays[attempt-1]);
+                            // 移除缓存重试的信息日志，减少日志噪音
                             
                             Pocket48SenderCache newCache = Pocket48SenderCache.create(roomID, endTime);
                             cache.put(roomID, newCache);
                             retrySuccess = true;
+                            // 移除缓存重试成功的信息日志，减少日志噪音
                         } catch (InterruptedException e) {
                             Thread.currentThread().interrupt();
                             break;
                         } catch (RuntimeException e) {
-                            // 静默处理缓存创建失败，继续重试
+                            System.err.println(String.format("[错误] 房间 %d 缓存创建重试 %d 失败: %s", 
+                                roomID, attempt, e.getMessage()));
                         }
+                    }
+                    
+                    if (!retrySuccess) {
+                        System.err.println(String.format("[错误] 房间 %d 缓存创建最终失败，跳过此房间", roomID));
                     }
                 }
             }
@@ -155,9 +169,33 @@ public class Pocket48Sender extends Sender {
                 //房间消息预处理
                 Pocket48Message[] a = cache.get(roomID).messages;
                 if (a.length > 0) {
-                    // 记录消息活跃度
-                    activityMonitor.recordBatchMessageActivity(roomID, java.util.Arrays.asList(a));
-                    totalMessages.add(a);
+                    // 消息完整性检查
+                    MessageIntegrityChecker.IntegrityCheckResult integrityResult = 
+                        MessageIntegrityChecker.validateMessageBatch(roomID, a);
+                    
+                    if (!integrityResult.isValid()) {
+                        System.err.println(String.format("[完整性警告] 房间 %d: %s", 
+                            roomID, integrityResult.toString()));
+                        
+                        // 如果有重复消息，过滤掉它们
+                        if (integrityResult.getDuplicateCount() > 0) {
+                            List<Pocket48Message> filteredMessages = new ArrayList<>();
+                            for (Pocket48Message msg : a) {
+                                if (!MessageIntegrityChecker.isDuplicateMessage(roomID, msg)) {
+                                    filteredMessages.add(msg);
+                                }
+                            }
+                            a = filteredMessages.toArray(new Pocket48Message[0]);
+                            System.out.println(String.format("[去重] 房间 %d 过滤后消息数: %d", 
+                                roomID, a.length));
+                        }
+                    }
+                    
+                    if (a.length > 0) {
+                        // 记录消息活跃度
+                        activityMonitor.recordBatchMessageActivity(roomID, java.util.Arrays.asList(a));
+                        totalMessages.add(a);
+                    }
                 }
 
                 //房间语音
@@ -1712,25 +1750,44 @@ public class Pocket48Sender extends Sender {
      * 关闭发送器，释放资源
      */
     public void shutdown() {
-        if (asyncProcessor != null) {
-            asyncProcessor.shutdown();
-        }
-        if (unifiedResourceManager != null) {
-            unifiedResourceManager.shutdown();
-        }
-        if (mediaQueue != null) {
-            mediaQueue.shutdown();
-        }
-        if (delayExecutor != null) {
-            delayExecutor.shutdown();
-            try {
-                if (!delayExecutor.awaitTermination(2, TimeUnit.SECONDS)) {
-                    delayExecutor.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                delayExecutor.shutdownNow();
-                Thread.currentThread().interrupt();
+        try {
+            // 关闭异步处理器
+            if (asyncProcessor != null) {
+                asyncProcessor.shutdown();
             }
+            
+            // 关闭统一资源管理器
+            if (unifiedResourceManager != null) {
+                unifiedResourceManager.shutdown();
+            }
+            
+            // 关闭媒体队列
+            if (mediaQueue != null) {
+                mediaQueue.shutdown();
+            }
+            
+            // 关闭缓存刷新执行器
+            Pocket48SenderCache.shutdownCacheRefreshExecutor();
+            
+            // 清理消息完整性检查器缓存
+            MessageIntegrityChecker.clearAllCache();
+            
+            // 关闭延迟执行器（只执行一次）
+            if (delayExecutor != null && !delayExecutor.isShutdown()) {
+                delayExecutor.shutdown();
+                try {
+                    if (!delayExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                        delayExecutor.shutdownNow();
+                    }
+                } catch (InterruptedException e) {
+                    delayExecutor.shutdownNow();
+                    Thread.currentThread().interrupt();
+                }
+            }
+            
+            System.out.println("[Pocket48Sender] 资源释放完成");
+        } catch (Exception e) {
+            System.err.println("[Pocket48Sender] 关闭时发生错误: " + e.getMessage());
         }
     }
 

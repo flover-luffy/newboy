@@ -341,9 +341,9 @@ public class UnifiedResourceManager {
                  cacheManager.clearAllCaches();
              }
              
-             // 清理并发安全工具
+             // 关闭并发安全工具
              if (concurrencyUtils != null) {
-                 concurrencyUtils.cleanup();
+                 concurrencyUtils.shutdown();
              }
              
              // 核心组件关闭完成

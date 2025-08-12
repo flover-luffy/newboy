@@ -334,6 +334,34 @@ public class ConcurrencySafetyUtils {
         });
     }
     
+    /**
+     * 关闭并发安全工具
+     */
+    public void shutdown() {
+        try {
+            // 停止死锁检测器
+            if (deadlockDetector != null && !deadlockDetector.isShutdown()) {
+                deadlockDetector.shutdown();
+                if (!deadlockDetector.awaitTermination(5, TimeUnit.SECONDS)) {
+                    deadlockDetector.shutdownNow();
+                }
+            }
+            
+            // 清理所有资源
+            namedLocks.clear();
+            namedSemaphores.clear();
+            namedLatches.clear();
+            
+            // 重置统计计数器
+            lockCounter.set(0);
+            totalWaitTime.set(0);
+            
+            Newboy.INSTANCE.getLogger().info("[ConcurrencySafetyUtils] 资源清理完成");
+        } catch (Exception e) {
+            Newboy.INSTANCE.getLogger().error("[ConcurrencySafetyUtils] 关闭时发生错误", e);
+        }
+    }
+    
     // 私有方法
     private void startDeadlockDetection() {
         deadlockDetector.scheduleAtFixedRate(() -> {

@@ -6,10 +6,15 @@ import cn.hutool.json.JSONUtil;
 import net.luffy.Newboy;
 import net.luffy.util.UnifiedJsonParser;
 // OkHttp imports removed - migrated to UnifiedHttpClient
+import net.luffy.util.UnifiedHttpClient;
 import net.luffy.model.Pocket48Message;
 import net.luffy.model.Pocket48RoomInfo;
+import net.luffy.util.DynamicTimeoutManager;
+import net.luffy.util.NetworkQualityMonitor;
+import net.luffy.util.MonitorConfig;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 
@@ -34,10 +39,16 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
     private final Pocket48HandlerHeader header;
     private final HashMap<Long, String> name = new HashMap<>();
     private final UnifiedJsonParser jsonParser = UnifiedJsonParser.getInstance();
+    private final DynamicTimeoutManager timeoutManager;
+    private final NetworkQualityMonitor networkMonitor;
+    private final UnifiedHttpClient httpClient;
 
     public Pocket48Handler() {
         super();
         this.header = new Pocket48HandlerHeader(properties);
+        this.networkMonitor = new NetworkQualityMonitor();
+        this.timeoutManager = DynamicTimeoutManager.getInstance();
+        this.httpClient = UnifiedHttpClient.getInstance();
     }
 
     public static final String getOwnerOrTeamName(Pocket48RoomInfo roomInfo) {
@@ -346,24 +357,43 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
         if (msgs != null) {
             List<Pocket48Message> rs = new ArrayList<>();
             long latest = 0;
+            long currentEndTime = endTime.get(roomID);
+            
+            // 修复：记录处理的消息时间戳，确保endTime正确更新
+            List<Long> processedTimestamps = new ArrayList<>();
+            
             for (Object message : msgs) {
                 JSONObject m = jsonParser.parseObj(message.toString());
                 long time = m.getLong("msgTime");
 
-                if (endTime.get(roomID) >= time)
-                    break; //api有时间次序，修复：改为大于等于，避免重复推送最新的一条信息
+                // 修复：使用严格的大于比较，避免重复处理相同时间戳的消息
+                if (currentEndTime >= time)
+                    continue; // 跳过已处理的消息，而不是break
 
                 if (latest < time) {
                     latest = time;
                 }
-
+                
+                processedTimestamps.add(time);
                 rs.add(Pocket48Message.construct(
                         roomInfo,
                         m
                 ));
             }
-            if (latest != 0)
-                endTime.put(roomID, latest);
+            
+            // 修复：确保endTime更新逻辑的正确性
+            if (latest != 0 && !processedTimestamps.isEmpty()) {
+                synchronized(endTime) {
+                    // 使用处理的最新消息时间戳更新endTime
+                    long maxProcessedTime = Collections.max(processedTimestamps);
+                    if (maxProcessedTime > endTime.getOrDefault(roomID, 0L)) {
+                        endTime.put(roomID, maxProcessedTime);
+                        // 移除正常情况下的时间戳更新日志，减少日志噪音
+                    }
+                    // 移除正常情况下的调试信息，减少日志噪音
+                }
+            }
+            // 移除正常情况下的调试信息，减少日志噪音
             return rs.toArray(new Pocket48Message[0]);
         }
         return new Pocket48Message[0];
@@ -434,7 +464,7 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
         return System.currentTimeMillis();
     }
 
-    //获取未整理的消息（优化版）
+    //获取未整理的消息（集成快速失败和动态超时优化版）
     private List<Object> getOriMessages(long roomID, long serverID) {
         // 对于加密房间（serverId为0或负数），尝试从配置中获取serverId
         if (serverID <= 0) {
@@ -446,33 +476,90 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
             }
         }
         
-        try {
-            // 优化：添加更多请求参数以提高API响应速度
-            String requestBody = String.format(
-                "{\"nextTime\":0,\"serverId\":%d,\"channelId\":%d,\"limit\":30,\"order\":1,\"needTop\":false}", 
-                serverID, roomID
-            );
-            
-            String s = post(APIMsgOwner, requestBody, getPocket48Headers());
-            JSONObject object = jsonParser.parseObj(s);
-
-            if (object.getInt("status") == 200) {
-                JSONObject content = jsonParser.parseObj(object.getObj("content").toString());
-                List<Object> out = content.getBeanList("message", Object.class);
-                // 优化：使用更高效的排序方式
-                out.sort((a, b) -> {
-                    long timeA = jsonParser.parseObj(a.toString()).getLong("msgTime");
-                    long timeB = jsonParser.parseObj(b.toString()).getLong("msgTime");
-                    return Long.compare(timeB, timeA);
-                });
-                return out;
-
-            } else {
-                // 静默处理API错误，避免控制台噪音
-            }
-        } catch (Exception e) {
-            // 静默处理网络异常，避免控制台噪音
+        // 快速失败检查：如果启用快速失败且网络不可达，直接返回
+        MonitorConfig config = MonitorConfig.getInstance();
+        if (config.isPocket48FastFailEnabled() && !networkMonitor.isReachable("pocketapi.48.cn", 443, 3000)) {
+            logError(String.format("[快速失败] 口袋48 API不可达，房间ID: %d, 服务器ID: %d", roomID, serverID));
+            return null;
         }
+        
+        // 获取动态超时配置
+        DynamicTimeoutManager.Pocket48TimeoutConfig timeoutConfig = timeoutManager.getPocket48DynamicConfig();
+        int maxRetries = timeoutConfig.getMaxRetries();
+        long baseDelay = timeoutConfig.getRetryDelay();
+        
+        // 记录开始时间用于性能监控
+        long startTime = System.currentTimeMillis();
+        
+        for (int attempt = 0; attempt < maxRetries; attempt++) {
+            try {
+                // 优化：添加更多请求参数以提高API响应速度
+                String requestBody = String.format(
+                    "{\"nextTime\":0,\"serverId\":%d,\"channelId\":%d,\"limit\":30,\"order\":1,\"needTop\":false}", 
+                    serverID, roomID
+                );
+                
+                // 使用动态超时配置进行请求
+                String s = httpClient.postWithTimeout(APIMsgOwner, requestBody, getPocket48Headers(), 
+                    timeoutConfig.getConnectTimeout(), timeoutConfig.getReadTimeout());
+                JSONObject object = jsonParser.parseObj(s);
+
+                if (object.getInt("status") == 200) {
+                    JSONObject content = jsonParser.parseObj(object.getObj("content").toString());
+                    List<Object> out = content.getBeanList("message", Object.class);
+                    // 优化：使用更高效的排序方式
+                    out.sort((a, b) -> {
+                        long timeA = jsonParser.parseObj(a.toString()).getLong("msgTime");
+                        long timeB = jsonParser.parseObj(b.toString()).getLong("msgTime");
+                        return Long.compare(timeB, timeA);
+                    });
+                    
+                    // 记录成功请求的性能数据（仅在异常情况下显示）
+                    long duration = System.currentTimeMillis() - startTime;
+                    // 只在以下情况显示性能监控信息：
+                    // 1. 耗时超过500ms（性能问题）
+                    // 2. 重试次数大于1（网络不稳定）
+                    if (duration > 500 || attempt > 0) {
+                        System.out.println(String.format("[性能监控] 口袋48消息获取异常 - 房间ID: %d, 耗时: %dms, 尝试次数: %d", 
+                            roomID, duration, attempt + 1));
+                    }
+                    
+                    return out;
+
+                } else {
+                    String errorMsg = String.format("[Pocket48Handler] API错误 - 房间ID: %d, 服务器ID: %d, 状态码: %d, 尝试: %d/%d", 
+                        roomID, serverID, object.getInt("status"), attempt + 1, maxRetries);
+                    if (attempt == maxRetries - 1) {
+                        logError(errorMsg + " - 最终失败");
+                    } else {
+                        System.out.println(errorMsg + " - 准备重试");
+                    }
+                }
+            } catch (Exception e) {
+                String errorMsg = String.format("[Pocket48Handler] 网络异常 - 房间ID: %d, 服务器ID: %d, 尝试: %d/%d, 错误: %s", 
+                    roomID, serverID, attempt + 1, maxRetries, e.getMessage());
+                if (attempt == maxRetries - 1) {
+                    logError(errorMsg + " - 最终失败");
+                    // 记录失败请求的性能数据
+                    long duration = System.currentTimeMillis() - startTime;
+                    System.out.println(String.format("[性能监控] 口袋48消息获取失败 - 房间ID: %d, 总耗时: %dms, 总尝试次数: %d", 
+                        roomID, duration, maxRetries));
+                } else {
+                    System.out.println(errorMsg + " - 准备重试");
+                }
+            }
+            
+            // 重试前等待
+            if (attempt < maxRetries - 1) {
+                try {
+                    Thread.sleep(baseDelay * (attempt + 1)); // 递增延迟
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+        }
+        
         return null;
     }
 

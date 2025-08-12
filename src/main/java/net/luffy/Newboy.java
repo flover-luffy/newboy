@@ -14,6 +14,7 @@ import net.luffy.util.AsyncOnlineStatusMonitor;
 
 import net.luffy.model.EndTime;
 import net.luffy.model.Pocket48SenderCache;
+import net.luffy.model.Pocket48Subscribe;
 import net.luffy.model.WeidianCookie;
 import net.luffy.model.WeidianOrder;
 import net.luffy.util.ConfigOperator;
@@ -354,7 +355,16 @@ public final class Newboy extends JavaPlugin {
 
                                 if (!pocket48RoomEndTime.containsKey(group))// 放到Runnable里面是因为可能实时更新新的群
                                 {
-                                    pocket48RoomEndTime.put(group, new HashMap<>());
+                                    // 为当前群组订阅的所有房间初始化endTime
+                                    HashMap<Long, Long> groupEndTime = new HashMap<>();
+                                    Pocket48Subscribe subscribe = properties.pocket48_subscribe.get(group);
+                                    if (subscribe != null && subscribe.getRoomIDs() != null) {
+                                        long currentTime = System.currentTimeMillis();
+                                        for (Long roomId : subscribe.getRoomIDs()) {
+                                            groupEndTime.put(roomId, currentTime);
+                                        }
+                                    }
+                                    pocket48RoomEndTime.put(group, groupEndTime);
                                     pocket48VoiceStatus.put(group, new HashMap<>());
                                 }
 

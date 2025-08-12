@@ -798,17 +798,43 @@ public class AsyncOnlineStatusMonitor {
      * 关闭异步监控器
      */
     public void shutdown() {
-        UnifiedSchedulerManager scheduler = UnifiedSchedulerManager.getInstance();
-        if (batchQueryTaskId != null) {
-            scheduler.cancelTask(batchQueryTaskId);
+        try {
+            UnifiedSchedulerManager scheduler = UnifiedSchedulerManager.getInstance();
+            if (batchQueryTaskId != null) {
+                scheduler.cancelTask(batchQueryTaskId);
+            }
+            if (cacheCleanupTaskId != null) {
+                scheduler.cancelTask(cacheCleanupTaskId);
+            }
+            if (scheduledMonitorTaskId != null) {
+                scheduler.cancelTask(scheduledMonitorTaskId);
+            }
+            
+            // 清理缓存和内存数据
+            memberStatusCache.clear();
+            previousStatusMap.clear();
+            pendingQueries.clear();
+            queryFutures.clear();
+            subscribedMembers.clear();
+            subscriptionConfigs.clear();
+            uniqueMembersQueried.clear();
+            
+            // 重置统计计数器
+            batchQueryCount.set(0);
+            totalMembersQueried.set(0);
+            totalBatchTime.set(0);
+            concurrentBatches.set(0);
+            dailyStatusChanges.set(0);
+            totalCheckCount.set(0);
+            failureCount.set(0);
+            notificationCount.set(0);
+            
+            asyncWebHandler.shutdown();
+            
+            System.out.println("[AsyncOnlineStatusMonitor] 资源清理完成");
+        } catch (Exception e) {
+            System.err.println("[AsyncOnlineStatusMonitor] 关闭时发生错误: " + e.getMessage());
         }
-        if (cacheCleanupTaskId != null) {
-            scheduler.cancelTask(cacheCleanupTaskId);
-        }
-        if (scheduledMonitorTaskId != null) {
-            scheduler.cancelTask(scheduledMonitorTaskId);
-        }
-        asyncWebHandler.shutdown();
     }
     
     /**

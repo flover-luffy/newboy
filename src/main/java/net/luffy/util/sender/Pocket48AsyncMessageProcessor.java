@@ -6,6 +6,7 @@ import net.luffy.model.Pocket48SenderMessage;
 import net.luffy.util.AdaptiveThreadPoolManager;
 import net.luffy.util.CpuLoadBalancer;
 import net.luffy.util.EventBusManager;
+import net.luffy.util.MonitorConfig;
 
 import net.mamoe.mirai.contact.Group;
 import net.mamoe.mirai.message.data.Message;
@@ -27,6 +28,7 @@ public class Pocket48AsyncMessageProcessor {
     private final Pocket48Sender sender;
     private final AdaptiveThreadPoolManager adaptivePoolManager;
     private final CpuLoadBalancer loadBalancer;
+    private final MonitorConfig config;
 
     private final ScheduledExecutorService delayExecutor;
     
@@ -37,8 +39,8 @@ public class Pocket48AsyncMessageProcessor {
     static {
         int cores = Runtime.getRuntime().availableProcessors();
         CPU_CORES = Math.max(1, cores); // 确保至少为1
-        // 文本消息处理线程池：增加线程数以适应低CPU占用率
-        MESSAGE_THREAD_POOL_SIZE = Math.max(2, Math.min(CPU_CORES + 1, 6)); // 最多6个线程，最少2个
+        // 文本消息处理线程池：大幅增加线程数以提高并发处理能力
+        MESSAGE_THREAD_POOL_SIZE = Math.max(4, Math.min(CPU_CORES * 2, 16)); // 最多16个线程，最少4个
         
         // 静态初始化完成，不输出调试信息
     }
@@ -47,6 +49,7 @@ public class Pocket48AsyncMessageProcessor {
         this.sender = sender;
         this.adaptivePoolManager = AdaptiveThreadPoolManager.getInstance();
         this.loadBalancer = CpuLoadBalancer.getInstance();
+        this.config = MonitorConfig.getInstance();
 
         
         // 验证线程池参数
@@ -230,12 +233,13 @@ public class Pocket48AsyncMessageProcessor {
                 }
             });
             
-            // 设置超时处理
+            // 设置超时处理 - 使用配置的协程超时时间
+            long timeoutMs = config.getCoroutineTimeout();
             delayExecutor.schedule(() -> {
                 if (!future.isDone()) {
                     future.cancel(true);
                 }
-            }, mediaTimeoutSeconds, TimeUnit.SECONDS);
+            }, timeoutMs, TimeUnit.MILLISECONDS);
         }
     }
     
@@ -344,17 +348,24 @@ public class Pocket48AsyncMessageProcessor {
                     try {
                         sendMessage(result, group);
                     } catch (Exception e) {
-                        // 静默处理发送错误
+                        // 记录发送错误而不是静默处理
+                        System.err.println("[错误] 消息发送失败: " + e.getMessage());
                     }
+                } else if (throwable != null) {
+                    // 记录处理异常
+                    System.err.println("[错误] 消息处理异常: " + throwable.getMessage());
                 }
             });
             
-            // 设置超时取消
+            // 改进的超时处理：记录超时但不强制取消 - 使用配置的协程超时时间
+            long timeoutMs = config.getCoroutineDefaultTimeout();
             delayExecutor.schedule(() -> {
                 if (!future.isDone()) {
-                    future.cancel(true);
+                    System.err.println("[警告] 消息处理超时，但将继续等待完成");
+                    // 不再强制取消，让消息有机会完成处理
+                    // future.cancel(true); // 移除强制取消
                 }
-            }, timeoutSeconds, TimeUnit.SECONDS);
+            }, timeoutMs, TimeUnit.MILLISECONDS);
         }
     }
     
@@ -410,11 +421,15 @@ public class Pocket48AsyncMessageProcessor {
      * @param maxRetries 最大重试次数
      */
     private void sendMessageWithRetry(Message message, Group group, int maxRetries) {
+        Exception lastException = null;
+        
         for (int attempt = 1; attempt <= maxRetries; attempt++) {
             try {
                 group.sendMessage(message);
+                // 移除重试成功的信息日志，减少日志噪音
                 return; // 发送成功，直接返回
             } catch (Exception e) {
+                lastException = e;
                 String errorMsg = e.getMessage();
                 boolean isRetryableError = errorMsg != null && (
                     errorMsg.contains("rich media transfer failed") ||
@@ -424,9 +439,15 @@ public class Pocket48AsyncMessageProcessor {
                 );
                 
                 if (attempt == maxRetries || !isRetryableError) {
-                    // 静默处理发送异常，避免影响其他消息
+                    // 记录最终失败信息而不是静默处理
+                    System.err.println(String.format("[错误] 消息发送最终失败，尝试次数: %d/%d, 错误: %s", 
+                        attempt, maxRetries, e.getMessage()));
                     return;
                 }
+                
+                // 记录重试信息
+                System.out.println(String.format("[警告] 消息发送失败，准备重试 %d/%d, 错误: %s", 
+                    attempt, maxRetries, e.getMessage()));
                 
                 // 指数退避重试
                 try {
@@ -434,6 +455,7 @@ public class Pocket48AsyncMessageProcessor {
                     Thread.sleep(Math.min(delay, 8000)); // 最大延迟8秒
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
+                    System.err.println("[错误] 消息重试被中断");
                     return;
                 }
             }

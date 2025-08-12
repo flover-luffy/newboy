@@ -7,6 +7,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import static net.luffy.model.EndTime.newTime;
 
@@ -15,14 +18,19 @@ public class Pocket48SenderCache {
     public final Pocket48RoomInfo roomInfo;
     public final List<Long> voiceList;
     public Pocket48Message[] messages;
+    private final HashMap<Long, Long> endTime;
+    private final long creationTime;
+    private static final ScheduledExecutorService cacheRefreshExecutor = Executors.newScheduledThreadPool(2);
+    private static final long CACHE_REFRESH_INTERVAL_MINUTES = 5; // 5分钟刷新一次
 
     public Pocket48SenderCache(Pocket48RoomInfo roomInfo, Pocket48Message[] messages, List<Long> voiceList) {
         this.roomInfo = roomInfo;
         this.messages = messages;
         this.voiceList = voiceList;
-    }
-
-    /**
+        this.endTime = new HashMap<>();
+        this.endTime.put(roomInfo.getRoomId(), newTime());
+        this.creationTime = System.currentTimeMillis();
+    }/**
      * 创建口袋48发送者缓存（优化版）
      * 静默处理错误，减少控制台噪音
      * 
@@ -55,9 +63,14 @@ public class Pocket48SenderCache {
                 Pocket48Message[] fetchedMessages = pocket.getMessages(roomInfo, endTime);
                 if (fetchedMessages != null) {
                     messages = fetchedMessages;
+                    // 移除正常情况下的信息日志，减少日志噪音
+                } else {
+                    System.out.println(String.format("[警告] 房间 %d 消息获取返回null", roomID));
                 }
             } catch (Exception e) {
-                // 静默处理消息获取异常
+                // 记录消息获取异常而不是静默处理
+                System.err.println(String.format("[错误] 房间 %d 消息获取失败: %s", 
+                    roomID, e.getMessage()));
             }
 
             // 第四步：获取语音列表（非关键步骤，失败可使用空列表）
@@ -66,9 +79,14 @@ public class Pocket48SenderCache {
                 List<Long> fetchedVoiceList = pocket.getRoomVoiceList(roomID, roomInfo.getSeverId());
                 if (fetchedVoiceList != null) {
                     voiceList = fetchedVoiceList;
+                    // 移除正常情况下的信息日志，减少日志噪音
+                } else {
+                    System.out.println(String.format("[警告] 房间 %d 语音列表获取返回null", roomID));
                 }
             } catch (Exception e) {
-                // 静默处理语音列表获取异常
+                // 记录语音列表获取异常而不是静默处理
+                System.err.println(String.format("[错误] 房间 %d 语音列表获取失败: %s", 
+                    roomID, e.getMessage()));
             }
 
             // 创建缓存对象
@@ -84,5 +102,66 @@ public class Pocket48SenderCache {
         List<Pocket48Message> messages1 = new ArrayList<>(Arrays.asList(this.messages));
         messages1.add(message);
         this.messages = messages1.toArray(new Pocket48Message[0]);
+    }
+    
+    /**
+     * 检查缓存是否过期
+     * @return 如果缓存超过刷新间隔时间则返回true
+     */
+    public boolean isExpired() {
+        long currentTime = System.currentTimeMillis();
+        long ageMinutes = (currentTime - creationTime) / (1000 * 60);
+        return ageMinutes >= CACHE_REFRESH_INTERVAL_MINUTES;
+    }
+    
+    /**
+     * 启动缓存刷新任务
+     * @param pocket Pocket48Handler实例
+     * @param roomInfo 房间信息
+     * @param cacheUpdateCallback 缓存更新回调
+     */
+    public static void startCacheRefreshTask(Pocket48Handler pocket, Pocket48RoomInfo roomInfo, 
+                                           CacheUpdateCallback cacheUpdateCallback) {
+        cacheRefreshExecutor.scheduleAtFixedRate(() -> {
+            try {
+                // 移除正常情况下的缓存刷新开始日志，减少日志噪音
+                HashMap<Long, Long> endTimeMap = new HashMap<>();
+                endTimeMap.put(roomInfo.getRoomId(), System.currentTimeMillis());
+                Pocket48SenderCache newCache = create(roomInfo.getRoomId(), endTimeMap);
+                if (newCache != null) {
+                    cacheUpdateCallback.onCacheUpdated(newCache);
+                    // 移除正常情况下的缓存刷新成功日志，减少日志噪音
+                } else {
+                    System.err.println(String.format("[错误] 房间 %d 缓存刷新失败", roomInfo.getRoomId()));
+                }
+            } catch (Exception e) {
+                System.err.println(String.format("[错误] 房间 %d 缓存刷新异常: %s", 
+                    roomInfo.getRoomId(), e.getMessage()));
+            }
+        }, CACHE_REFRESH_INTERVAL_MINUTES, CACHE_REFRESH_INTERVAL_MINUTES, TimeUnit.MINUTES);
+    }
+    
+    /**
+     * 关闭缓存刷新执行器
+     */
+    public static void shutdownCacheRefreshExecutor() {
+        if (!cacheRefreshExecutor.isShutdown()) {
+            cacheRefreshExecutor.shutdown();
+            try {
+                if (!cacheRefreshExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
+                    cacheRefreshExecutor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                cacheRefreshExecutor.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+    
+    /**
+     * 缓存更新回调接口
+     */
+    public interface CacheUpdateCallback {
+        void onCacheUpdated(Pocket48SenderCache newCache);
     }
 }

@@ -91,6 +91,32 @@ public class AsyncWebHandlerBase {
     }
     
     /**
+     * 带动态超时配置的POST请求 - 支持快速失败机制
+     */
+    protected String postWithTimeout(String url, String body, Map<String, String> headers, 
+                                   int connectTimeout, int readTimeout, int maxRetries, long baseDelay) {
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                return UnifiedHttpClient.getInstance().postWithTimeout(url, body, headers, connectTimeout, readTimeout);
+            } catch (Exception e) {
+                if (attempt == maxRetries) {
+                    throw new RuntimeException("POST请求失败（已重试" + maxRetries + "次）: " + e.getMessage(), e);
+                }
+                
+                // 指数退避重试
+                try {
+                    long delay = baseDelay * (1L << (attempt - 1));
+                    Thread.sleep(Math.min(delay, 10000)); // 最大延迟10秒
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException("POST请求被中断: " + e.getMessage(), e);
+                }
+            }
+        }
+        return null; // 不会到达这里
+    }
+    
+    /**
      * 带Map Headers的同步POST请求
      */
     protected String post(String url, String body, Map<String, String> headers) {

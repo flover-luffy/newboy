@@ -53,13 +53,14 @@ public class UnifiedHttpClient {
      * 创建优化的OkHttp客户端
      */
     private OkHttpClient createOptimizedClient() {
+        MonitorConfig config = MonitorConfig.getInstance();
         return new OkHttpClient.Builder()
-                .connectTimeout(30, TimeUnit.SECONDS)  // 增加连接超时为30秒，解决直播推送图片下载超时问题
-                .readTimeout(30, TimeUnit.SECONDS)     // 增加读取超时为30秒，适应大文件下载和网络不稳定情况
-                .writeTimeout(30, TimeUnit.SECONDS)    // 增加写入超时为30秒，适应大文件上传
-                .connectionPool(new ConnectionPool(50, 5, TimeUnit.MINUTES))  // 增加连接池大小到50
+                .connectTimeout(config.getConnectTimeout(), TimeUnit.MILLISECONDS)  // 使用配置的连接超时时间
+                .readTimeout(config.getReadTimeout(), TimeUnit.MILLISECONDS)     // 使用配置的读取超时时间
+                .writeTimeout(config.getReadTimeout(), TimeUnit.MILLISECONDS)    // 写入超时使用读取超时时间
+                .connectionPool(new ConnectionPool(150, 5, TimeUnit.MINUTES))  // 增加连接池大小到150
                 .retryOnConnectionFailure(true)      // 启用连接失败重试机制
-                .addInterceptor(new RetryInterceptor(3)) // 添加全局重试拦截器，最多重试3次
+                .addInterceptor(new RetryInterceptor(config.getMaxRetries())) // 使用配置的重试次数
                 .addInterceptor(new LoggingInterceptor())
                 .addInterceptor(new PerformanceInterceptor())
                 .build();
@@ -167,6 +168,51 @@ public class UnifiedHttpClient {
         Request request = builder.build();
         
         try (Response response = client.newCall(request).execute()) {
+            if (!response.isSuccessful()) {
+                throw new IOException("HTTP请求失败: " + response.code() + " " + response.message());
+            }
+            ResponseBody responseBody = response.body();
+            return responseBody != null ? responseBody.string() : "";
+        }
+    }
+    
+    /**
+     * 带动态超时配置的POST请求 - 支持快速失败机制
+     */
+    public String postWithTimeout(String url, String body, java.util.Map<String, String> headers, 
+                                int connectTimeout, int readTimeout) throws IOException {
+        // 创建临时客户端，使用自定义超时配置
+        OkHttpClient tempClient = client.newBuilder()
+                .connectTimeout(connectTimeout, TimeUnit.MILLISECONDS)
+                .readTimeout(readTimeout, TimeUnit.MILLISECONDS)
+                .writeTimeout(readTimeout, TimeUnit.MILLISECONDS)
+                .build();
+        
+        // 根据Content-Type决定MediaType
+        String contentType = "application/json; charset=utf-8";
+        if (headers != null && headers.containsKey("Content-Type")) {
+            contentType = headers.get("Content-Type");
+        }
+        
+        RequestBody requestBody = RequestBody.create(body, MediaType.get(contentType));
+        Request.Builder builder = new Request.Builder()
+                .url(url)
+                .post(requestBody);
+        
+        // 添加默认请求头
+        builder.addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+               .addHeader("Accept", "application/json, text/plain, */*");
+        
+        // 添加自定义请求头
+        if (headers != null) {
+            for (java.util.Map.Entry<String, String> header : headers.entrySet()) {
+                builder.addHeader(header.getKey(), header.getValue());
+            }
+        }
+        
+        Request request = builder.build();
+        
+        try (Response response = tempClient.newCall(request).execute()) {
             if (!response.isSuccessful()) {
                 throw new IOException("HTTP请求失败: " + response.code() + " " + response.message());
             }

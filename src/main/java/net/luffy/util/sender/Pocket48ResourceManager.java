@@ -19,13 +19,13 @@ public class Pocket48ResourceManager {
     private static volatile Pocket48ResourceManager instance;
     private final Object lock = new Object();
     
-    // 异步媒体队列配置 - 增加线程池和队列大小以适应低CPU占用率
+    // 异步媒体队列配置 - 大幅增加线程池和队列大小以提高并发处理能力
     private final AtomicBoolean mediaQueueEnabled = new AtomicBoolean(true);
-    private final AtomicInteger mediaQueueSize = new AtomicInteger(200); // 从100增加到200
-    private final AtomicInteger mediaThreadPoolSize = new AtomicInteger(4); // 从2增加到4
+    private final AtomicInteger mediaQueueSize = new AtomicInteger(500); // 从200增加到500
+    private final AtomicInteger mediaThreadPoolSize = new AtomicInteger(8); // 从4增加到8
     private final AtomicInteger mediaProcessingTimeout = new AtomicInteger(30);
     private final AtomicBoolean prioritizeTextMessages = new AtomicBoolean(true);
-    private final AtomicInteger mediaBatchSize = new AtomicInteger(8); // 从5增加到8
+    private final AtomicInteger mediaBatchSize = new AtomicInteger(12); // 从8增加到12
     private final AtomicInteger mediaRetryAttempts = new AtomicInteger(3);
     
     // 动态调整参数
@@ -78,12 +78,12 @@ public class Pocket48ResourceManager {
         int cpuCores = Runtime.getRuntime().availableProcessors();
         long maxMemory = Runtime.getRuntime().maxMemory();
         
-        // 根据CPU核心数调整线程池大小
-        int optimalThreadPoolSize = Math.max(1, Math.min(cpuCores / 2, 4));
+        // 根据CPU核心数调整线程池大小，大幅增加以提高并发能力
+        int optimalThreadPoolSize = Math.max(4, Math.min(cpuCores, 12)); // 最少4个，最多12个线程
         mediaThreadPoolSize.set(optimalThreadPoolSize);
         
-        // 根据内存大小调整队列大小
-        int optimalQueueSize = maxMemory > 1024 * 1024 * 1024 ? 150 : 50; // 1GB以上内存使用150，否则50
+        // 根据内存大小调整队列大小，大幅增加队列容量
+        int optimalQueueSize = maxMemory > 2048 * 1024 * 1024 ? 800 : 400; // 2GB以上内存使用800，否则400
         mediaQueueSize.set(optimalQueueSize);
         
         Newboy.INSTANCE.getLogger().info(

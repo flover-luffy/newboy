@@ -21,6 +21,13 @@ public class MonitorConfig {
     private final long retryBaseDelay;
     private final long retryMaxDelay;
     
+    // 口袋48 API专用快速失败配置
+    private final int pocket48ConnectTimeout;
+    private final int pocket48ReadTimeout;
+    private final int pocket48MaxRetries;
+    private final long pocket48RetryBaseDelay;
+    private final boolean pocket48FastFailEnabled;
+    
     // 健康检查配置
     private final int maxConsecutiveFailures;
     private final long healthCheckInterval;
@@ -63,18 +70,29 @@ public class MonitorConfig {
     private int dynamicBatchQuerySize;
     private long dynamicCacheExpireTime;
     
+    // 协程配置
+    private final long coroutineTimeout;
+    private final long coroutineDefaultTimeout;
+    
     // 消息延迟优化配置已迁移到config.setting中
     
     private MonitorConfig() {
         properties = new Properties();
         loadConfiguration();
         
-        // 初始化网络配置 - 优化为3秒内响应
-        connectTimeout = getIntProperty("monitor.network.connect.timeout", 2000);
-        readTimeout = getIntProperty("monitor.network.read.timeout", 3000);
-        maxRetries = getIntProperty("monitor.network.max.retries", 3);
+        // 初始化网络配置 - 增加超时时间以提高稳定性
+        connectTimeout = getIntProperty("monitor.network.connect.timeout", 5000);
+        readTimeout = getIntProperty("monitor.network.read.timeout", 5000); // 优化网络超时时间为5秒
+        maxRetries = getIntProperty("monitor.network.max.retries", 2); // 优化重试次数为2次
         retryBaseDelay = getLongProperty("monitor.network.retry.base.delay", 1000L);
-        retryMaxDelay = getLongProperty("monitor.network.retry.max.delay", 10000L);
+        retryMaxDelay = getLongProperty("monitor.network.retry.max.delay", 15000L);
+        
+        // 初始化口袋48 API专用快速失败配置
+        pocket48FastFailEnabled = getBooleanProperty("monitor.pocket48.fast.fail.enabled", true);
+        pocket48ConnectTimeout = getIntProperty("monitor.pocket48.connect.timeout", 2000); // 2秒连接超时
+        pocket48ReadTimeout = getIntProperty("monitor.pocket48.read.timeout", 3000); // 3秒读取超时
+        pocket48MaxRetries = getIntProperty("monitor.pocket48.max.retries", 1); // 最多重试1次
+        pocket48RetryBaseDelay = getLongProperty("monitor.pocket48.retry.base.delay", 500L); // 500ms基础延迟
         
         // 初始化健康检查配置 - 优化为实时监控
         maxConsecutiveFailures = getIntProperty("monitor.health.max.consecutive.failures", 3);
@@ -105,14 +123,18 @@ public class MonitorConfig {
         adaptiveIntervalMin = getLongProperty("monitor.adaptive.interval.min", 10000L);
         adaptiveIntervalMax = getLongProperty("monitor.adaptive.interval.max", 120000L);
         batchQueryEnabled = getBooleanProperty("monitor.batch.query.enabled", true);
-        batchQuerySize = getIntProperty("monitor.batch.query.size", 5);
+        batchQuerySize = getIntProperty("monitor.batch.query.size", 10); // 增加批量查询大小
         asyncProcessingEnabled = getBooleanProperty("monitor.async.processing.enabled", true);
-        asyncThreadPoolSize = getIntProperty("monitor.async.thread.pool.size", 6); // 从3增加到6以适应低CPU占用率
+        asyncThreadPoolSize = getIntProperty("monitor.async.thread.pool.size", 12); // 增加线程池大小以提高并发处理能力
         
         // 初始化批量查询配置 - 优化响应速度
         batchQueryInterval = getLongProperty("monitor.batch.query.interval", 1000L);
-        batchQueryTimeout = getLongProperty("monitor.batch.query.timeout", 3000L);
-        batchQueryMaxConcurrent = getIntProperty("monitor.batch.query.max.concurrent", 3);
+        batchQueryTimeout = getLongProperty("monitor.batch.query.timeout", 13000L); // 增加批量查询超时时间
+        batchQueryMaxConcurrent = getIntProperty("monitor.batch.query.max.concurrent", 6); // 增加最大并发数
+        
+        // 初始化协程配置 - 解决协程超时问题
+        coroutineTimeout = getLongProperty("monitor.coroutine.timeout", 30000L);
+        coroutineDefaultTimeout = getLongProperty("monitor.coroutine.default.timeout", 20000L);
         
         // 初始化动态配置字段
         dynamicBatchQuerySize = batchQuerySize;
@@ -212,6 +234,13 @@ public class MonitorConfig {
     public long getRetryBaseDelay() { return retryBaseDelay; }
     public long getRetryMaxDelay() { return retryMaxDelay; }
     
+    // 口袋48 API专用配置的getter方法
+    public boolean isPocket48FastFailEnabled() { return pocket48FastFailEnabled; }
+    public int getPocket48ConnectTimeout() { return pocket48ConnectTimeout; }
+    public int getPocket48ReadTimeout() { return pocket48ReadTimeout; }
+    public int getPocket48MaxRetries() { return pocket48MaxRetries; }
+    public long getPocket48RetryBaseDelay() { return pocket48RetryBaseDelay; }
+    
     public int getMaxConsecutiveFailures() { return maxConsecutiveFailures; }
     public long getHealthCheckInterval() { return healthCheckInterval; }
     public double getFailureRateThreshold() { return failureRateThreshold; }
@@ -258,6 +287,10 @@ public class MonitorConfig {
     public void setCacheExpireTime(long cacheExpireTime) {
         this.dynamicCacheExpireTime = cacheExpireTime;
     }
+    
+    // 协程配置 Getter 方法
+    public long getCoroutineTimeout() { return coroutineTimeout; }
+    public long getCoroutineDefaultTimeout() { return coroutineDefaultTimeout; }
     
     // 消息延迟优化配置 Getter 方法已移除 - 配置已迁移到config.setting中
     
