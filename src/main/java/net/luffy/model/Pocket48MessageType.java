@@ -22,5 +22,6 @@ public enum Pocket48MessageType {
     FAIPAI_TEXT,//翻牌文本
     GIFT_SKILL_TEXT,//技能礼物文本
     GIFT_SKILL_IMG,//技能礼物图片
+    AGENT_WARMUP_IMG,//代理预热图片
     UNKNOWN//未知类型，用于兼容新增的消息类型
 }
