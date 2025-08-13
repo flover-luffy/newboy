@@ -150,20 +150,22 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
 
     public String getBalance() {
         try {
-            String url = "https://pocketapi.48.cn/user/api/v1/user/info/pfid";
+            // 使用正确的APIBalance常量和POST请求方式
+            String requestBody = "{}";
             
-            java.util.Map<String, String> headers = new java.util.HashMap<>();
-            headers.put("token", header.getToken());
-            headers.put("User-Agent", "PocketFans201807/6.0.16 (iPhone; iOS 13.5.1; Scale/2.00)");
-            headers.put("Accept", "application/json");
-            headers.put("Accept-Language", "zh-Hans-CN;q=1");
-            
-            String response = get(url, headers);
+            String response = post(APIBalance, requestBody, getPocket48Headers());
             
             JSONObject jsonResponse = jsonParser.parseObj(response);
             if (jsonResponse.getInt("status") == 200) {
                 JSONObject content = jsonResponse.getJSONObject("content");
-                return content.getStr("pfid", "0");
+                // 根据API返回结构获取余额信息
+                if (content.containsKey("money")) {
+                    return content.getStr("money", "0");
+                } else if (content.containsKey("pfid")) {
+                    return content.getStr("pfid", "0");
+                } else {
+                    return "0";
+                }
             } else {
                 logError("获取余额失败: " + jsonResponse.getStr("message"));
                 return "0";

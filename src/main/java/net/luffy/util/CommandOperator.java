@@ -286,9 +286,16 @@ public class CommandOperator extends AsyncWebHandlerBase {
                                 return new PlainText("" + Newboy.INSTANCE.getHandlerPocket48().getBalance());
                             }
                             case "查直播": { //历史命令1
+                                List<Object> liveList = Newboy.INSTANCE.getHandlerPocket48().getLiveList();
+                                
+                                // 检查直播列表是否为空
+                                if (liveList == null || liveList.isEmpty()) {
+                                    return new PlainText("当前暂无小偶像直播");
+                                }
+                                
                                 String out = "";
                                 int count = 1;
-                                for (Object liveRoom : Newboy.INSTANCE.getHandlerPocket48().getLiveList()) {
+                                for (Object liveRoom : liveList) {
                                     JSONObject liveRoom1 = UnifiedJsonParser.getInstance().parseObj(liveRoom.toString());
                                     JSONObject userInfo = liveRoom1.getJSONObject("userInfo");
 
@@ -301,9 +308,16 @@ public class CommandOperator extends AsyncWebHandlerBase {
                                 return new PlainText(out);
                             }
                             case "查录播": { //隐藏命令2
+                                List<Object> recordList = Newboy.INSTANCE.getHandlerPocket48().getRecordList();
+                                
+                                // 检查录播列表是否为空
+                                if (recordList == null || recordList.isEmpty()) {
+                                    return new PlainText("当前暂无录播内容");
+                                }
+                                
                                 String out = "";
                                 int count = 1;
-                                for (Object liveRoom : Newboy.INSTANCE.getHandlerPocket48().getRecordList()) {
+                                for (Object liveRoom : recordList) {
                                     JSONObject liveRoom1 = UnifiedJsonParser.getInstance().parseObj(liveRoom.toString());
                                     JSONObject userInfo = liveRoom1.getJSONObject("userInfo");
 
