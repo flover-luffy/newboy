@@ -206,13 +206,20 @@ public class MessageIntegrityChecker {
         int duplicateCount = 0;
         int timeAnomalyCount = 0;
         List<String> issues = new ArrayList<>();
+        boolean needsSorting = false;
         
         // 检查消息时间顺序
         for (int i = 1; i < messages.length; i++) {
             if (messages[i].getTime() < messages[i-1].getTime()) {
-                issues.add(String.format("消息时间顺序异常: 位置 %d (%d) > 位置 %d (%d)", 
-                    i-1, messages[i-1].getTime(), i, messages[i].getTime()));
+                needsSorting = true;
+                break;
             }
+        }
+        
+        // 如果检测到时间顺序异常，自动按时间戳排序
+        if (needsSorting) {
+            Arrays.sort(messages, (m1, m2) -> Long.compare(m1.getTime(), m2.getTime()));
+            System.out.println(String.format("[完整性] 房间 %d 消息批次时间顺序异常，已自动排序", roomId));
         }
         
         // 逐个检查消息
@@ -237,9 +244,10 @@ public class MessageIntegrityChecker {
         result.setIssues(issues);
         result.setTotalMessages(messages.length);
         
-        if (!result.isValid()) {
-            System.err.println(String.format("[完整性] 房间 %d 消息批次验证失败: 重复 %d, 时间异常 %d, 其他问题 %d", 
-                roomId, duplicateCount, timeAnomalyCount, issues.size()));
+        // 只有在存在重复消息或时间连续性异常时才输出警告
+        if (duplicateCount > 0 || timeAnomalyCount > 0) {
+            System.err.println(String.format("[完整性] 房间 %d 消息批次验证警告: 重复 %d, 时间异常 %d", 
+                roomId, duplicateCount, timeAnomalyCount));
         }
         
         return result;
