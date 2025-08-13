@@ -159,10 +159,10 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
             if (jsonResponse.getInt("status") == 200) {
                 JSONObject content = jsonResponse.getJSONObject("content");
                 // 根据API返回结构获取余额信息
-                if (content.containsKey("money")) {
-                    return content.getStr("money", "0");
-                } else if (content.containsKey("pfid")) {
-                    return content.getStr("pfid", "0");
+                if (content.containsKey("moneyPay")) {
+                    return content.getStr("moneyPay", "0");
+                } else if (content.containsKey("moneyTotal")) {
+                    return content.getStr("moneyTotal", "0");
                 } else {
                     return "0";
                 }
