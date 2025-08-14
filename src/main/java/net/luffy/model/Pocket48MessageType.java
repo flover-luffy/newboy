@@ -23,5 +23,9 @@ public enum Pocket48MessageType {
     GIFT_SKILL_TEXT,//技能礼物文本
     GIFT_SKILL_IMG,//技能礼物图片
     AGENT_WARMUP_IMG,//代理预热图片
+    AGENT_WARMUP_VIDEO,//代理预热视频
+    AGENT_WARMUP_AUDIO,//代理预热音频
+    AGENT_QCHAT_TEXT_REPLY,//代理聊天文本回复
+    AGENT_WARMUP_TEXT,//代理预热文本
     UNKNOWN//未知类型，用于兼容新增的消息类型
 }
