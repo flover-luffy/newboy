@@ -315,9 +315,18 @@ public class WeiboMonitorService {
     private String getUserLfid(String uid) {
         String lfid = userLfidCache.get(uid);
         if (lfid == null) {
-            lfid = weiboApiService.getUserWeiboLfid(uid);
-            if (lfid != null) {
-                userLfidCache.put(uid, lfid);
+            try {
+                lfid = weiboApiService.getUserWeiboLfid(uid);
+                if (lfid != null) {
+                    userLfidCache.put(uid, lfid);
+                }
+            } catch (Exception e) {
+                logger.warn("获取用户{}的lfid失败: {}", uid, e.getMessage());
+                // 对于HTTP 432错误，不抛出异常，返回null让上层处理
+                if (e.getMessage() != null && e.getMessage().contains("432")) {
+                    return null;
+                }
+                throw e;
             }
         }
         return lfid;
@@ -328,13 +337,46 @@ public class WeiboMonitorService {
      * @param uid 用户UID
      */
     private void loadUserInfo(String uid) {
-        // 预加载lfid
-        getUserLfid(uid);
+        int maxRetries = 3;
+        int retryCount = 0;
         
-        // 预加载昵称
-        String nickname = weiboApiService.getUserNickname(uid);
-        if (nickname != null) {
-            userNicknameCache.put(uid, nickname);
+        while (retryCount < maxRetries) {
+            try {
+                // 预加载lfid
+                String lfid = getUserLfid(uid);
+                if (lfid == null) {
+                    throw new RuntimeException("无法获取用户lfid");
+                }
+                
+                // 预加载昵称
+                String nickname = weiboApiService.getUserNickname(uid);
+                if (nickname != null) {
+                    userNicknameCache.put(uid, nickname);
+                }
+                
+                // 成功加载，退出重试循环
+                logger.info("用户{}信息加载成功", uid);
+                return;
+                
+            } catch (Exception e) {
+                retryCount++;
+                logger.warn("加载用户{}信息失败 (第{}次重试): {}", uid, retryCount, e.getMessage());
+                
+                if (retryCount >= maxRetries) {
+                    logger.error("用户{}信息加载最终失败，已重试{}次", uid, maxRetries);
+                    return;
+                }
+                
+                // 计算重试延迟：2^retryCount * 1000ms，最大30秒
+                long delayMs = Math.min((long)(Math.pow(2, retryCount) * 1000), 30000);
+                try {
+                    Thread.sleep(delayMs);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    logger.error("用户{}信息加载被中断", uid);
+                    return;
+                }
+            }
         }
     }
     

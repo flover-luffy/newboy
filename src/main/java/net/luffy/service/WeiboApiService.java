@@ -24,6 +24,7 @@ public class WeiboApiService extends AsyncWebHandlerBase {
     
     private static final String API_BASE = "https://m.weibo.cn/api/container/getIndex";
     private final UnifiedJsonParser jsonParser = UnifiedJsonParser.getInstance();
+    private final WeiboApiCookieManager cookieManager = WeiboApiCookieManager.getInstance();
     
     public WeiboApiService() {
         super();
@@ -40,16 +41,29 @@ public class WeiboApiService extends AsyncWebHandlerBase {
         params.put("value", uid);
         
         String url = buildUrl(API_BASE, params);
-        String response = get(url, getDefaultHeaders());
         
-        if (response != null && !response.isEmpty()) {
-            try {
-                return jsonParser.parseObj(response);
-            } catch (Exception e) {
-                // 解析失败
+        try {
+            String response = get(url, getDefaultHeaders());
+            
+            if (response != null && !response.isEmpty()) {
+                try {
+                    return jsonParser.parseObj(response);
+                } catch (Exception e) {
+                    // 解析失败
+                    return null;
+                }
+            }
+        } catch (RuntimeException e) {
+            // 检查是否为HTTP 432错误
+            if (e.getMessage() != null && e.getMessage().contains("432")) {
+                System.err.println("[WeiboAPI] 遇到HTTP 432错误，可能是请求频率过高或认证问题: " + e.getMessage());
+                // 对于432错误，返回null而不是抛出异常，让上层代码处理
                 return null;
             }
+            // 其他错误继续抛出
+            throw e;
         }
+        
         return null;
     }
     
@@ -63,16 +77,29 @@ public class WeiboApiService extends AsyncWebHandlerBase {
         params.put("containerid", lfid);
         
         String url = buildUrl(API_BASE, params);
-        String response = get(url, getDefaultHeaders());
         
-        if (response != null && !response.isEmpty()) {
-            try {
-                return jsonParser.parseObj(response);
-            } catch (Exception e) {
-                // 解析失败
+        try {
+            String response = get(url, getDefaultHeaders());
+            
+            if (response != null && !response.isEmpty()) {
+                try {
+                    return jsonParser.parseObj(response);
+                } catch (Exception e) {
+                    // 解析失败
+                    return null;
+                }
+            }
+        } catch (RuntimeException e) {
+            // 检查是否为HTTP 432错误
+            if (e.getMessage() != null && e.getMessage().contains("432")) {
+                System.err.println("[WeiboAPI] 遇到HTTP 432错误，可能是请求频率过高或认证问题: " + e.getMessage());
+                // 对于432错误，返回null而不是抛出异常，让上层代码处理
                 return null;
             }
+            // 其他错误继续抛出
+            throw e;
         }
+        
         return null;
     }
     
@@ -335,11 +362,27 @@ public class WeiboApiService extends AsyncWebHandlerBase {
      */
     private Map<String, String> getDefaultHeaders() {
         Map<String, String> headers = new HashMap<>();
-        headers.put("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
+        // 使用最新的Chrome User-Agent，避免被识别为过时的浏览器
+        headers.put("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
         headers.put("Accept", "application/json, text/plain, */*");
         headers.put("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
+        // 移除Accept-Encoding头以避免HTTP 432错误
+        // headers.put("Accept-Encoding", "gzip, deflate, br");
         headers.put("Accept-Charset", "UTF-8");
         headers.put("Referer", "https://m.weibo.cn/");
+        // 添加更多浏览器特征头，提高请求的真实性
+        headers.put("Cache-Control", "no-cache");
+        headers.put("Pragma", "no-cache");
+        headers.put("Sec-Fetch-Dest", "empty");
+        headers.put("Sec-Fetch-Mode", "cors");
+        headers.put("Sec-Fetch-Site", "same-origin");
+        headers.put("X-Requested-With", "XMLHttpRequest");
+        
+        // 关键修复：添加动态Cookie支持以解决HTTP 432错误
+        // 基于测试发现，微博API需要Cookie进行基本身份验证
+        // 使用动态Cookie管理器自动获取和刷新Cookie
+        headers.put("Cookie", cookieManager.getValidCookies());
+        
         return headers;
     }
     

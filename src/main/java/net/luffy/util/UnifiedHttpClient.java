@@ -567,11 +567,13 @@ public class UnifiedHttpClient {
             Request request = chain.request();
             IOException lastException = null;
             int retryCount = 0;
+            int lastResponseCode = 0;
             
             while (retryCount <= maxRetries) {
                 try {
                     // 尝试执行请求
                     Response response = chain.proceed(request);
+                    lastResponseCode = response.code();
                     
                     // 检查响应是否成功
                     if (response.isSuccessful() || !isRetryable(response.code())) {
@@ -599,7 +601,7 @@ public class UnifiedHttpClient {
                 }
                 
                 // 计算重试延迟（指数退避策略）
-                long delayMs = calculateRetryDelay(retryCount);
+                long delayMs = calculateRetryDelay(retryCount, lastResponseCode);
                 try {
                     Thread.sleep(delayMs);
                 } catch (InterruptedException e) {
@@ -627,16 +629,25 @@ public class UnifiedHttpClient {
          */
         private boolean isRetryable(int code) {
             // 5xx服务器错误和部分4xx客户端错误可以重试
-            return code >= 500 || code == 429 || code == 408;
+            // 特别处理HTTP 432错误（微博API的非标准错误码，通常表示请求签名认证失败）
+            return code >= 500 || code == 429 || code == 408 || code == 432;
         }
         
         /**
          * 计算重试延迟时间（指数退避策略）
          * @param retryCount 当前重试次数
+         * @param responseCode HTTP响应码
          * @return 延迟毫秒数
          */
-        private long calculateRetryDelay(int retryCount) {
-            // 指数退避策略：baseDelay * (1.5^retryCount)，最大10秒
+        private long calculateRetryDelay(int retryCount, int responseCode) {
+            // 对于HTTP 432错误（微博API认证失败），使用更长的延迟
+            if (responseCode == 432) {
+                // 对432错误使用更长的基础延迟（5秒）和更大的指数因子（2.0）
+                long delay = Math.min((long)(5000 * Math.pow(2.0, retryCount)), 60000); // 最大60秒
+                return delay;
+            }
+            
+            // 其他错误使用标准指数退避策略：baseDelay * (1.5^retryCount)，最大10秒
             return Math.min((long)(baseDelayMs * Math.pow(1.5, retryCount)), 10000);
         }
     }

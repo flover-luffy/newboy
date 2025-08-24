@@ -63,57 +63,25 @@ public class AsyncWebHandlerBase {
     }
 
     /**
-     * 同步POST请求（兼容旧接口）- 带重试机制
+     * 同步POST请求（兼容旧接口）- 使用UnifiedHttpClient的统一重试机制
      */
     protected String post(String url, String body) {
-        int maxRetries = 3;
-        long baseDelay = 1000; // 1秒基础延迟
-        
-        for (int attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-                return UnifiedHttpClient.getInstance().post(url, body);
-            } catch (Exception e) {
-                if (attempt == maxRetries) {
-                    throw new RuntimeException("POST请求失败（已重试" + maxRetries + "次）: " + e.getMessage(), e);
-                }
-                
-                // 指数退避重试
-                try {
-                    long delay = baseDelay * (1L << (attempt - 1));
-                    Thread.sleep(Math.min(delay, 10000)); // 最大延迟10秒
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    throw new RuntimeException("POST请求被中断: " + e.getMessage(), e);
-                }
-            }
+        try {
+            return UnifiedHttpClient.getInstance().post(url, body);
+        } catch (Exception e) {
+            throw new RuntimeException("POST请求失败: " + e.getMessage(), e);
         }
-        return null; // 不会到达这里
     }
     
     /**
-     * 带动态超时配置的POST请求 - 支持快速失败机制
+     * 带超时的同步POST请求 - 使用UnifiedHttpClient的统一重试机制
      */
-    protected String postWithTimeout(String url, String body, Map<String, String> headers, 
-                                   int connectTimeout, int readTimeout, int maxRetries, long baseDelay) {
-        for (int attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-                return UnifiedHttpClient.getInstance().postWithTimeout(url, body, headers, connectTimeout, readTimeout);
-            } catch (Exception e) {
-                if (attempt == maxRetries) {
-                    throw new RuntimeException("POST请求失败（已重试" + maxRetries + "次）: " + e.getMessage(), e);
-                }
-                
-                // 指数退避重试
-                try {
-                    long delay = baseDelay * (1L << (attempt - 1));
-                    Thread.sleep(Math.min(delay, 10000)); // 最大延迟10秒
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    throw new RuntimeException("POST请求被中断: " + e.getMessage(), e);
-                }
-            }
+    protected String postWithTimeout(String url, String body, Map<String, String> headers, int connectTimeout, int readTimeout) {
+        try {
+            return UnifiedHttpClient.getInstance().postWithTimeout(url, body, headers, connectTimeout, readTimeout);
+        } catch (Exception e) {
+            throw new RuntimeException("POST请求失败: " + e.getMessage(), e);
         }
-        return null; // 不会到达这里
     }
     
     /**
@@ -145,93 +113,42 @@ public class AsyncWebHandlerBase {
     }
 
     /**
-     * 同步GET请求（兼容旧接口）- 带重试机制
+     * 同步GET请求（兼容旧接口）- 使用UnifiedHttpClient的统一重试机制
      */
     protected String get(String url) {
-        int maxRetries = 3;
-        long baseDelay = 1000; // 1秒基础延迟
-        
-        for (int attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-                return UnifiedHttpClient.getInstance().get(url);
-            } catch (Exception e) {
-                if (attempt == maxRetries) {
-                    throw new RuntimeException("GET请求失败（已重试" + maxRetries + "次）: " + e.getMessage(), e);
-                }
-                
-                // 指数退避重试
-                try {
-                    long delay = baseDelay * (1L << (attempt - 1));
-                    Thread.sleep(Math.min(delay, 10000)); // 最大延迟10秒
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    throw new RuntimeException("GET请求被中断: " + e.getMessage(), e);
-                }
-            }
+        try {
+            return UnifiedHttpClient.getInstance().get(url);
+        } catch (Exception e) {
+            throw new RuntimeException("GET请求失败: " + e.getMessage(), e);
         }
-        return null; // 不会到达这里
     }
     
     /**
-     * 带Headers的同步GET请求（兼容旧接口）- 带重试机制
+     * 带Headers的同步GET请求（兼容旧接口）- 使用UnifiedHttpClient的统一重试机制
      */
     protected String get(String url, okhttp3.Headers headers) {
-        int maxRetries = 3;
-        long baseDelay = 1000; // 1秒基础延迟
-        
-        for (int attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-                Map<String, String> headerMap = new HashMap<>();
-                if (headers != null) {
-                    for (String name : headers.names()) {
-                        headerMap.put(name, headers.get(name));
-                    }
-                }
-                return UnifiedHttpClient.getInstance().get(url, headerMap);
-            } catch (Exception e) {
-                if (attempt == maxRetries) {
-                    throw new RuntimeException("GET请求失败（已重试" + maxRetries + "次）: " + e.getMessage(), e);
-                }
-                
-                // 指数退避重试
-                try {
-                    long delay = baseDelay * (1L << (attempt - 1));
-                    Thread.sleep(Math.min(delay, 10000)); // 最大延迟10秒
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    throw new RuntimeException("GET请求被中断: " + e.getMessage(), e);
+        try {
+            Map<String, String> headerMap = new HashMap<>();
+            if (headers != null) {
+                for (String name : headers.names()) {
+                    headerMap.put(name, headers.get(name));
                 }
             }
+            return UnifiedHttpClient.getInstance().get(url, headerMap);
+        } catch (Exception e) {
+            throw new RuntimeException("GET请求失败: " + e.getMessage(), e);
         }
-        return null; // 不会到达这里
     }
     
     /**
-     * 带Map Headers的同步GET请求 - 带重试机制
+     * 带Map Headers的同步GET请求 - 使用UnifiedHttpClient的统一重试机制
      */
     protected String get(String url, Map<String, String> headers) {
-        int maxRetries = 5;
-        long baseDelay = 1000; // 1秒基础延迟
-        
-        for (int attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-                return UnifiedHttpClient.getInstance().get(url, headers);
-            } catch (Exception e) {
-                if (attempt == maxRetries) {
-                    throw new RuntimeException("GET请求失败（已重试" + maxRetries + "次）: " + e.getMessage(), e);
-                }
-                
-                // 指数退避重试，适当放宽延迟时间
-                try {
-                    long delay = Math.min(baseDelay * (long) Math.pow(1.5, attempt - 1), 5000);
-                    Thread.sleep(delay); // 最大延迟5秒
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    throw new RuntimeException("GET请求被中断: " + e.getMessage(), e);
-                }
-            }
+        try {
+            return UnifiedHttpClient.getInstance().get(url, headers);
+        } catch (Exception e) {
+            throw new RuntimeException("GET请求失败: " + e.getMessage(), e);
         }
-        return null; // 不会到达这里
     }
     
     /**

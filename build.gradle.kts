@@ -62,3 +62,12 @@ tasks.withType<JavaCompile> {
 tasks.withType<ProcessResources> {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
+
+// 添加运行测试的任务
+tasks.register<JavaExec>("runWeiboTest") {
+    group = "application"
+    description = "Run Weibo API test"
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("net.luffy.test.WeiboApiTest")
+    jvmArgs = listOf("-Dfile.encoding=UTF-8")
+}
