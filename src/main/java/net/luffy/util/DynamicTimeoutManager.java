@@ -139,23 +139,34 @@ public class DynamicTimeoutManager {
     }
     
     /**
-     * 根据网络质量调整重试次数
+     * 根据网络质量和端点统计动态调整重试次数
      */
     private int getQualityAdjustedRetries(int baseRetries, NetworkQuality quality) {
+        // 基于网络质量的基础调整
+        int adjustedRetries = baseRetries;
+        
         switch (quality) {
             case EXCELLENT:
-                return Math.max(1, baseRetries - 1); // 减少1次重试
+                adjustedRetries = Math.max(1, baseRetries - 1); // 网络好时减少重试
+                break;
             case GOOD:
-                return baseRetries;
+                adjustedRetries = baseRetries; // 保持默认
+                break;
             case FAIR:
-                return baseRetries;
+                adjustedRetries = baseRetries + 1; // 网络一般时增加1次重试
+                break;
             case POOR:
-                return baseRetries + 1; // 增加1次重试
+                adjustedRetries = baseRetries + 2; // 网络差时增加2次重试
+                break;
             case VERY_POOR:
-                return baseRetries + 2; // 增加2次重试
+                adjustedRetries = baseRetries + 3; // 网络很差时增加3次重试
+                break;
             default:
-                return baseRetries;
+                adjustedRetries = baseRetries;
         }
+        
+        // 确保重试次数在合理范围内 (1-8次)
+        return Math.max(1, Math.min(8, adjustedRetries));
     }
     
     /**
@@ -166,8 +177,25 @@ public class DynamicTimeoutManager {
      * @return 调整后的延迟时间
      */
     public long getDynamicRetryDelay(long baseDelay, int retryAttempt, String endpoint) {
-        // 直接返回最小延迟，移除所有复杂的计算逻辑
-        return MIN_RETRY_DELAY; // 100ms最小延迟
+        // 使用指数退避策略，但限制最大延迟
+        long delay = Math.min((long)(MIN_RETRY_DELAY * Math.pow(1.5, retryAttempt)), MAX_RETRY_DELAY);
+        
+        // 根据网络质量调整延迟
+        NetworkQuality quality = getCurrentQuality();
+        switch (quality) {
+            case EXCELLENT:
+                return (long)(delay * 0.5); // 网络优秀时减少延迟
+            case GOOD:
+                return delay;
+            case FAIR:
+                return (long)(delay * 1.2);
+            case POOR:
+                return (long)(delay * 1.5);
+            case VERY_POOR:
+                return MAX_RETRY_DELAY; // 网络很差时使用最大延迟
+            default:
+                return delay;
+        }
     }
     
     /**

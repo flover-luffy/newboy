@@ -94,7 +94,7 @@ public class MonitorConfig {
         // 初始化口袋48 API专用快速失败配置 - 进一步优化超时时间
         pocket48FastFailEnabled = getBooleanProperty("monitor.pocket48.fast.fail.enabled", true);
         pocket48ConnectTimeout = getIntProperty("monitor.pocket48.connect.timeout", 1000); // 从2秒降至1秒连接超时
-        pocket48ReadTimeout = getIntProperty("monitor.pocket48.read.timeout", 2000); // 从3秒降至2秒读取超时
+        pocket48ReadTimeout = getIntProperty("monitor.pocket48.read.timeout", 10000); // 调整为10秒读取超时，适应媒体文件下载
         pocket48MaxRetries = getIntProperty("monitor.pocket48.max.retries", delayConfig.getMaxRetries()); // 使用DelayConfig的重试次数
         pocket48RetryBaseDelay = getLongProperty("monitor.pocket48.retry.base.delay", delayConfig.getRetryBaseDelay()); // 使用DelayConfig的基础延迟
         

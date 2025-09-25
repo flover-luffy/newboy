@@ -86,7 +86,7 @@ public class ConfigOperator {
             tempSetting.setByGroup("message_optimization", "text_message_priority", "high");
             tempSetting.setByGroup("message_optimization", "media_message_priority", "normal");
             tempSetting.setByGroup("message_optimization", "placeholder_fallback_enabled", "true");
-            tempSetting.setByGroup("message_optimization", "async_processing_timeout", "10000");
+            tempSetting.setByGroup("message_optimization", "async_processing_timeout", "30000");
             
             // 口袋48异步处理队列配置已迁移到 Pocket48UnifiedResourceManager
             
@@ -156,7 +156,7 @@ public class ConfigOperator {
         properties.text_message_priority = setting.getStr("message_optimization", "text_message_priority", "high");
         properties.media_message_priority = setting.getStr("message_optimization", "media_message_priority", "normal");
         properties.placeholder_fallback_enabled = setting.getBool("message_optimization", "placeholder_fallback_enabled", true);
-        properties.async_processing_timeout = setting.getInt("message_optimization", "async_processing_timeout", 10000);
+        properties.async_processing_timeout = setting.getInt("message_optimization", "async_processing_timeout", 30000);
         
         // 口袋48异步处理队列配置已迁移到 Pocket48UnifiedResourceManager
 

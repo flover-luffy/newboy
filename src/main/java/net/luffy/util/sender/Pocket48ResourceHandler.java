@@ -678,7 +678,7 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
             
             // 缓存未命中，使用动态重试次数异步下载文件
             net.luffy.util.DynamicTimeoutManager timeoutManager = net.luffy.util.DynamicTimeoutManager.getInstance();
-            int dynamicMaxRetries = timeoutManager.getDynamicRetries(3);
+            int dynamicMaxRetries = timeoutManager.getDynamicRetries(5); // 增加默认重试次数到5次
             net.luffy.util.DynamicTimeoutManager.Pocket48TimeoutConfig config = timeoutManager.getPocket48DynamicConfig();
             
             return downloadToTempFileWithRetryAsync(url, fileExtension, dynamicMaxRetries);
@@ -775,6 +775,9 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
                 long waitTime = timeoutManager.getDynamicRetryDelay(attempt);
                 
                 logger.debug("Pocket48ResourceHandler", "第" + (attempt + 1) + "次下载失败，" + waitTime + "ms后重试: " + url + ", 错误: " + currentException.getMessage());
+                
+                // 记录重试指标
+                metricsCollector.recordRetryAttempt("download", attempt + 1, currentException.getClass().getSimpleName());
                 
                 // 异步延迟后递归重试
                 return unifiedDelayService.delayAsync((int)waitTime).thenCompose(v -> 

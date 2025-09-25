@@ -133,6 +133,23 @@ public class Pocket48MetricsCollector implements MetricsCollectable {
     }
     
     /**
+     * 记录重试尝试（新增方法）
+     */
+    public void recordRetryAttempt(String operation, int attemptNumber, String errorType) {
+        totalRetries.incrementAndGet();
+        maxRetries.updateAndGet(current -> Math.max(current, attemptNumber));
+        incrementHourlyStat("retry_attempts");
+        
+        // 记录错误类型
+        if (errorType != null && !errorType.isEmpty()) {
+            errorTypes.computeIfAbsent(errorType, k -> new AtomicLong(0)).incrementAndGet();
+        }
+        
+        logger.debug("Pocket48Metrics", String.format("重试尝试 - 操作: %s, 第%d次, 错误: %s", 
+            operation, attemptNumber, errorType));
+    }
+    
+    /**
      * 获取平均重试次数
      */
     public double getAverageRetries() {
