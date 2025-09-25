@@ -129,10 +129,6 @@ public class WeiboApiCookieManager {
             connection.setInstanceFollowRedirects(false);
             
             int responseCode = connection.getResponseCode();
-            // 只在首次初始化时显示调试信息
-            if (isFirstInitialization) {
-                System.out.println("[DEBUG] 访问 " + urlString + " 响应状态码: " + responseCode);
-            }
             
             // 获取Set-Cookie头
             Map<String, List<String>> headers = connection.getHeaderFields();
@@ -147,10 +143,6 @@ public class WeiboApiCookieManager {
             // 处理重定向
             String location = connection.getHeaderField("Location");
             if (location != null && (responseCode == 301 || responseCode == 302)) {
-                // 只在首次初始化时显示调试信息
-                if (isFirstInitialization) {
-                    System.out.println("[DEBUG] 重定向到: " + location);
-                }
                 Map<String, String> redirectCookies = getCookiesFromUrl(location);
                 cookies.putAll(redirectCookies);
             }
@@ -197,11 +189,6 @@ public class WeiboApiCookieManager {
                 // 只保存有效的Cookie名称
                 if (isValidCookieName(name)) {
                     cookies.put(name, value);
-                    // 只在首次初始化时显示调试信息
-                    if (isFirstInitialization) {
-                        System.out.println("[DEBUG] 解析Cookie: " + name + " = " + 
-                            (value.length() > 20 ? value.substring(0, 20) + "..." : value));
-                    }
                 }
             }
         }

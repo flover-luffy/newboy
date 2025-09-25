@@ -4,6 +4,7 @@ import net.luffy.Newboy;
 import net.luffy.util.Properties;
 import net.luffy.util.MonitorConfig;
 import net.luffy.util.UnifiedHttpClient;
+import net.luffy.util.delay.DelayConfig;
 // OkHttp imports removed - migrated to UnifiedHttpClient
 // HttpLoggingInterceptor import removed - migrated to UnifiedHttpClient
 
@@ -66,117 +67,65 @@ public class AsyncWebHandlerBase {
      * 同步POST请求（兼容旧接口）- 使用UnifiedHttpClient的统一重试机制
      */
     protected String post(String url, String body) {
-        try {
-            return UnifiedHttpClient.getInstance().post(url, body);
-        } catch (Exception e) {
-            throw new RuntimeException("POST请求失败: " + e.getMessage(), e);
-        }
+        return executeHttpRequest(() -> UnifiedHttpClient.getInstance().post(url, body), "POST");
     }
     
     /**
      * 带超时的同步POST请求 - 使用UnifiedHttpClient的统一重试机制
      */
     protected String postWithTimeout(String url, String body, Map<String, String> headers, int connectTimeout, int readTimeout) {
-        try {
-            return UnifiedHttpClient.getInstance().postWithTimeout(url, body, headers, connectTimeout, readTimeout);
-        } catch (Exception e) {
-            throw new RuntimeException("POST请求失败: " + e.getMessage(), e);
-        }
+        return executeHttpRequest(() -> UnifiedHttpClient.getInstance().postWithTimeout(url, body, headers, connectTimeout, readTimeout), "POST");
     }
     
     /**
      * 带Map Headers的同步POST请求
      */
     protected String post(String url, String body, Map<String, String> headers) {
-        try {
-            return UnifiedHttpClient.getInstance().post(url, body, headers);
-        } catch (Exception e) {
-            throw new RuntimeException("POST请求失败: " + e.getMessage(), e);
-        }
+        return executeHttpRequest(() -> UnifiedHttpClient.getInstance().post(url, body, headers), "POST");
     }
     
     /**
      * 带Headers的同步POST请求（兼容旧接口）
      */
     protected String post(String url, okhttp3.Headers headers, String body) {
-        try {
-            Map<String, String> headerMap = new HashMap<>();
-            if (headers != null) {
-                for (String name : headers.names()) {
-                    headerMap.put(name, headers.get(name));
-                }
-            }
-            return UnifiedHttpClient.getInstance().post(url, body, headerMap);
-        } catch (Exception e) {
-            throw new RuntimeException("POST请求失败: " + e.getMessage(), e);
-        }
+        Map<String, String> headerMap = convertOkHttpHeaders(headers);
+        return executeHttpRequest(() -> UnifiedHttpClient.getInstance().post(url, body, headerMap), "POST");
     }
 
     /**
      * 同步GET请求（兼容旧接口）- 使用UnifiedHttpClient的统一重试机制
      */
     protected String get(String url) {
-        try {
-            return UnifiedHttpClient.getInstance().get(url);
-        } catch (Exception e) {
-            throw new RuntimeException("GET请求失败: " + e.getMessage(), e);
-        }
+        return executeHttpRequest(() -> UnifiedHttpClient.getInstance().get(url), "GET");
     }
     
     /**
      * 带Headers的同步GET请求（兼容旧接口）- 使用UnifiedHttpClient的统一重试机制
      */
     protected String get(String url, okhttp3.Headers headers) {
-        try {
-            Map<String, String> headerMap = new HashMap<>();
-            if (headers != null) {
-                for (String name : headers.names()) {
-                    headerMap.put(name, headers.get(name));
-                }
-            }
-            return UnifiedHttpClient.getInstance().get(url, headerMap);
-        } catch (Exception e) {
-            throw new RuntimeException("GET请求失败: " + e.getMessage(), e);
-        }
+        Map<String, String> headerMap = convertOkHttpHeaders(headers);
+        return executeHttpRequest(() -> UnifiedHttpClient.getInstance().get(url, headerMap).getBody(), "GET");
     }
     
     /**
      * 带Map Headers的同步GET请求 - 使用UnifiedHttpClient的统一重试机制
      */
     protected String get(String url, Map<String, String> headers) {
-        try {
-            return UnifiedHttpClient.getInstance().get(url, headers);
-        } catch (Exception e) {
-            throw new RuntimeException("GET请求失败: " + e.getMessage(), e);
-        }
+        return executeHttpRequest(() -> UnifiedHttpClient.getInstance().get(url, headers).getBody(), "GET");
     }
     
     /**
      * 异步POST请求 - 使用统一HTTP客户端
      */
     protected CompletableFuture<String> postAsync(String url, String body) {
-        requestCount.incrementAndGet();
-        lastRequestTime = System.currentTimeMillis();
-        
-        return UnifiedHttpClient.getInstance().postAsync(url, body)
-                .exceptionally(throwable -> {
-                    failureCount.incrementAndGet();
-                    throw new RuntimeException("异步POST请求失败: " + throwable.getMessage(), throwable);
-                });
+        return executeAsyncRequest(() -> UnifiedHttpClient.getInstance().postAsync(url, body), "异步POST");
     }
 
     /**
      * 异步GET请求 - 使用统一HTTP客户端
      */
     protected CompletableFuture<String> getAsync(String url) {
-        requestCount.incrementAndGet();
-        lastRequestTime = System.currentTimeMillis();
-        
-        return UnifiedHttpClient.getInstance().getAsync(url)
-                .exceptionally(throwable -> {
-                    failureCount.incrementAndGet();
-                    throw new RuntimeException("异步GET请求失败: " + throwable.getMessage(), throwable);
-                });
+        return executeAsyncRequest(() -> UnifiedHttpClient.getInstance().getAsync(url), "异步GET");
     }
     
     /**
@@ -190,41 +139,85 @@ public class AsyncWebHandlerBase {
         }
     }
     
+    /**
+     * 通用HTTP请求执行方法，统一异常处理
+     */
+    private String executeHttpRequest(HttpRequestSupplier supplier, String method) {
+        try {
+            return supplier.get();
+        } catch (Exception e) {
+            throw new RuntimeException(method + "请求失败: " + e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * 转换OkHttp Headers为Map格式
+     */
+    private Map<String, String> convertOkHttpHeaders(okhttp3.Headers headers) {
+        Map<String, String> headerMap = new HashMap<>();
+        if (headers != null) {
+            for (String name : headers.names()) {
+                headerMap.put(name, headers.get(name));
+            }
+        }
+        return headerMap;
+    }
+    
+    /**
+     * HTTP请求供应商函数式接口
+     */
+    @FunctionalInterface
+    private interface HttpRequestSupplier {
+        String get() throws Exception;
+    }
+    
     // HTTP请求构建和执行已迁移到UnifiedHttpClient
     
     /**
      * 计算重试延迟（指数退避）- 保留给子类使用
      */
     protected long calculateRetryDelay(int retryCount) {
-        return Math.min(config.getRetryBaseDelay() * (1L << (retryCount - 1)), config.getRetryMaxDelay());
+        DelayConfig delayConfig = DelayConfig.getInstance();
+        long baseDelay = delayConfig.getRetryBaseDelay();
+        double backoffMultiplier = delayConfig.getRetryBackoffMultiplier();
+        long maxDelay = delayConfig.getRetryMaxDelay();
+        return Math.min((long)(baseDelay * Math.pow(backoffMultiplier, retryCount - 1)), maxDelay);
     }
     
     /**
      * 带自定义Headers的异步POST请求 - 使用统一HTTP客户端
      */
     protected CompletableFuture<String> postAsync(String url, Map<String, String> headers, String body) {
-        requestCount.incrementAndGet();
-        lastRequestTime = System.currentTimeMillis();
-        
-        return UnifiedHttpClient.getInstance().postAsync(url, body, headers)
-                .exceptionally(throwable -> {
-                    failureCount.incrementAndGet();
-                    throw new RuntimeException("异步POST请求失败: " + throwable.getMessage(), throwable);
-                });
+        return executeAsyncRequest(() -> UnifiedHttpClient.getInstance().postAsync(url, body, headers), "异步POST");
     }
 
     /**
      * 带自定义Headers的异步GET请求 - 使用统一HTTP客户端
      */
     protected CompletableFuture<String> getAsync(String url, Map<String, String> headers) {
+        return executeAsyncRequest(() -> UnifiedHttpClient.getInstance().getAsync(url, headers), "异步GET");
+    }
+    
+    /**
+     * 通用异步HTTP请求执行方法，统一性能监控和异常处理
+     */
+    private CompletableFuture<String> executeAsyncRequest(AsyncRequestSupplier supplier, String requestType) {
         requestCount.incrementAndGet();
         lastRequestTime = System.currentTimeMillis();
         
-        return UnifiedHttpClient.getInstance().getAsync(url, headers)
+        return supplier.get()
                 .exceptionally(throwable -> {
                     failureCount.incrementAndGet();
-                    throw new RuntimeException("异步GET请求失败: " + throwable.getMessage(), throwable);
+                    throw new RuntimeException(requestType + "请求失败: " + throwable.getMessage(), throwable);
                 });
+    }
+    
+    /**
+     * 异步HTTP请求供应商函数式接口
+     */
+    @FunctionalInterface
+    private interface AsyncRequestSupplier {
+        CompletableFuture<String> get();
     }
     
     /**

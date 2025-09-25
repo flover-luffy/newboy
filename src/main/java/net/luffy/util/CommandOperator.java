@@ -4,6 +4,8 @@ package net.luffy.util;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import net.luffy.Newboy;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import net.luffy.handler.AsyncWebHandlerBase;
 import net.luffy.handler.Pocket48Handler;
@@ -11,6 +13,9 @@ import net.luffy.handler.WeidianHandler;
 import net.luffy.handler.WeidianSenderHandler;
 import net.luffy.handler.Xox48Handler;
 import net.luffy.handler.WeiboHandler;
+import net.luffy.command.Pocket48CommandHandler;
+import net.luffy.command.WeiboCommandHandler;
+import net.luffy.command.DouyinCommandHandler;
 
 import net.luffy.util.AsyncOnlineStatusMonitor;
 import net.luffy.util.DouyinMonitorService;
@@ -41,9 +46,12 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 public class CommandOperator extends AsyncWebHandlerBase {
 
+    private static final Logger logger = LoggerFactory.getLogger(CommandOperator.class);
     public static CommandOperator INSTANCE;
 
     public CommandOperator() {
@@ -52,178 +60,7 @@ public class CommandOperator extends AsyncWebHandlerBase {
     }
 
     // 抖音监控命令处理
-    private Message handleDouyinMonitorCommand(String[] args, long group, long senderID) {
-        if (args.length < 2) {
-            return new PlainText("🎵 抖音监控功能\n" +
-                    "━━━━━━━━━━━━━━━━━━━━\n" +
-                    "📋 可用命令:\n" +
-                    "• /抖音监控 启动 - 启动监控服务\n" +
-                    "• /抖音监控 停止 - 停止监控服务\n" +
-                    "• /抖音状态 - 查看监控状态\n" +
-                    "• /抖音用户 - 查看监控用户列表\n" +
-                    "• /抖音添加 <用户链接> - 添加监控用户\n" +
-                    "• /抖音删除 <用户ID> - 删除监控用户\n" +
-                    "• /抖音重启 - 重启监控服务\n\n" +
-                    "💡 提示: 使用 /抖音 命令管理群组关注列表");
-        }
 
-        switch (args[1]) {
-            case "启动":
-            case "start":
-                return startDouyinMonitoring(group, senderID);
-            case "停止":
-            case "stop":
-                return stopDouyinMonitoring(group, senderID);
-            default:
-                return new PlainText("❌ 未知操作\n💡 可用操作: 启动、停止");
-        }
-    }
-
-    // 启动抖音监控服务
-    private Message startDouyinMonitoring(long group, long senderID) {
-        if (!Newboy.INSTANCE.getConfig().isAdmin(senderID)) {
-            return new PlainText("权限不足喵");
-        }
-
-        try {
-            DouyinMonitorService monitorService = DouyinMonitorService.getInstance();
-            if (monitorService.isRunning()) {
-                return new PlainText("✅ 抖音监控服务已在运行中");
-            }
-
-            monitorService.startMonitoring(10); // 默认10分钟检查间隔
-            return new PlainText("✅ 抖音监控服务已启动");
-        } catch (Exception e) {
-            // 静默处理错误，不向群组推送错误消息
-            Newboy.INSTANCE.getLogger().error("启动抖音监控服务失败: " + e.getMessage());
-            return null;
-        }
-    }
-
-    // 停止抖音监控服务
-    private Message stopDouyinMonitoring(long group, long senderID) {
-        if (!Newboy.INSTANCE.getConfig().isAdmin(senderID)) {
-            return new PlainText("权限不足喵");
-        }
-
-        try {
-            DouyinMonitorService monitorService = DouyinMonitorService.getInstance();
-            if (!monitorService.isRunning()) {
-                return new PlainText("⚠️ 抖音监控服务未运行");
-            }
-
-            monitorService.stopMonitoring();
-            return new PlainText("✅ 抖音监控服务已停止");
-        } catch (Exception e) {
-            return new PlainText("❌ 停止抖音监控服务失败: " + e.getMessage());
-        }
-    }
-
-    // 获取抖音监控服务状态
-    private Message getDouyinMonitoringStatus() {
-        try {
-            DouyinMonitorService monitorService = DouyinMonitorService.getInstance();
-            return new PlainText(monitorService.getStatus());
-        } catch (Exception e) {
-            // 静默处理错误，不向群组推送错误消息
-            Newboy.INSTANCE.getLogger().error("获取抖音监控服务状态失败: " + e.getMessage());
-            return null;
-        }
-    }
-
-    // 获取抖音监控用户列表
-    private Message getDouyinMonitoredUsersList() {
-        try {
-            DouyinMonitorService monitorService = DouyinMonitorService.getInstance();
-            return new PlainText(monitorService.getMonitoredUsersList());
-        } catch (Exception e) {
-            // 静默处理错误，不向群组推送错误消息
-            Newboy.INSTANCE.getLogger().error("获取抖音监控用户列表失败: " + e.getMessage());
-            return null;
-        }
-    }
-
-    // 添加抖音监控用户
-    private Message handleDouyinAddCommand(String[] args, long group, long senderID) {
-        if (!Newboy.INSTANCE.getConfig().isAdmin(senderID)) {
-            return new PlainText("权限不足喵");
-        }
-
-        if (args.length < 2) {
-            return new PlainText("❌ 请提供用户链接或用户ID\n💡 使用方法: /抖音添加 <用户链接或用户ID>");
-        }
-
-        String userInput = args[1];
-        try {
-            DouyinMonitorService monitorService = DouyinMonitorService.getInstance();
-            
-            // 提取用户ID
-            String secUserId;
-            if (userInput.contains("douyin.com")) {
-                // 从分享链接提取用户ID的逻辑需要实现
-                return new PlainText("❌ 暂不支持从分享链接提取用户ID，请直接使用用户ID");
-            } else {
-                secUserId = userInput;
-            }
-
-            boolean success = monitorService.addMonitorUser(secUserId);
-            if (success) {
-                String nickname = monitorService.getMonitoredUserNickname(secUserId);
-                return new PlainText("✅ 成功添加抖音监控用户\n👤 用户: " + (nickname != null ? nickname : "未知用户") + "\n🆔 用户ID: " + secUserId);
-            } else {
-                return new PlainText("❌ 添加失败，用户可能已在监控列表中");
-            }
-        } catch (Exception e) {
-            return new PlainText("❌ 添加抖音监控用户失败: " + e.getMessage());
-        }
-    }
-
-    // 删除抖音监控用户
-    private Message handleDouyinRemoveCommand(String[] args, long group, long senderID) {
-        if (!Newboy.INSTANCE.getConfig().isAdmin(senderID)) {
-            return new PlainText("权限不足喵");
-        }
-
-        if (args.length < 2) {
-            return new PlainText("❌ 请提供用户ID\n💡 使用方法: /抖音删除 <用户ID>");
-        }
-
-        String secUserId = args[1];
-        try {
-            DouyinMonitorService monitorService = DouyinMonitorService.getInstance();
-            boolean success = monitorService.removeMonitorUser(secUserId);
-            if (success) {
-                return new PlainText("✅ 成功删除抖音监控用户\n🆔 用户ID: " + secUserId);
-            } else {
-                return new PlainText("❌ 删除失败，用户不在监控列表中");
-            }
-        } catch (Exception e) {
-            return new PlainText("❌ 删除抖音监控用户失败: " + e.getMessage());
-        }
-    }
-
-    // 重启抖音监控服务
-    private Message handleDouyinRestartCommand(long group, long senderID) {
-        if (!Newboy.INSTANCE.getConfig().isAdmin(senderID)) {
-            return new PlainText("权限不足喵");
-        }
-
-        try {
-            DouyinMonitorService monitorService = DouyinMonitorService.getInstance();
-            monitorService.stopMonitoring();
-            // 使用异步延迟替代Thread.sleep，避免阻塞
-            delayAsync(1000).thenRun(() -> {
-                try {
-                    monitorService.startMonitoring(10); // 默认10分钟检查间隔
-                } catch (Exception e) {
-                    System.err.println("启动抖音监控服务失败: " + e.getMessage());
-                }
-            });
-            return new PlainText("✅ 抖音监控服务重启中...");
-        } catch (Exception e) {
-            return new PlainText("❌ 重启抖音监控服务失败: " + e.getMessage());
-        }
-    }
 
     public Message executePublic(String[] args, Group g, long senderID) {
         long group = g.getId();
@@ -906,22 +743,17 @@ public class CommandOperator extends AsyncWebHandlerBase {
             }
             case "/抖音监控":
             case "/douyin_monitor":
-                return handleDouyinMonitorCommand(args, group, senderID);
             case "/抖音状态":
             case "/douyin_status":
-                return getDouyinMonitoringStatus();
             case "/抖音用户":
             case "/douyin_users":
-                return getDouyinMonitoredUsersList();
             case "/抖音添加":
             case "/douyin_add":
-                return handleDouyinAddCommand(args, group, senderID);
             case "/抖音删除":
             case "/douyin_remove":
-                return handleDouyinRemoveCommand(args, group, senderID);
             case "/抖音重启":
             case "/douyin_restart":
-                return handleDouyinRestartCommand(group, senderID);
+                return DouyinCommandHandler.getInstance().handlePublicDouyinCommand(args, g, senderID);
 
             case "/帮助":
             case "/help":
@@ -972,19 +804,17 @@ public class CommandOperator extends AsyncWebHandlerBase {
                 return handlePrivateAsyncMonitorCommand(args, event);
             }
             case "/口袋":
-            case "/pocket": {
-                return handlePrivatePocket48Command(args, event);
-            }
+            case "/pocket":
+                return Pocket48CommandHandler.getInstance().handlePrivatePocket48Command(args, event);
             case "/微博":
-            case "/weibo": {
-                return handlePrivateWeiboCommand(args, event);
-            }
+            case "/weibo":
+                return WeiboCommandHandler.getInstance().handlePrivateWeiboCommand(args, event);
             case "/超话":
             case "/supertopic":
                 return handlePrivateSuperTopicCommand(args, event);
             case "/抖音":
             case "/douyin":
-                return handlePrivateDouyinCommand(args, event);
+                return DouyinCommandHandler.getInstance().handlePrivateDouyinCommand(args, event);
             case "/抖音监控":
             case "/抖音用户":
             case "/抖音状态":
@@ -1576,28 +1406,28 @@ public class CommandOperator extends AsyncWebHandlerBase {
         return new PlainText("📋 Newboy 机器人帮助\n" +
                 "━━━━━━━━━━━━━━━━━━━━\n" +
                 "🎯 可用命令:\n\n" +
-                "📱 /口袋 - 口袋48相关功能\n" +
+                "📱 /口袋 - 口袋48功能\n" +
                 "  • /口袋 关注列表 - 查看订阅列表\n" +
                 "  • /口袋 搜索 <关键词> - 搜索成员/团体\n" +
                 "  • /口袋 查询 <用户ID> - 查询用户信息\n" +
-                "  • /口袋 关注 <房间ID> <群号> - 为群组添加订阅\n" +
-                "  • /口袋 取消关注 <房间ID> <群号> - 为群组取消订阅\n\n" +
+                "  • /口袋 关注 <房间ID> <群号> - 添加订阅\n" +
+                "  • /口袋 取消关注 <房间ID> <群号> - 取消订阅\n\n" +
                 "📱 /微博 - 微博监控功能\n" +
                 "  • /微博 关注列表 - 查看关注的微博用户\n" +
-                "  • /微博 关注 <用户UID> <群号> - 为群组关注微博用户\n" +
-                "  • /微博 取消关注 <用户UID> <群号> - 为群组取消关注\n\n" +
+                "  • /微博 关注 <用户UID> <群号> - 关注微博用户\n" +
+                "  • /微博 取消关注 <用户UID> <群号> - 取消关注\n\n" +
                 "🎭 /超话 - 微博超话功能\n" +
                 "  • /超话 关注列表 - 查看关注的超话\n" +
-                "  • /超话 关注 <超话ID> <群号> - 为群组关注超话\n" +
-                "  • /超话 取消关注 <超话ID> <群号> - 为群组取消关注\n\n" +
+                "  • /超话 关注 <超话ID> <群号> - 关注超话\n" +
+                "  • /超话 取消关注 <超话ID> <群号> - 取消关注\n\n" +
                 "🛒 /微店 - 微店管理功能\n" +
                 "  • /微店 <群号> 全部 - 查看所有商品\n" +
                 "  • /微店 <群号> # <商品ID> - 查看商品详情\n" +
                 "  • /微店 <群号> 屏蔽 <商品ID> - 屏蔽商品\n\n" +
                 "🎵 /抖音 - 抖音用户关注功能\n" +
                 "  • /抖音 关注列表 - 查看关注的抖音用户\n" +
-                "  • /抖音 关注 <用户ID> <群号> - 为群组关注抖音用户\n" +
-                "  • /抖音 取消关注 <用户ID> <群号> - 为群组取消关注\n\n" +
+                "  • /抖音 关注 <用户ID> <群号> - 关注抖音用户\n" +
+                "  • /抖音 取消关注 <用户ID> <群号> - 取消关注\n\n" +
                 "🎵 /抖音监控 - 抖音监控服务管理\n" +
                 "  • /抖音监控 启动 - 启动监控服务\n" +
                 "  • /抖音监控 停止 - 停止监控服务\n" +
@@ -1606,21 +1436,18 @@ public class CommandOperator extends AsyncWebHandlerBase {
                 "  • /抖音添加 <用户链接> - 添加监控用户\n" +
                 "  • /抖音删除 <用户ID> - 删除监控用户\n" +
                 "  • /抖音重启 - 重启监控服务\n\n" +
-
                 "📊 /监控 - 在线状态监控\n" +
                 "  • /监控 列表 - 查看监控列表\n" +
-                "  • /监控 添加 <成员名> <群号> - 为群组添加成员监控\n" +
-                "  • /监控 移除 <成员名> <群号> - 为群组移除成员监控\n\n" +
+                "  • /监控 添加 <成员名> <群号> - 添加成员监控\n" +
+                "  • /监控 移除 <成员名> <群号> - 移除成员监控\n\n" +
                 "🧹 /清理缓存 - 系统缓存管理\n" +
                 "  • /清理缓存 - 清理所有系统缓存\n" +
                 "  • /clearcache - 清理缓存（英文别名）\n\n" +
                 "❓ /帮助 - 显示此帮助信息\n\n" +
                 "💡 提示:\n" +
-                "  • 使用 !newboy help 查看系统级帮助\n" +
                 "  • 大部分命令支持中英文别名\n" +
                 "  • 管理员权限命令需要相应权限\n" +
-                "  • 支持通过私聊为指定群组管理订阅\n" +
-                "  • 跨群管理需要相应群组的管理员权限");
+                "  • 支持通过私聊为指定群组管理订阅");
     }
 
     // 获取私聊口袋48订阅列表
@@ -2351,7 +2178,7 @@ public class CommandOperator extends AsyncWebHandlerBase {
                 try {
                     monitorService.startMonitoring(10); // 默认10分钟检查间隔
                 } catch (Exception e) {
-                    System.err.println("启动抖音监控服务失败: " + e.getMessage());
+                    logger.error("启动抖音监控服务失败: {}", e.getMessage());
                 }
             });
             return new PlainText("✅ 抖音监控服务重启中...");
@@ -2567,38 +2394,56 @@ public class CommandOperator extends AsyncWebHandlerBase {
     }
     
     /**
-     * 异步延迟方法，替代Thread.sleep避免阻塞
-     * @param delayMs 延迟毫秒数
-     * @return CompletableFuture用于异步处理
+     * 获取抖音监控状态
+     * @return 监控状态消息
      */
-    private java.util.concurrent.CompletableFuture<Void> delayAsync(long delayMs) {
+    private Message getDouyinMonitoringStatus() {
         try {
-            // 使用统一调度器进行真正的异步延迟
-            java.util.concurrent.CompletableFuture<Void> delayFuture = new java.util.concurrent.CompletableFuture<>();
+            DouyinMonitorService monitorService = DouyinMonitorService.getInstance();
+            String statusText = monitorService.getStatus();
             
-            net.luffy.util.UnifiedSchedulerManager.getInstance().getExecutor().execute(() -> {
-                try {
-                    Thread.sleep(delayMs);
-                    delayFuture.complete(null);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    delayFuture.completeExceptionally(e);
-                }
-            });
+            // 安全检查：确保状态文本不为空且长度合理
+            if (statusText == null || statusText.trim().isEmpty()) {
+                return new PlainText("📱 抖音监控状态\n运行状态: ❌ 状态获取失败");
+            }
             
-            return delayFuture;
+            // 额外的长度检查
+            if (statusText.length() > 1000) {
+                statusText = statusText.substring(0, 997) + "...";
+            }
+            
+            // 移除潜在的问题字符
+            statusText = statusText.replaceAll("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F]", "");
+            
+            return new PlainText(statusText);
         } catch (Exception e) {
-            // 如果异步延迟失败，返回立即完成的Future
-            return java.util.concurrent.CompletableFuture.completedFuture(null);
+            // 静默处理错误，返回简化的错误信息
+            logger.error("获取抖音监控服务状态失败: {}", e.getMessage());
+            return new PlainText("📱 抖音监控状态\n运行状态: ❌ 服务异常");
         }
     }
-
     
-
-
-
-
-
-
+    /**
+     * 获取抖音监控用户列表
+     * @return 监控用户列表消息
+     */
+    private Message getDouyinMonitoredUsersList() {
+        try {
+            DouyinMonitorService monitorService = DouyinMonitorService.getInstance();
+            return new PlainText(monitorService.getMonitoredUsersList());
+        } catch (Exception e) {
+            logger.error("获取抖音监控用户列表失败: {}", e.getMessage());
+            return new PlainText("❌ 获取监控用户列表失败: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * 异步延迟执行 - 使用统一延迟服务
+     * @param delayMs 延迟毫秒数
+     * @return CompletableFuture<Void>
+     */
+    private CompletableFuture<Void> delayAsync(int delayMs) {
+        return net.luffy.util.delay.UnifiedDelayService.getInstance().delayAsync(delayMs);
+    }
 
 }

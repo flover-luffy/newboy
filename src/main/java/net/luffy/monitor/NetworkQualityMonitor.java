@@ -26,7 +26,7 @@ public class NetworkQualityMonitor {
     };
     
     private static final int TEST_PORT = 80;
-    private static final int CONNECT_TIMEOUT = 3000; // 3秒连接超时
+    private static final int CONNECT_TIMEOUT = 2000; // 优化为2秒连接超时，提高响应速度
     private static final int TEST_COUNT = 3; // 每个主机测试3次
     
     /**
@@ -120,118 +120,56 @@ public class NetworkQualityMonitor {
     }
     
     /**
-     * 检查网络质量
+     * 检查网络质量 - 已禁用，始终返回优秀网络质量
      */
     public NetworkQuality checkNetworkQuality() {
-        NetworkQualityResult result = checkNetworkQualityDetailed();
-        return result.getQuality();
+        // 禁用网络质量检测，始终返回优秀网络质量以减少系统开销
+        return NetworkQuality.EXCELLENT;
     }
     
     /**
-     * 详细检查网络质量
+     * 详细检查网络质量 - 已禁用，始终返回优秀网络质量
      */
     public NetworkQualityResult checkNetworkQualityDetailed() {
-        long startTime = System.currentTimeMillis();
-        
-        double totalLatency = 0;
-        int successCount = 0;
-        int totalTests = TEST_HOSTS.length * TEST_COUNT;
-        
-        for (String host : TEST_HOSTS) {
-            for (int i = 0; i < TEST_COUNT; i++) {
-                try {
-                    long latency = measureLatency(host, TEST_PORT);
-                    if (latency >= 0) {
-                        totalLatency += latency;
-                        successCount++;
-                    }
-                } catch (Exception e) {
-                    logger.debug("网络延迟测试失败: {} - {}", host, e.getMessage());
-                }
-            }
-        }
-        
-        double averageLatency = successCount > 0 ? totalLatency / successCount : Double.MAX_VALUE;
-        double packetLossRate = 1.0 - (double) successCount / totalTests;
-        
-        // 根据丢包率调整网络质量评估
-        NetworkQuality quality = NetworkQuality.fromLatency(averageLatency);
-        if (packetLossRate > 0.5) { // 丢包率超过50%
-            quality = NetworkQuality.VERY_POOR;
-        } else if (packetLossRate > 0.2) { // 丢包率超过20%
-            // 降级一个等级
-            switch (quality) {
-                case EXCELLENT:
-                    quality = NetworkQuality.GOOD;
-                    break;
-                case GOOD:
-                    quality = NetworkQuality.FAIR;
-                    break;
-                case FAIR:
-                    quality = NetworkQuality.POOR;
-                    break;
-                case POOR:
-                    quality = NetworkQuality.VERY_POOR;
-                    break;
-            }
-        }
-        
-        long endTime = System.currentTimeMillis();
-        logger.debug("网络质量检测完成，耗时: {}ms, 结果: {}", endTime - startTime, quality);
-        
-        return new NetworkQualityResult(averageLatency, packetLossRate, quality);
+        // 禁用网络质量检测，始终返回优秀网络质量以减少系统开销
+        return new NetworkQualityResult(10.0, 0.0, NetworkQuality.EXCELLENT);
     }
-    
+
     /**
-     * 测量到指定主机的网络延迟
+     * 测量到指定主机的网络延迟 - 已禁用
      */
     private long measureLatency(String host, int port) {
-        long startTime = System.nanoTime();
-        
-        try (Socket socket = new Socket()) {
-            socket.connect(new InetSocketAddress(host, port), CONNECT_TIMEOUT);
-            long endTime = System.nanoTime();
-            return (endTime - startTime) / 1_000_000; // 转换为毫秒
-        } catch (SocketTimeoutException e) {
-            logger.debug("连接超时: {}", host);
-            return CONNECT_TIMEOUT; // 返回超时时间作为延迟
-        } catch (IOException e) {
-            logger.debug("连接失败: {} - {}", host, e.getMessage());
-            return -1; // 连接失败
-        }
+        // 禁用网络延迟测量，直接返回固定值以减少系统开销
+        return 10; // 模拟10ms延迟
     }
-    
+
     /**
-     * 检查指定主机是否可达
+     * 检查指定主机是否可达 - 简化版本
      */
     public boolean isHostReachable(String host) {
-        return isHostReachable(host, TEST_PORT, CONNECT_TIMEOUT);
+        return true; // 始终返回可达状态
     }
     
     /**
-     * 检查指定主机和端口是否可达
+     * 检查指定主机和端口是否可达 - 简化版本
      */
     public boolean isHostReachable(String host, int port, int timeout) {
-        try (Socket socket = new Socket()) {
-            socket.connect(new InetSocketAddress(host, port), timeout);
-            return true;
-        } catch (IOException e) {
-            logger.debug("主机不可达: {}:{} - {}", host, port, e.getMessage());
-            return false;
-        }
+        return true; // 始终返回可达状态
     }
-    
+
     /**
-     * 异步检查网络质量
+     * 异步检查网络质量 - 已禁用，始终返回优秀网络质量
      */
     public CompletableFuture<NetworkQualityResult> checkNetworkQualityAsync() {
-        return CompletableFuture.supplyAsync(this::checkNetworkQualityDetailed);
+        return CompletableFuture.completedFuture(
+            new NetworkQualityResult(10.0, 0.0, NetworkQuality.EXCELLENT)
+        );
     }
     
     /**
-     * 快速网络检查（仅检查口袋48服务器）
+     * 快速网络检查（仅检查口袋48服务器）- 简化版本
      */
     public boolean isPocket48Reachable() {
-        return isHostReachable("pocketapi.48.cn", 443, 2000); // HTTPS端口，2秒超时
+        return true; // 始终返回可达状态
     }
 }

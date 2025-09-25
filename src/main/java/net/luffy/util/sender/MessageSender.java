@@ -8,7 +8,7 @@ import net.mamoe.mirai.message.data.Message;
 import net.mamoe.mirai.message.data.MessageChain;
 import net.mamoe.mirai.message.data.MessageChainBuilder;
 import net.mamoe.mirai.utils.ExternalResource;
-import org.springframework.stereotype.Component;
+// 移除Spring相关导入
 
 import java.io.InputStream;
 import java.net.URL;
@@ -20,7 +20,6 @@ import net.luffy.util.sender.Sender;
  * 消息发送器服务类
  * 提供统一的消息发送接口
  */
-@Component
 public class MessageSender {
     
     /**

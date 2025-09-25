@@ -2,14 +2,16 @@ package net.luffy.util.sender;
 
 import net.luffy.model.Pocket48Message;
 import net.luffy.model.Pocket48MessageType;
+import net.luffy.util.AdaptiveThreadPoolManager;
+import net.luffy.util.UnifiedSchedulerManager;
 import java.io.File;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.List;
@@ -25,11 +27,11 @@ public class Pocket48ResourceOptimizer {
     // 资源缓存映射
     private final Map<String, File> resourceCache = new ConcurrentHashMap<>();
     
-    // 预加载线程池
-    private final ExecutorService preloadExecutor = Executors.newFixedThreadPool(4);
+    // 预加载线程池 - 使用统一线程池管理
+    private final ExecutorService preloadExecutor = AdaptiveThreadPoolManager.getInstance().getExecutorService();
     
-    // 异步缓存清理线程池
-    private final ScheduledExecutorService cacheCleanupExecutor = Executors.newSingleThreadScheduledExecutor();
+    // 异步缓存清理线程池 - 使用统一调度器
+    private final ScheduledExecutorService cacheCleanupExecutor = UnifiedSchedulerManager.getInstance().getScheduledExecutor();
     
     // 资源处理器引用
     private final Pocket48ResourceHandler resourceHandler;
@@ -45,7 +47,7 @@ public class Pocket48ResourceOptimizer {
     private final AtomicLong lastCleanupTime = new AtomicLong(0);
     
     // 清理频率控制（毫秒）
-    private static final long MIN_CLEANUP_INTERVAL = 5 * 60 * 1000; // 5分钟
+    private static final long MIN_CLEANUP_INTERVAL = 3 * 60 * 1000; // 优化为3分钟，提高清理频率
     
     public Pocket48ResourceOptimizer(Pocket48ResourceHandler resourceHandler) {
         this.resourceHandler = resourceHandler;
@@ -186,26 +188,29 @@ public class Pocket48ResourceOptimizer {
         for (Pocket48Message message : messages) {
             if (message == null) continue;
             
-            // 提取各种类型的资源URL
-            switch (message.getType()) {
-                case AUDIO:
-                case FLIPCARD_AUDIO:
-                    // 音频消息暂不处理URL提取，因为Pocket48Message没有getBody()方法
-                    break;
-                    
-                case VIDEO:
-                case FLIPCARD_VIDEO:
-                    // 视频消息暂不处理URL提取，因为Pocket48Message没有getBody()方法
-                    break;
-                    
-                case IMAGE:
-                case EXPRESSIMAGE:
-                    // 图片消息暂不处理URL提取，因为Pocket48Message没有getBody()方法
-                    break;
-                    
-                default:
-                    // 其他类型暂不处理
-                    break;
+            // 使用扩展后的Pocket48Message模型提取资源URL
+            if (message.isMediaMessage()) {
+                // 获取主要资源URL
+                String primaryUrl = message.getPrimaryResourceUrl();
+                if (primaryUrl != null && !primaryUrl.trim().isEmpty()) {
+                    resourceUrls.add(primaryUrl);
+                }
+                
+                // 获取缩略图URL（如果有）
+                String thumbnailUrl = message.getThumbnailUrl();
+                if (thumbnailUrl != null && !thumbnailUrl.trim().isEmpty() && !thumbnailUrl.equals(primaryUrl)) {
+                    resourceUrls.add(thumbnailUrl);
+                }
+                
+                // 获取所有相关资源URL
+                List<String> allUrls = message.getResourceUrls();
+                if (allUrls != null) {
+                    for (String url : allUrls) {
+                        if (url != null && !url.trim().isEmpty() && !resourceUrls.contains(url)) {
+                            resourceUrls.add(url);
+                        }
+                    }
+                }
             }
         }
         
@@ -217,6 +222,11 @@ public class Pocket48ResourceOptimizer {
      * @param maxAgeMinutes 最大缓存时间（分钟）
      */
     public void cleanupExpiredCache(int maxAgeMinutes) {
+        // 检查线程池状态，避免向已关闭的线程池提交任务
+        if (cacheCleanupExecutor.isShutdown() || cacheCleanupExecutor.isTerminated()) {
+            return;
+        }
+        
         // 如果缓存被禁用，直接清空所有缓存
         if (!cacheEnabled.get()) {
             clearAllCache();
@@ -232,15 +242,24 @@ public class Pocket48ResourceOptimizer {
             return;
         }
         
+        // 再次检查线程池状态（双重检查）
+        if (cacheCleanupExecutor.isShutdown() || cacheCleanupExecutor.isTerminated()) {
+            return;
+        }
+        
         // 异步执行清理操作，避免阻塞主线程
-        cacheCleanupExecutor.submit(() -> {
-            try {
-                performCacheCleanup(maxAgeMinutes);
-                lastCleanupTime.set(currentTime);
-            } catch (Exception e) {
-                // 静默处理清理异常，避免影响主流程
-            }
-        });
+        try {
+            cacheCleanupExecutor.submit(() -> {
+                try {
+                    performCacheCleanup(maxAgeMinutes);
+                    lastCleanupTime.set(currentTime);
+                } catch (Exception e) {
+                    // 静默处理清理异常，避免影响主流程
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            // 线程池已关闭，静默处理
+        }
     }
     
     /**
@@ -280,7 +299,9 @@ public class Pocket48ResourceOptimizer {
      * 清空所有缓存
      */
     public void clearAllCache() {
-        cacheCleanupExecutor.submit(() -> {
+        // 检查线程池状态，避免向已关闭的线程池提交任务
+        if (cacheCleanupExecutor.isShutdown() || cacheCleanupExecutor.isTerminated()) {
+            // 线程池已关闭，同步执行清理
             try {
                 List<File> filesToDelete = new ArrayList<>(resourceCache.values());
                 resourceCache.clear();
@@ -298,7 +319,33 @@ public class Pocket48ResourceOptimizer {
             } catch (Exception e) {
                 // 静默处理清理异常
             }
-        });
+            return;
+        }
+        
+        // 异步执行清理
+        try {
+            cacheCleanupExecutor.submit(() -> {
+                try {
+                    List<File> filesToDelete = new ArrayList<>(resourceCache.values());
+                    resourceCache.clear();
+                    
+                    // 删除所有缓存文件
+                    for (File file : filesToDelete) {
+                        if (file != null && file.exists()) {
+                            try {
+                                file.delete();
+                            } catch (Exception e) {
+                                // 静默处理
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    // 静默处理清理异常
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            // 线程池已关闭，静默处理
+        }
     }
     
     /**
@@ -334,28 +381,14 @@ public class Pocket48ResourceOptimizer {
     }
     
     /**
-     * 关闭优化器 - 优化版
+     * 关闭优化器 - 统一线程池管理版
      */
     public void shutdown() {
-        try {
-            // 清理所有缓存
-            clearAllCache();
-            
-            // 关闭缓存清理线程池
-            cacheCleanupExecutor.shutdown();
-            if (!cacheCleanupExecutor.awaitTermination(3, TimeUnit.SECONDS)) {
-                cacheCleanupExecutor.shutdownNow();
-            }
-            
-            // 关闭预加载线程池
-            preloadExecutor.shutdown();
-            if (!preloadExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
-                preloadExecutor.shutdownNow();
-            }
-        } catch (InterruptedException e) {
-            cacheCleanupExecutor.shutdownNow();
-            preloadExecutor.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
+        // 清理所有缓存
+        clearAllCache();
+        
+        // 线程池现在由AdaptiveThreadPoolManager和UnifiedSchedulerManager统一管理
+        // 不需要在这里单独关闭
+        System.out.println("[Pocket48ResourceOptimizer] 已关闭，线程池由统一管理器处理");
     }
 }

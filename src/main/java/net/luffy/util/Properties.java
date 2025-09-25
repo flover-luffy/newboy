@@ -55,6 +55,18 @@ public class Properties {
     // 异步监控配置
     public String async_monitor_schedule_pattern;
     
-    // 口袋48异步处理队列配置已迁移到 Pocket48ResourceManager
+    // UI期望配置
+    public boolean enable_placeholder_messages;
+    public int placeholder_timeout_ms;
+    public boolean show_processing_status;
+    public boolean high_priority_channel_enabled;
+    
+    // 消息优化配置
+    public String text_message_priority;
+    public String media_message_priority;
+    public boolean placeholder_fallback_enabled;
+    public int async_processing_timeout;
+    
+    // 口袋48异步处理队列配置已迁移到 Pocket48UnifiedResourceManager
 
 }

@@ -5,21 +5,26 @@ import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import net.luffy.Newboy;
 import net.luffy.util.UnifiedJsonParser;
-// OkHttp imports removed - migrated to UnifiedHttpClient
 import net.luffy.util.UnifiedHttpClient;
 import net.luffy.model.Pocket48Message;
 import net.luffy.model.Pocket48RoomInfo;
 import net.luffy.util.DynamicTimeoutManager;
 import net.luffy.util.NetworkQualityMonitor;
 import net.luffy.util.MonitorConfig;
+import net.luffy.util.delay.UnifiedDelayService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 public class Pocket48Handler extends AsyncWebHandlerBase {
 
+    private static final Logger logger = LoggerFactory.getLogger(Pocket48Handler.class);
     public static final String ROOT = "https://pocketapi.48.cn";
     public static final String SOURCEROOT = "https://source.48.cn/";
     public static final String APIAnswerDetail = ROOT + "/idolanswer/api/idolanswer/v1/question_answer/detail";
@@ -42,6 +47,7 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
     private final DynamicTimeoutManager timeoutManager;
     private final NetworkQualityMonitor networkMonitor;
     private final UnifiedHttpClient httpClient;
+    private final UnifiedDelayService unifiedDelayService;
 
     public Pocket48Handler() {
         super();
@@ -49,6 +55,7 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
         this.networkMonitor = new NetworkQualityMonitor();
         this.timeoutManager = DynamicTimeoutManager.getInstance();
         this.httpClient = UnifiedHttpClient.getInstance();
+        this.unifiedDelayService = UnifiedDelayService.getInstance();
     }
 
     public static final String getOwnerOrTeamName(Pocket48RoomInfo roomInfo) {
@@ -138,27 +145,38 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
         super.logError(msg);
     }
 
-    // 获取Pocket48专用请求头（优化版）
     protected java.util.Map<String, String> getPocket48Headers() {
-        // 直接使用header类的方法，避免重复设置
         if (header.getToken() != null) {
             return header.getHeaders();
         } else {
             return header.getLoginHeaders();
         }
     }
+    
+    /**
+     * 获取当前的token
+     * @return token字符串，如果未设置则返回null
+     */
+    public String getToken() {
+        return header != null ? header.getToken() : null;
+    }
+    
+    /**
+     * 获取User-Agent字符串
+     * @return User-Agent字符串
+     */
+    public String getUserAgent() {
+        return "PocketFans201807/7.1.36 (iPhone; iOS 26.0; Scale/2.00)";
+    }
 
     public String getBalance() {
         try {
-            // 使用正确的APIBalance常量和POST请求方式
             String requestBody = "{}";
-            
             String response = post(APIBalance, requestBody, getPocket48Headers());
             
             JSONObject jsonResponse = jsonParser.parseObj(response);
             if (jsonResponse.getInt("status") == 200) {
                 JSONObject content = jsonResponse.getJSONObject("content");
-                // 根据API返回结构获取余额信息
                 if (content.containsKey("moneyPay")) {
                     return content.getStr("moneyPay", "0");
                 } else if (content.containsKey("moneyTotal")) {
@@ -200,13 +218,10 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
             return jsonParser.parseObj(content.getObj("baseUserInfo").toString());
 
         } else {
-            // 静默处理用户不存在等错误，避免控制台噪音
             String message = object.getStr("message");
             if (message != null && message.contains("用户不存在")) {
-                // 用户不存在时静默处理，不输出到控制台
                 return null;
             } else {
-                // 其他错误仍然记录到日志
                 logError(starID + message);
             }
         }
@@ -331,6 +346,43 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
         }
         return new Object[0];
     }
+    
+    /**
+     * 搜索房间信息
+     * @param keyword 搜索关键词
+     * @return Pocket48RoomInfo数组
+     */
+    public Pocket48RoomInfo[] searchRoom(String keyword) {
+        try {
+            Object[] searchResults = search(keyword);
+            if (searchResults == null || searchResults.length == 0) {
+                return new Pocket48RoomInfo[0];
+            }
+            
+            List<Pocket48RoomInfo> roomInfoList = new ArrayList<>();
+            for (Object result : searchResults) {
+                try {
+                    JSONObject resultObj = jsonParser.parseObj(result.toString());
+                    // 从搜索结果中提取房间信息
+                    if (resultObj.containsKey("channelId")) {
+                        long channelId = resultObj.getLong("channelId");
+                        Pocket48RoomInfo roomInfo = getRoomInfoByChannelID(channelId);
+                        if (roomInfo != null) {
+                            roomInfoList.add(roomInfo);
+                        }
+                    }
+                } catch (Exception e) {
+                    // 忽略单个结果的解析错误，继续处理其他结果
+                    logError("解析搜索结果时出错: " + e.getMessage());
+                }
+            }
+            
+            return roomInfoList.toArray(new Pocket48RoomInfo[0]);
+        } catch (Exception e) {
+            logError("搜索房间时出错: " + e.getMessage());
+            return new Pocket48RoomInfo[0];
+        }
+    }
 
     public String getAnswerNameTo(String answerID, String questionID) {
         String s = post(APIAnswerDetail, String.format("{\"answerId\":\"%s\",\"questionId\":\"%s\"}", answerID, questionID), getPocket48Headers());
@@ -347,134 +399,135 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
     }
 
     /* ----------------------房间类---------------------- */
-    //获取最新消息并整理成Pocket48Message[]
-    //注意endTime中无key=roomInfo.getRoomId()时此方法返回null
+
+    
+    //异步版本：注意endTime中无key=roomInfo.getRoomId()时此方法返回null
     //采用13位时间戳
-    public Pocket48Message[] getMessages(Pocket48RoomInfo roomInfo, HashMap<Long, Long> endTime) {
+    public CompletableFuture<Pocket48Message[]> getMessagesAsync(Pocket48RoomInfo roomInfo, HashMap<Long, Long> endTime) {
         long roomID = roomInfo.getRoomId();
         if (!endTime.containsKey(roomID))
-            return null;
+            return CompletableFuture.completedFuture(null);
 
-        List<Object> msgs = getOriMessages(roomID, roomInfo.getSeverId());
-        if (msgs != null) {
-            List<Pocket48Message> rs = new ArrayList<>();
-            long latest = 0;
-            long currentEndTime = endTime.get(roomID);
-            
-            // 修复：记录处理的消息时间戳，确保endTime正确更新
-            List<Long> processedTimestamps = new ArrayList<>();
-            
-            for (Object message : msgs) {
-                JSONObject m = jsonParser.parseObj(message.toString());
-                long time = m.getLong("msgTime");
+        return getOriMessagesAsync(roomID, roomInfo.getSeverId()).thenApply(msgs -> {
+            if (msgs != null) {
+                List<Pocket48Message> rs = new ArrayList<>();
+                long latest = 0;
+                long currentEndTime = endTime.get(roomID);
+                
+                // 修复：记录处理的消息时间戳，确保endTime正确更新
+                List<Long> processedTimestamps = new ArrayList<>();
+                
+                for (Object message : msgs) {
+                    JSONObject m = jsonParser.parseObj(message.toString());
+                    long time = m.getLong("msgTime");
 
-                // 修复：使用严格的大于比较，避免重复处理相同时间戳的消息
-                if (currentEndTime >= time)
-                    continue; // 跳过已处理的消息，而不是break
+                    // 修复：使用严格的大于比较，避免重复处理相同时间戳的消息
+                    if (currentEndTime >= time)
+                        continue; // 跳过已处理的消息，而不是break
 
-                if (latest < time) {
-                    latest = time;
+                    if (latest < time) {
+                        latest = time;
+                    }
+                    
+                    processedTimestamps.add(time);
+                    rs.add(Pocket48Message.construct(
+                            roomInfo,
+                            m
+                    ));
                 }
                 
-                processedTimestamps.add(time);
-                rs.add(Pocket48Message.construct(
-                        roomInfo,
-                        m
-                ));
-            }
-            
-            // 修复：确保endTime更新逻辑的正确性
-            if (latest != 0 && !processedTimestamps.isEmpty()) {
-                synchronized(endTime) {
-                    // 使用处理的最新消息时间戳更新endTime
-                    long maxProcessedTime = Collections.max(processedTimestamps);
-                    if (maxProcessedTime > endTime.getOrDefault(roomID, 0L)) {
-                        endTime.put(roomID, maxProcessedTime);
-                        // 移除正常情况下的时间戳更新日志，减少日志噪音
+                // 修复：确保endTime更新逻辑的正确性
+                if (latest != 0 && !processedTimestamps.isEmpty()) {
+                    synchronized(endTime) {
+                        // 使用处理的最新消息时间戳更新endTime
+                        long maxProcessedTime = Collections.max(processedTimestamps);
+                        if (maxProcessedTime > endTime.getOrDefault(roomID, 0L)) {
+                            endTime.put(roomID, maxProcessedTime);
+                            // 移除正常情况下的时间戳更新日志，减少日志噪音
+                        }
+                        // 移除正常情况下的调试信息，减少日志噪音
                     }
-                    // 移除正常情况下的调试信息，减少日志噪音
                 }
+                // 移除正常情况下的调试信息，减少日志噪音
+                return rs.toArray(new Pocket48Message[0]);
             }
-            // 移除正常情况下的调试信息，减少日志噪音
-            return rs.toArray(new Pocket48Message[0]);
-        }
-        return new Pocket48Message[0];
+            return new Pocket48Message[0];
+        });
     }
 
-    public Pocket48Message[] getMessages(long roomID, HashMap<Long, Long> endTime) {
+
+    
+    public CompletableFuture<Pocket48Message[]> getMessagesAsync(long roomID, HashMap<Long, Long> endTime) {
         Pocket48RoomInfo roomInfo = getRoomInfoByChannelID(roomID);
         if (roomInfo != null) {
-            return getMessages(roomInfo, endTime);
+            return getMessagesAsync(roomInfo, endTime);
         }
-        return new Pocket48Message[0];
+        return CompletableFuture.completedFuture(new Pocket48Message[0]);
     }
 
-    //获取全部消息并整理成Pocket48Message[]
-    public Pocket48Message[] getMessages(Pocket48RoomInfo roomInfo) {
+
+    
+    //异步获取全部消息并整理成Pocket48Message[]
+    public CompletableFuture<Pocket48Message[]> getMessagesAsync(Pocket48RoomInfo roomInfo) {
         long roomID = roomInfo.getRoomId();
-        List<Object> msgs = getOriMessages(roomID, roomInfo.getSeverId());
-        if (msgs != null) {
-            List<Pocket48Message> rs = new ArrayList<>();
-            for (Object message : msgs) {
-                rs.add(Pocket48Message.construct(
-                        roomInfo,
-                        jsonParser.parseObj(message.toString())
-                ));
+        return getOriMessagesAsync(roomID, roomInfo.getSeverId()).thenApply(msgs -> {
+            if (msgs != null) {
+                List<Pocket48Message> rs = new ArrayList<>();
+                for (Object message : msgs) {
+                    rs.add(Pocket48Message.construct(
+                            roomInfo,
+                            jsonParser.parseObj(message.toString())
+                    ));
+                }
+                return rs.toArray(new Pocket48Message[0]);
             }
-            return rs.toArray(new Pocket48Message[0]);
-        }
-
-        return new Pocket48Message[0];
+            return new Pocket48Message[0];
+        });
     }
 
-    public Pocket48Message[] getMessages(long roomID) {
+
+    
+    public CompletableFuture<Pocket48Message[]> getMessagesAsync(long roomID) {
         Pocket48RoomInfo roomInfo = getRoomInfoByChannelID(roomID);
         if (roomInfo != null) {
-            return getMessages(roomInfo);
+            return getMessagesAsync(roomInfo);
         }
-
-        return new Pocket48Message[0];
+        return CompletableFuture.completedFuture(new Pocket48Message[0]);
     }
 
+
+    
     /**
-     * 获取房间最新消息的时间戳，用于正确初始化endTime
+     * 异步获取房间最新消息的时间戳，用于正确初始化endTime
      * @param roomID 房间ID
      * @param serverID 服务器ID
      * @return 最新消息时间戳，如果没有消息则返回当前时间戳
      */
-    public long getLatestMessageTime(long roomID, long serverID) {
-        List<Object> msgs = getOriMessages(roomID, serverID);
-        if (msgs != null && !msgs.isEmpty()) {
-            // 获取第一条消息（已按时间倒序排列）
-            JSONObject firstMsg = jsonParser.parseObj(msgs.get(0).toString());
-            return firstMsg.getLong("msgTime");
-        }
-        // 如果没有消息，返回当前时间戳
-        return System.currentTimeMillis();
+    public CompletableFuture<Long> getLatestMessageTimeAsync(long roomID, long serverID) {
+        return getOriMessagesAsync(roomID, serverID).thenApply(msgs -> {
+            if (msgs != null && !msgs.isEmpty()) {
+                // 获取第一条消息（已按时间倒序排列）
+                JSONObject firstMsg = jsonParser.parseObj(msgs.get(0).toString());
+                return firstMsg.getLong("msgTime");
+            }
+            // 如果没有消息，返回当前时间戳
+            return System.currentTimeMillis();
+        });
     }
 
-    /**
-     * 获取房间最新消息的时间戳（通过房间ID）
-     * @param roomID 房间ID
-     * @return 最新消息时间戳，如果没有消息则返回当前时间戳
-     */
-    public long getLatestMessageTime(long roomID) {
-        Pocket48RoomInfo roomInfo = getRoomInfoByChannelID(roomID);
-        if (roomInfo != null) {
-            return getLatestMessageTime(roomID, roomInfo.getSeverId());
-        }
-        return System.currentTimeMillis();
-    }
 
-    //获取未整理的消息（集成快速失败和动态超时优化版）
-    private List<Object> getOriMessages(long roomID, long serverID) {
+
+
+    
+    //异步获取未整理的消息（集成快速失败和动态超时优化版）
+    private CompletableFuture<List<Object>> getOriMessagesAsync(long roomID, long serverID) {
         // 对于加密房间（serverId为0或负数），尝试从配置中获取serverId
         if (serverID <= 0) {
             if (properties.pocket48_serverID.containsKey(roomID)) {
                 serverID = properties.pocket48_serverID.get(roomID);
             } else {
                 // 如果配置中没有对应的serverId，返回空列表
-                return new ArrayList<>();
+                return CompletableFuture.completedFuture(new ArrayList<>());
             }
         }
         
@@ -482,7 +535,7 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
         MonitorConfig config = MonitorConfig.getInstance();
         if (config.isPocket48FastFailEnabled() && !networkMonitor.isReachable("pocketapi.48.cn", 443, 3000)) {
             logError(String.format("[快速失败] 口袋48 API不可达，房间ID: %d, 服务器ID: %d", roomID, serverID));
-            return null;
+            return CompletableFuture.completedFuture(null);
         }
         
         // 获取动态超时配置
@@ -493,76 +546,98 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
         // 记录开始时间用于性能监控
         long startTime = System.currentTimeMillis();
         
-        for (int attempt = 0; attempt < maxRetries; attempt++) {
-            try {
-                // 优化：添加更多请求参数以提高API响应速度
-                String requestBody = String.format(
-                    "{\"nextTime\":0,\"serverId\":%d,\"channelId\":%d,\"limit\":30,\"order\":1,\"needTop\":false}", 
-                    serverID, roomID
-                );
-                
-                // 使用动态超时配置进行请求
-                String s = httpClient.postWithTimeout(APIMsgOwner, requestBody, getPocket48Headers(), 
-                    timeoutConfig.getConnectTimeout(), timeoutConfig.getReadTimeout());
-                JSONObject object = jsonParser.parseObj(s);
-
-                if (object.getInt("status") == 200) {
-                    JSONObject content = jsonParser.parseObj(object.getObj("content").toString());
-                    List<Object> out = content.getBeanList("message", Object.class);
-                    // 优化：使用更高效的排序方式
-                    out.sort((a, b) -> {
-                        long timeA = jsonParser.parseObj(a.toString()).getLong("msgTime");
-                        long timeB = jsonParser.parseObj(b.toString()).getLong("msgTime");
-                        return Long.compare(timeB, timeA);
-                    });
-                    
-                    // 记录成功请求的性能数据（仅在异常情况下显示）
-                    long duration = System.currentTimeMillis() - startTime;
-                    // 只在以下情况显示性能监控信息：
-                    // 1. 耗时超过500ms（性能问题）
-                    // 2. 重试次数大于1（网络不稳定）
-                    if (duration > 500 || attempt > 0) {
-                        System.out.println(String.format("[性能监控] 口袋48消息获取异常 - 房间ID: %d, 耗时: %dms, 尝试次数: %d", 
-                            roomID, duration, attempt + 1));
-                    }
-                    
-                    return out;
-
-                } else {
-                    String errorMsg = String.format("[Pocket48Handler] API错误 - 房间ID: %d, 服务器ID: %d, 状态码: %d, 尝试: %d/%d", 
-                        roomID, serverID, object.getInt("status"), attempt + 1, maxRetries);
-                    if (attempt == maxRetries - 1) {
-                        logError(errorMsg + " - 最终失败");
-                    } else {
-                        System.out.println(errorMsg + " - 准备重试");
-                    }
-                }
-            } catch (Exception e) {
-                String errorMsg = String.format("[Pocket48Handler] 网络异常 - 房间ID: %d, 服务器ID: %d, 尝试: %d/%d, 错误: %s", 
-                    roomID, serverID, attempt + 1, maxRetries, e.getMessage());
-                if (attempt == maxRetries - 1) {
-                    logError(errorMsg + " - 最终失败");
-                    // 记录失败请求的性能数据
-                    long duration = System.currentTimeMillis() - startTime;
-                    System.out.println(String.format("[性能监控] 口袋48消息获取失败 - 房间ID: %d, 总耗时: %dms, 总尝试次数: %d", 
-                        roomID, duration, maxRetries));
-                } else {
-                    System.out.println(errorMsg + " - 准备重试");
-                }
-            }
-            
-            // 重试前等待
-            if (attempt < maxRetries - 1) {
-                try {
-                    Thread.sleep(baseDelay * (attempt + 1)); // 递增延迟
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
-            }
-        }
+        // 异步重试逻辑
+        return attemptRequestAsync(roomID, serverID, timeoutConfig, 0, maxRetries, baseDelay, startTime);
+    }
+    
+    /**
+     * 异步重试请求方法
+     */
+    private CompletableFuture<List<Object>> attemptRequestAsync(long roomID, long serverID, 
+                                                               DynamicTimeoutManager.Pocket48TimeoutConfig timeoutConfig,
+                                                               int attempt, int maxRetries, long baseDelay, long startTime) {
+        // 优化：添加更多请求参数以提高API响应速度
+        String requestBody = String.format(
+            "{\"nextTime\":0,\"serverId\":%d,\"channelId\":%d,\"limit\":30,\"order\":1,\"needTop\":false}", 
+            serverID, roomID
+        );
         
-        return null;
+        // 使用异步HTTP请求
+        return httpClient.postWithTimeoutAsync(APIMsgOwner, requestBody, getPocket48Headers(), 
+                timeoutConfig.getConnectTimeout(), timeoutConfig.getReadTimeout())
+            .thenCompose(response -> {
+                try {
+                    JSONObject object = jsonParser.parseObj(response);
+                    
+                    if (object.getInt("status") == 200) {
+                        JSONObject content = jsonParser.parseObj(object.getObj("content").toString());
+                        List<Object> out = content.getBeanList("message", Object.class);
+                        // 优化：使用更高效的排序方式
+                        out.sort((a, b) -> {
+                            long timeA = jsonParser.parseObj(a.toString()).getLong("msgTime");
+                            long timeB = jsonParser.parseObj(b.toString()).getLong("msgTime");
+                            return Long.compare(timeB, timeA);
+                        });
+                        
+                        // 记录成功请求的性能数据（仅在异常情况下显示）
+                        long duration = System.currentTimeMillis() - startTime;
+                        if (duration > 500 || attempt > 0) {
+                            logger.warn("[性能监控] 口袋48消息获取异常 - 房间ID: {}, 耗时: {}ms, 尝试次数: {}", 
+                                roomID, duration, attempt + 1);
+                        }
+                        
+                        return CompletableFuture.completedFuture(out);
+                    } else {
+                        String errorMsg = String.format("[Pocket48Handler] API错误 - 房间ID: %d, 服务器ID: %d, 状态码: %d, 尝试: %d/%d", 
+                            roomID, serverID, object.getInt("status"), attempt + 1, maxRetries);
+                        
+                        if (attempt >= maxRetries - 1) {
+                            logError(errorMsg + " - 最终失败");
+                            return CompletableFuture.completedFuture(null);
+                        } else {
+                            logger.warn("{} - 准备重试", errorMsg);
+                            // 异步延迟重试
+                            return unifiedDelayService.delayAsync((int)(baseDelay * (attempt + 1)))
+                                .thenCompose(v -> attemptRequestAsync(roomID, serverID, timeoutConfig, attempt + 1, maxRetries, baseDelay, startTime));
+                        }
+                    }
+                } catch (Exception e) {
+                    String errorMsg = String.format("[Pocket48Handler] 解析异常 - 房间ID: %d, 服务器ID: %d, 尝试: %d/%d, 错误: %s", 
+                        roomID, serverID, attempt + 1, maxRetries, e.getMessage());
+                    
+                    if (attempt >= maxRetries - 1) {
+                        logError(errorMsg + " - 最终失败");
+                        return CompletableFuture.completedFuture(null);
+                    } else {
+                        logger.warn("{} - 准备重试", errorMsg);
+                        // 异步延迟重试
+                        return unifiedDelayService.delayAsync((int)(baseDelay * (attempt + 1)))
+                            .thenCompose(v -> attemptRequestAsync(roomID, serverID, timeoutConfig, attempt + 1, maxRetries, baseDelay, startTime));
+                    }
+                }
+            })
+            .exceptionally(throwable -> {
+                String errorMsg = String.format("[Pocket48Handler] 网络异常 - 房间ID: %d, 服务器ID: %d, 尝试: %d/%d, 错误: %s", 
+                    roomID, serverID, attempt + 1, maxRetries, throwable.getMessage());
+                
+                if (attempt >= maxRetries - 1) {
+                    logError(errorMsg + " - 最终失败");
+                    long duration = System.currentTimeMillis() - startTime;
+                    logger.error("[性能监控] 口袋48消息获取失败 - 房间ID: {}, 总耗时: {}ms, 总尝试次数: {}", 
+                        roomID, duration, maxRetries);
+                    return null;
+                } else {
+                    logger.warn("{} - 准备重试", errorMsg);
+                    // 异步延迟重试
+                    try {
+                        return unifiedDelayService.delayAsync((int)(baseDelay * (attempt + 1)))
+                            .thenCompose(v -> attemptRequestAsync(roomID, serverID, timeoutConfig, attempt + 1, maxRetries, baseDelay, startTime))
+                            .join();
+                    } catch (Exception e) {
+                        return null;
+                    }
+                }
+            });
     }
 
     public List<Long> getRoomVoiceList(long roomID, long serverID) {

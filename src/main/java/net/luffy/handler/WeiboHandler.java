@@ -10,20 +10,14 @@ import net.luffy.util.UnifiedJsonParser;
 import net.luffy.util.sender.MessageSender;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.*;
-
-import javax.annotation.PostConstruct;
-import javax.annotation.PreDestroy;
+// 移除Spring相关导入
 import java.util.*;
 
 /**
  * 微博处理器
  * 基于qqtools项目的微博功能重构
- * 提供微博监控和管理的API接口
+ * 提供微博监控和管理功能
  */
-@RestController
-@RequestMapping("/weibo")
 public class WeiboHandler {
     
     private static final Logger logger = LoggerFactory.getLogger(WeiboHandler.class);
@@ -34,7 +28,6 @@ public class WeiboHandler {
     private WeiboMonitorService weiboMonitorService;
     private final UnifiedJsonParser jsonParser = UnifiedJsonParser.getInstance();
     
-    @PostConstruct
     public void init() {
         logger.info("=== 开始初始化微博处理器 ===");
         
@@ -112,7 +105,6 @@ public class WeiboHandler {
         }
     }
     
-    @PreDestroy
     public void destroy() {
         logger.info("销毁微博处理器");
         if (weiboMonitorService != null) {
@@ -125,8 +117,7 @@ public class WeiboHandler {
      * @param uid 用户UID
      * @return 用户信息
      */
-    @GetMapping("/user/{uid}")
-    public JSONObject getUserInfo(@PathVariable String uid) {
+    public JSONObject getUserInfo(String uid) {
         try {
             JSONObject userInfo = weiboApiService.requestWeiboInfo(uid);
             if (userInfo != null) {
@@ -145,8 +136,7 @@ public class WeiboHandler {
      * @param lfid 容器ID
      * @return 容器内容
      */
-    @GetMapping("/container/{lfid}")
-    public JSONObject getContainerContent(@PathVariable String lfid) {
+    public JSONObject getContainerContent(String lfid) {
         try {
             JSONObject containerData = weiboApiService.requestWeiboContainer(lfid);
             if (containerData != null) {
@@ -165,8 +155,7 @@ public class WeiboHandler {
      * @param request 请求参数
      * @return 操作结果
      */
-    @PostMapping("/monitor/user")
-    public JSONObject addUserMonitor(@RequestBody JSONObject request) {
+    public JSONObject addUserMonitor(JSONObject request) {
         try {
             String uid = request.getStr("uid");
             JSONArray groupIdsArray = request.getJSONArray("groupIds");
@@ -198,8 +187,7 @@ public class WeiboHandler {
      * @param uid 用户UID
      * @return 操作结果
      */
-    @DeleteMapping("/monitor/user/{uid}")
-    public JSONObject removeUserMonitor(@PathVariable String uid) {
+    public JSONObject removeUserMonitor(String uid) {
         try {
             weiboMonitorService.removeUserMonitor(uid);
             return createSuccessResponse("移除用户监控成功", null);
@@ -214,8 +202,7 @@ public class WeiboHandler {
      * @param request 请求参数
      * @return 操作结果
      */
-    @PostMapping("/monitor/supertopic")
-    public JSONObject addSuperTopicMonitor(@RequestBody JSONObject request) {
+    public JSONObject addSuperTopicMonitor(JSONObject request) {
         try {
             String lfid = request.getStr("lfid");
             JSONArray groupIdsArray = request.getJSONArray("groupIds");
@@ -247,8 +234,7 @@ public class WeiboHandler {
      * @param lfid 超话容器ID
      * @return 操作结果
      */
-    @DeleteMapping("/monitor/supertopic/{lfid}")
-    public JSONObject removeSuperTopicMonitor(@PathVariable String lfid) {
+    public JSONObject removeSuperTopicMonitor(String lfid) {
         try {
             weiboMonitorService.removeSuperTopicMonitor(lfid);
             return createSuccessResponse("移除超话监控成功", null);
@@ -262,7 +248,6 @@ public class WeiboHandler {
      * 获取监控状态
      * @return 监控状态信息
      */
-    @GetMapping("/monitor/status")
     public JSONObject getMonitorStatus() {
         try {
             Map<String, Object> status = weiboMonitorService.getMonitorStatus();
@@ -278,8 +263,7 @@ public class WeiboHandler {
      * @param uid 用户UID
      * @return 用户昵称
      */
-    @GetMapping("/user/{uid}/nickname")
-    public JSONObject getUserNickname(@PathVariable String uid) {
+    public JSONObject getUserNickname(String uid) {
         try {
             String nickname = weiboApiService.getUserNickname(uid);
             Map<String, String> data = new HashMap<>();
@@ -297,8 +281,7 @@ public class WeiboHandler {
      * @param uid 用户UID
      * @return 微博容器ID
      */
-    @GetMapping("/user/{uid}/lfid")
-    public JSONObject getUserLfid(@PathVariable String uid) {
+    public JSONObject getUserLfid(String uid) {
         try {
             String lfid = weiboApiService.getUserWeiboLfid(uid);
             Map<String, String> data = new HashMap<>();
@@ -315,7 +298,6 @@ public class WeiboHandler {
      * 健康检查
      * @return 健康状态
      */
-    @GetMapping("/health")
     public JSONObject health() {
         Map<String, Object> data = new HashMap<>();
         data.put("status", "healthy");

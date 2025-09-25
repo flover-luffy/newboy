@@ -8,7 +8,9 @@ import net.luffy.Newboy;
 import net.luffy.model.Pocket48Subscribe;
 import net.luffy.model.WeidianCookie;
 import net.luffy.util.SubscriptionConfig;
+import net.luffy.util.StringMatchUtils;
 import net.luffy.util.UnifiedJsonParser;
+import net.mamoe.mirai.Bot;
 import net.mamoe.mirai.contact.Group;
 import net.mamoe.mirai.contact.MemberPermission;
 import net.mamoe.mirai.contact.NormalMember;
@@ -74,7 +76,19 @@ public class ConfigOperator {
             // 设置异步监控配置默认值
             tempSetting.setByGroup("async_monitor", "schedule_pattern", "*/30 * * * * *");
             
-            // 口袋48异步处理队列配置已迁移到 Pocket48ResourceManager
+            // 设置UI期望配置默认值
+            tempSetting.setByGroup("ui_expectations", "enable_placeholder_messages", "true");
+            tempSetting.setByGroup("ui_expectations", "placeholder_timeout_ms", "5000");
+            tempSetting.setByGroup("ui_expectations", "show_processing_status", "true");
+            tempSetting.setByGroup("ui_expectations", "high_priority_channel_enabled", "true");
+            
+            // 设置消息优化配置默认值
+            tempSetting.setByGroup("message_optimization", "text_message_priority", "high");
+            tempSetting.setByGroup("message_optimization", "media_message_priority", "normal");
+            tempSetting.setByGroup("message_optimization", "placeholder_fallback_enabled", "true");
+            tempSetting.setByGroup("message_optimization", "async_processing_timeout", "10000");
+            
+            // 口袋48异步处理队列配置已迁移到 Pocket48UnifiedResourceManager
             
             // 设置订阅配置默认值
             tempSetting.setByGroup("subscribe", "pocket48", "[]");
@@ -132,7 +146,19 @@ public class ConfigOperator {
         // 异步监控配置
         properties.async_monitor_schedule_pattern = setting.getStr("async_monitor", "schedule_pattern", "*/30 * * * * *");
         
-        // 口袋48异步处理队列配置已迁移到 Pocket48ResourceManager
+        // UI期望配置
+        properties.enable_placeholder_messages = setting.getBool("ui_expectations", "enable_placeholder_messages", true);
+        properties.placeholder_timeout_ms = setting.getInt("ui_expectations", "placeholder_timeout_ms", 5000);
+        properties.show_processing_status = setting.getBool("ui_expectations", "show_processing_status", true);
+        properties.high_priority_channel_enabled = setting.getBool("ui_expectations", "high_priority_channel_enabled", true);
+        
+        // 消息优化配置
+        properties.text_message_priority = setting.getStr("message_optimization", "text_message_priority", "high");
+        properties.media_message_priority = setting.getStr("message_optimization", "media_message_priority", "normal");
+        properties.placeholder_fallback_enabled = setting.getBool("message_optimization", "placeholder_fallback_enabled", true);
+        properties.async_processing_timeout = setting.getInt("message_optimization", "async_processing_timeout", 10000);
+        
+        // 口袋48异步处理队列配置已迁移到 Pocket48UnifiedResourceManager
 
         //口袋48
         properties.pocket48_account = setting.getStr("pocket48", "account", "");
@@ -144,8 +170,7 @@ public class ConfigOperator {
         // 口袋48订阅配置 - 添加JSON格式验证
         String pocket48SubscribeJson = setting.getByGroup("subscribe", "pocket48");
         
-        if (pocket48SubscribeJson == null || pocket48SubscribeJson.trim().isEmpty() || 
-            !pocket48SubscribeJson.trim().startsWith("[") || !pocket48SubscribeJson.trim().endsWith("]")) {
+        if (!StringMatchUtils.isValidJsonArray(pocket48SubscribeJson)) {
             pocket48SubscribeJson = "[]";
             setting.setByGroup("subscribe", "pocket48", pocket48SubscribeJson);
             safeStoreConfig("修复口袋48订阅配置格式");
@@ -176,8 +201,7 @@ public class ConfigOperator {
 
         //口袋48房间连接 - 添加JSON格式验证
         String pocket48RoomJson = setting.getByGroup("roomConnection", "pocket48");
-        if (pocket48RoomJson == null || pocket48RoomJson.trim().isEmpty() || 
-            !pocket48RoomJson.trim().startsWith("[") || !pocket48RoomJson.trim().endsWith("]")) {
+        if (!StringMatchUtils.isValidJsonArray(pocket48RoomJson)) {
             Newboy.INSTANCE.getLogger().error("口袋48房间连接配置格式无效，重置为空数组: " + pocket48RoomJson);
             pocket48RoomJson = "[]";
             setting.setByGroup("roomConnection", "pocket48", pocket48RoomJson);
@@ -200,8 +224,7 @@ public class ConfigOperator {
 
         //微博 - 添加JSON格式验证
         String weiboJson = setting.getByGroup("subscribe", "weibo");
-        if (weiboJson == null || weiboJson.trim().isEmpty() || 
-            !weiboJson.trim().startsWith("[") || !weiboJson.trim().endsWith("]")) {
+        if (!StringMatchUtils.isValidJsonArray(weiboJson)) {
             // 微博订阅配置格式无效，重置为空数组
             weiboJson = "[]";
             setting.setByGroup("subscribe", "weibo", weiboJson);
@@ -231,8 +254,7 @@ public class ConfigOperator {
         //微店 - 添加JSON格式验证
         String weidianJson = setting.getByGroup("shops", "weidian");
         
-        if (weidianJson == null || weidianJson.trim().isEmpty() || 
-            !weidianJson.trim().startsWith("[") || !weidianJson.trim().endsWith("]")) {
+        if (!StringMatchUtils.isValidJsonArray(weidianJson)) {
             // 微店配置格式无效，重置为空数组
             weidianJson = "[]";
             setting.setByGroup("shops", "weidian", weidianJson);
@@ -271,8 +293,7 @@ public class ConfigOperator {
         //抖音 - 添加JSON格式验证
         String douyinJson = setting.getByGroup("subscribe", "douyin");
         // 读取抖音订阅配置
-        if (douyinJson == null || douyinJson.trim().isEmpty() || 
-            !douyinJson.trim().startsWith("[") || !douyinJson.trim().endsWith("]")) {
+        if (!StringMatchUtils.isValidJsonArray(douyinJson)) {
             // 抖音订阅配置格式无效，重置为空数组
             douyinJson = "[]";
             setting.setByGroup("subscribe", "douyin", douyinJson);
@@ -640,6 +661,33 @@ public class ConfigOperator {
             if (a.equals(String.valueOf(qqID)))
                 return true;
         }
+        return false;
+    }
+    
+    public boolean isAdmin(long groupId, long qqID) {
+        // 检查是否为安全群组
+        for (String g : properties.secureGroup) {
+            if (g.equals(String.valueOf(groupId)))
+                return true;
+        }
+        
+        // 检查是否为全局管理员
+        for (String a : properties.admins) {
+            if (a.equals(String.valueOf(qqID)))
+                return true;
+        }
+        
+        // 检查群组内权限
+        for (Bot bot : Bot.getInstances()) {
+            Group group = bot.getGroup(groupId);
+            if (group != null) {
+                NormalMember m = group.get(qqID);
+                if (m != null) {
+                    return m.getPermission() == MemberPermission.ADMINISTRATOR || m.getPermission() == MemberPermission.OWNER;
+                }
+            }
+        }
+        
         return false;
     }
     

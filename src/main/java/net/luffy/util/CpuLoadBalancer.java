@@ -8,6 +8,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import net.luffy.Newboy;
+import net.luffy.util.UnifiedSchedulerManager;
 
 
 /**
@@ -48,12 +49,7 @@ public class CpuLoadBalancer {
         this.osBean = ManagementFactory.getOperatingSystemMXBean();
         this.threadBean = ManagementFactory.getThreadMXBean();
         
-        this.monitorExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "CPU-LoadBalancer");
-            t.setDaemon(true);
-            t.setPriority(Thread.MIN_PRIORITY);
-            return t;
-        });
+        this.monitorExecutor = UnifiedSchedulerManager.getInstance().getScheduledExecutor();
         
         startMonitoring();
     }
@@ -305,15 +301,8 @@ public class CpuLoadBalancer {
      * 关闭负载均衡器
      */
     public void shutdown() {
-        monitorExecutor.shutdown();
-        try {
-            if (!monitorExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
-                monitorExecutor.shutdownNow();
-            }
-        } catch (InterruptedException e) {
-            monitorExecutor.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
+        // monitorExecutor现在由UnifiedSchedulerManager统一管理，不需要直接shutdown
+        System.out.println("CpuLoadBalancer: 负载均衡器已关闭，线程池由UnifiedSchedulerManager统一管理");
     }
     
     /**

@@ -112,7 +112,7 @@ public class UnifiedResourceManager {
             
             // 核心组件初始化完成
         } catch (Exception e) {
-            Newboy.INSTANCE.getLogger().error("[统一资源管理器] 核心组件初始化失败", e);
+            UnifiedLogger.getInstance().error("UnifiedResourceManager", "[统一资源管理器] 核心组件初始化失败", e);
             throw new RuntimeException("资源管理器初始化失败", e);
         }
     }
@@ -282,7 +282,7 @@ public class UnifiedResourceManager {
                         // 清理资源: " + entry.getKey()
                     }
                 } catch (Exception e) {
-                    Newboy.INSTANCE.getLogger().error(
+                    UnifiedLogger.getInstance().error("UnifiedResourceManager", 
                         String.format("[统一资源管理器] 清理资源失败: %s", entry.getKey()), e);
                 }
             }
@@ -348,7 +348,7 @@ public class UnifiedResourceManager {
              
              // 核心组件关闭完成
          } catch (Exception e) {
-             Newboy.INSTANCE.getLogger().error("[统一资源管理器] 核心组件关闭失败", e);
+             UnifiedLogger.getInstance().error("UnifiedResourceManager", "[统一资源管理器] 核心组件关闭失败", e);
          }
      }
     
@@ -477,7 +477,7 @@ public class UnifiedResourceManager {
              }
              
          } catch (Exception e) {
-             Newboy.INSTANCE.getLogger().error("[统一资源管理器] 健康检查失败", e);
+             UnifiedLogger.getInstance().error("UnifiedResourceManager", "[统一资源管理器] 健康检查失败", e);
              healthResults.put("health_check_error", false);
          }
          
@@ -635,7 +635,7 @@ public class UnifiedResourceManager {
                 }
                 
             } catch (Exception e) {
-                Newboy.INSTANCE.getLogger().error("[统一资源管理器] 健康检查失败", e);
+                UnifiedLogger.getInstance().error("UnifiedResourceManager", "[统一资源管理器] 健康检查失败", e);
             }
         }
     }

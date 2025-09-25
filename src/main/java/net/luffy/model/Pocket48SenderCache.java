@@ -7,9 +7,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import net.luffy.util.UnifiedSchedulerManager;
 
 import static net.luffy.model.EndTime.newTime;
 
@@ -20,8 +20,8 @@ public class Pocket48SenderCache {
     public Pocket48Message[] messages;
     private final HashMap<Long, Long> endTime;
     private final long creationTime;
-    private static final ScheduledExecutorService cacheRefreshExecutor = Executors.newScheduledThreadPool(2);
-    private static final long CACHE_REFRESH_INTERVAL_MINUTES = 5; // 5分钟刷新一次
+    private static final ScheduledExecutorService cacheRefreshExecutor = UnifiedSchedulerManager.getInstance().getScheduledExecutor();
+    private static final long CACHE_REFRESH_INTERVAL_MINUTES = 3; // 优化为3分钟刷新一次，提升实时性
 
     public Pocket48SenderCache(Pocket48RoomInfo roomInfo, Pocket48Message[] messages, List<Long> voiceList) {
         this.roomInfo = roomInfo;
@@ -60,7 +60,7 @@ public class Pocket48SenderCache {
             // 第三步：获取消息列表（非关键步骤，失败可使用空数组）
             Pocket48Message[] messages = new Pocket48Message[0]; // 默认为空数组
             try {
-                Pocket48Message[] fetchedMessages = pocket.getMessages(roomInfo, endTime);
+                Pocket48Message[] fetchedMessages = pocket.getMessagesAsync(roomInfo, endTime).get();
                 if (fetchedMessages != null) {
                     messages = fetchedMessages;
                     // 移除正常情况下的信息日志，减少日志噪音
@@ -143,19 +143,11 @@ public class Pocket48SenderCache {
     
     /**
      * 关闭缓存刷新执行器
+     * 注意：现在由UnifiedSchedulerManager统一管理，无需显式关闭
      */
     public static void shutdownCacheRefreshExecutor() {
-        if (!cacheRefreshExecutor.isShutdown()) {
-            cacheRefreshExecutor.shutdown();
-            try {
-                if (!cacheRefreshExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
-                    cacheRefreshExecutor.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                cacheRefreshExecutor.shutdownNow();
-                Thread.currentThread().interrupt();
-            }
-        }
+        System.out.println("[INFO] Pocket48SenderCache线程池现由UnifiedSchedulerManager统一管理，无需显式关闭");
+        // cacheRefreshExecutor现在由UnifiedSchedulerManager管理，在系统关闭时会自动处理
     }
     
     /**

@@ -6,6 +6,7 @@ import cn.hutool.json.JSONUtil;
 import net.luffy.Newboy;
 import net.luffy.util.UnifiedJsonParser;
 import net.luffy.util.UnifiedHttpClient;
+import net.luffy.util.delay.UnifiedDelayService;
 // 移除了对旧DouyinHandler的依赖
 import net.mamoe.mirai.Bot;
 import net.mamoe.mirai.contact.Group;
@@ -16,12 +17,11 @@ import net.mamoe.mirai.message.data.AtAll;
 
 import java.util.Map;
 import java.util.HashMap;
-
-import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import net.luffy.util.UnifiedSchedulerManager;
 
 /**
  * 抖音监控服务
@@ -40,6 +40,7 @@ public class DouyinMonitorService {
     private final ScheduledExecutorService scheduler;
     private final Map<String, UserMonitorInfo> monitoredUsers;
     private final AtomicBoolean isRunning;
+    private final UnifiedDelayService unifiedDelayService;
     // 移除了DouyinHandler依赖，现在使用内置的签名生成器
     
     // 限流相关
@@ -73,9 +74,10 @@ public class DouyinMonitorService {
     
     private DouyinMonitorService() {
         this.signatureGenerator = new DouyinSignatureGenerator();
-        this.scheduler = Executors.newScheduledThreadPool(2);
+        this.scheduler = UnifiedSchedulerManager.getInstance().getScheduledExecutor();
         this.monitoredUsers = new ConcurrentHashMap<>();
         this.isRunning = new AtomicBoolean(false);
+        this.unifiedDelayService = UnifiedDelayService.getInstance();
         // 不再依赖旧的DouyinHandler
     }
     
@@ -137,16 +139,18 @@ public class DouyinMonitorService {
     public void stopMonitoring() {
         if (isRunning.compareAndSet(true, false)) {
             // 停止抖音监控服务
-            scheduler.shutdown();
-            try {
-                if (!scheduler.awaitTermination(10, TimeUnit.SECONDS)) {
-                    scheduler.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                scheduler.shutdownNow();
-                Thread.currentThread().interrupt();
-            }
+            // scheduler现在由UnifiedSchedulerManager统一管理，不需要直接shutdown
+            System.out.println("DouyinMonitorService: 监控服务已停止，线程池由UnifiedSchedulerManager统一管理");
         }
+    }
+    
+    /**
+     * 关闭服务
+     */
+    public void shutdown() {
+        stopMonitoring();
+        monitoredUsers.clear();
+        System.out.println("DouyinMonitorService: 服务已关闭，线程池由UnifiedSchedulerManager统一管理");
     }
     
     /**
@@ -459,11 +463,18 @@ public class DouyinMonitorService {
         for (int attempt = 0; attempt < maxRetries; attempt++) {
             try {
                 if (attempt > 0) {
-                    // 重试前等待，避免频繁请求
-                    Thread.sleep(1000 * (attempt + 1));
+                    // 重试前等待，避免频繁请求 - 使用异步延迟
+                    long delayMs = 1000 * (attempt + 1);
                     Newboy.INSTANCE.getLogger().info(
-                        String.format("重试获取抖音用户信息，用户: %s, 第%d次尝试", secUserId, attempt + 1)
+                        String.format("重试获取抖音用户信息，用户: %s, 第%d次尝试，延迟%dms", secUserId, attempt + 1, delayMs)
                     );
+                    
+                    try {
+                        // 使用统一延迟服务替代CompletableFuture.delayedExecutor
+                        unifiedDelayService.delayAsync((int)delayMs).join();
+                    } catch (Exception e) {
+                        throw new RuntimeException("重试被中断", e);
+                    }
                 }
                 
                 JSONObject result = performGetUserInfo(secUserId);
@@ -493,12 +504,44 @@ public class DouyinMonitorService {
     }
     
     /**
+     * 检查Cookie是否有效
+     * @return true表示Cookie格式有效，false表示无效
+     */
+    private boolean isCookieValid() {
+        String cookie = Newboy.INSTANCE.getProperties().douyin_cookie;
+        if (cookie == null || cookie.trim().isEmpty()) {
+            Newboy.INSTANCE.getLogger().error("抖音Cookie未配置或为空，请在配置文件中设置douyin_cookie");
+            return false;
+        }
+        
+        // 检查Cookie格式是否包含必要的字段
+        if (!cookie.contains("sessionid") && !cookie.contains("sid_tt")) {
+            Newboy.INSTANCE.getLogger().error("抖音Cookie格式无效：缺少sessionid或sid_tt字段，请重新获取Cookie");
+            return false;
+        }
+        
+        // 检查Cookie是否过短（可能是无效的）
+        if (cookie.length() < 50) {
+            Newboy.INSTANCE.getLogger().error("抖音Cookie长度过短，可能无效：" + cookie.length() + "字符，请检查Cookie完整性");
+            return false;
+        }
+        
+        return true;
+    }
+    
+    /**
      * 执行获取用户信息的实际请求
      * @param secUserId 用户ID
      * @return 用户信息JSON
      */
     private JSONObject performGetUserInfo(String secUserId) {
         try {
+            // 首先检查Cookie是否有效
+            if (!isCookieValid()) {
+                Newboy.INSTANCE.getLogger().error("Cookie验证失败，无法获取抖音用户信息: " + secUserId);
+                return null;
+            }
+            
             Map<String, String> params = signatureGenerator.buildAwemePostQuery(secUserId, null, 18);
             String queryString = signatureGenerator.buildQueryString(params);
             String userAgent = signatureGenerator.getRandomUserAgent();
@@ -538,10 +581,28 @@ public class DouyinMonitorService {
                 Newboy.INSTANCE.getLogger().info("抖音API请求头: " + headers.toString());
             }
             
-            String responseBody = UnifiedHttpClient.getInstance().get(url, headers);
+            UnifiedHttpClient.HttpResponse response = UnifiedHttpClient.getInstance().get(url, headers);
+            int statusCode = response.getStatusCode();
+            String responseBody = response.getBody();
+            
+            // 检查HTTP状态码，特别是认证相关错误
+            if (statusCode == 401) {
+                Newboy.INSTANCE.getLogger().error("抖音API认证失败(401): Cookie可能已失效，请更新抖音Cookie配置");
+                return null;
+            } else if (statusCode == 403) {
+                Newboy.INSTANCE.getLogger().error("抖音API访问被拒绝(403): Cookie可能已失效或账号被限制，请检查Cookie配置");
+                return null;
+            } else if (statusCode == 302 || statusCode == 301) {
+                Newboy.INSTANCE.getLogger().error("抖音API重定向(" + statusCode + "): 可能需要重新登录，请更新Cookie配置");
+                return null;
+            } else if (statusCode != 200) {
+                Newboy.INSTANCE.getLogger().error("抖音API返回异常状态码: " + statusCode + ", 可能是服务器错误或认证问题");
+                return null;
+            }
             
             // 调试模式下输出响应信息
             if (DEBUG_MODE) {
+                Newboy.INSTANCE.getLogger().info("抖音API响应状态码: " + statusCode);
                 Newboy.INSTANCE.getLogger().info("抖音API响应长度: " + 
                     (responseBody != null ? responseBody.length() : "null"));
                 if (responseBody != null && responseBody.length() < 1000) {
@@ -551,7 +612,7 @@ public class DouyinMonitorService {
             
             // 详细的响应分析
             if (responseBody == null) {
-                Newboy.INSTANCE.getLogger().error("抖音API返回空响应");
+                Newboy.INSTANCE.getLogger().error("抖音API返回空响应，状态码: " + statusCode + ", 可能是Cookie失效导致");
                 return null;
             }
             
@@ -564,6 +625,10 @@ public class DouyinMonitorService {
             
             // 检查响应是否为有效JSON
             String trimmedResponse = responseBody.trim();
+            if (trimmedResponse.isEmpty()) {
+                Newboy.INSTANCE.getLogger().error("抖音API返回空响应内容，可能原因: 1)Cookie已失效需要重新获取 2)IP被限制 3)请求参数错误");
+                return null;
+            }
             if (trimmedResponse.startsWith("{")) {
                 try {
                     JSONObject result = UnifiedJsonParser.getInstance().parseObj(responseBody);
@@ -592,7 +657,7 @@ public class DouyinMonitorService {
     }
     
     /**
-     * 限流等待
+     * 限流等待 - 异步实现
      */
     private void waitForRateLimit() {
         long currentTime = System.currentTimeMillis();
@@ -600,14 +665,25 @@ public class DouyinMonitorService {
         long elapsed = currentTime - lastTime;
         
         if (elapsed < MIN_REQUEST_INTERVAL) {
+            long delayMs = MIN_REQUEST_INTERVAL - elapsed;
             try {
-                Thread.sleep(MIN_REQUEST_INTERVAL - elapsed);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+                // 使用统一延迟服务替代CompletableFuture.delayedExecutor
+                unifiedDelayService.delayAsync((int)delayMs).join();
+            } catch (Exception e) {
+                // 延迟被中断，继续执行
             }
         }
         
         lastRequestTime.set(System.currentTimeMillis());
+    }
+    
+    /**
+     * 异步延迟方法，替代Thread.sleep避免阻塞
+     * @param delayMs 延迟毫秒数
+     * @return CompletableFuture
+     */
+    private CompletableFuture<Void> delayAsync(long delayMs) {
+        return unifiedDelayService.delayAsync((int)delayMs);
     }
     
     /**
@@ -634,15 +710,30 @@ public class DouyinMonitorService {
      * @return 监控状态信息
      */
     public String getMonitorStatus() {
-        StringBuilder status = new StringBuilder();
-        status.append("抖音监控服务状态:\n");
-        status.append("运行状态: ").append(isRunning.get() ? "运行中" : "已停止").append("\n");
-        status.append("监控用户数: ").append(monitoredUsers.size()).append("\n");
-        
-        int activeUsers = (int) monitoredUsers.values().stream().mapToLong(u -> u.isActive ? 1 : 0).sum();
-        status.append("活跃用户数: ").append(activeUsers).append("\n");
-        
-        return status.toString();
+        try {
+            StringBuilder status = new StringBuilder();
+            status.append("抖音监控状态\n");
+            status.append("运行状态: ").append(isRunning.get() ? "运行中" : "已停止").append("\n");
+            status.append("监控用户数: ").append(monitoredUsers.size()).append("\n");
+            
+            int activeUsers = (int) monitoredUsers.values().stream().mapToLong(u -> u.isActive ? 1 : 0).sum();
+            status.append("活跃用户数: ").append(activeUsers).append("\n");
+            
+            String result = status.toString();
+            
+            // 限制消息长度，避免OneBot发送失败
+            if (result.length() > 500) {
+                result = result.substring(0, 497) + "...";
+            }
+            
+            // 移除可能导致发送失败的特殊字符
+            result = result.replaceAll("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F]", "");
+            
+            return result;
+        } catch (Exception e) {
+            // 异常时返回简化的状态信息
+            return "抖音监控状态\n运行状态: " + (isRunning.get() ? "运行中" : "已停止") + "\n监控用户数: " + monitoredUsers.size();
+        }
     }
     
     /**

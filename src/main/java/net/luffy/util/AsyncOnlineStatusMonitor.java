@@ -5,6 +5,7 @@ import net.luffy.handler.AsyncWebHandler;
 import net.luffy.handler.AsyncWebHandler.BatchMemberStatusResult;
 import net.luffy.util.UnifiedSchedulerManager;
 import net.luffy.util.SubscriptionConfig;
+import net.luffy.util.delay.UnifiedDelayService;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -26,6 +27,7 @@ public class AsyncOnlineStatusMonitor {
     
     private final AsyncWebHandler asyncWebHandler;
     private final MonitorConfig config;
+    private final UnifiedDelayService unifiedDelayService;
     private String batchQueryTaskId;
     private String cacheCleanupTaskId;
     
@@ -64,6 +66,7 @@ public class AsyncOnlineStatusMonitor {
     private AsyncOnlineStatusMonitor() {
         this.asyncWebHandler = AsyncWebHandler.getInstance();
         this.config = MonitorConfig.getInstance();
+        this.unifiedDelayService = UnifiedDelayService.getInstance();
         
         // 从配置文件读取设置并更新MonitorConfig
         updateConfigFromProperties();
@@ -866,20 +869,8 @@ public class AsyncOnlineStatusMonitor {
      */
     private java.util.concurrent.CompletableFuture<Void> delayAsync(long delayMs) {
         try {
-            // 使用统一调度器进行真正的异步延迟
-            java.util.concurrent.CompletableFuture<Void> delayFuture = new java.util.concurrent.CompletableFuture<>();
-            
-            UnifiedSchedulerManager.getInstance().getExecutor().execute(() -> {
-                try {
-                    Thread.sleep(delayMs);
-                    delayFuture.complete(null);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    delayFuture.completeExceptionally(e);
-                }
-            });
-            
-            return delayFuture;
+            // 使用统一延迟服务替代CompletableFuture.delayedExecutor
+            return unifiedDelayService.delayAsync((int)delayMs);
         } catch (Exception e) {
             // 如果异步延迟失败，返回立即完成的Future
             return java.util.concurrent.CompletableFuture.completedFuture(null);

@@ -6,6 +6,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import net.luffy.util.UnifiedSchedulerManager;
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadMXBean;
 import java.lang.management.OperatingSystemMXBean;
@@ -28,8 +29,8 @@ public class PerformanceMonitor {
     private final AtomicInteger activeThreads = new AtomicInteger(0);
     private final AtomicLong lastReportTime = new AtomicLong(System.currentTimeMillis());
     
-    // 定期报告相关
-    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+    // 定期报告相关 - 使用统一调度器管理
+    private final ScheduledExecutorService scheduler = UnifiedSchedulerManager.getInstance().getScheduledExecutor();
     private final AtomicReference<String> adminUserId = new AtomicReference<>();
     private volatile boolean reportingEnabled = false;
     private static final long DEFAULT_REPORT_INTERVAL = 30; // 默认30分钟
@@ -309,7 +310,8 @@ public class PerformanceMonitor {
     public void disablePeriodicReporting() {
         this.reportingEnabled = false;
         this.adminUserId.set(null);
-        scheduler.shutdown();
+        // scheduler现在由UnifiedSchedulerManager管理，不需要显式关闭
+        System.out.println("PerformanceMonitor定期报告已禁用，调度器由UnifiedSchedulerManager统一管理");
     }
     
     /**
@@ -398,5 +400,15 @@ public class PerformanceMonitor {
         } else if (usage >= MEMORY_WARNING_THRESHOLD) {
             sendWarningToAdmin(String.format("🟡 警告: 内存使用率已达到 %.1f%%，建议进行清理。", usage * 100));
         }
+    }
+    
+    /**
+     * 关闭性能监控器
+     */
+    public void shutdown() {
+        this.reportingEnabled = false;
+        this.adminUserId.set(null);
+        // scheduler现在由UnifiedSchedulerManager管理，不需要显式关闭
+        System.out.println("PerformanceMonitor已关闭，调度器由UnifiedSchedulerManager统一管理");
     }
 }

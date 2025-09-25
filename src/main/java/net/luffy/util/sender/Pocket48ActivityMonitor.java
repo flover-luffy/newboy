@@ -3,6 +3,8 @@ package net.luffy.util.sender;
 import net.luffy.Newboy;
 import net.luffy.util.UnifiedSchedulerManager;
 import net.luffy.util.SmartCacheManager;
+import net.luffy.util.UnifiedLogger;
+import net.luffy.util.Pocket48MetricsCollector;
 import net.luffy.model.Pocket48Message;
 
 import java.util.concurrent.ConcurrentHashMap;
@@ -22,16 +24,16 @@ public class Pocket48ActivityMonitor {
     private static volatile Pocket48ActivityMonitor instance;
     private final Object lock = new Object();
     
-    // 活跃度检测配置 - 优化版
-    private static final long ACTIVITY_WINDOW_MS = 5 * 60 * 1000; // 5分钟活跃度窗口
-    private static final int ACTIVE_THRESHOLD = 15; // 5分钟内超过15条消息视为活跃（提高阈值）
-    private static final int INACTIVE_THRESHOLD = 5; // 5分钟内少于5条消息视为非活跃（提高阈值）
-    private static final long MONITOR_INTERVAL_MS = 60 * 1000; // 60秒检查一次（降低频率）
+    // 活跃度检测配置 - 禁用活跃度监控
+    private static final long ACTIVITY_WINDOW_MS = 10 * 60 * 1000; // 保留窗口配置但不使用
+    private static final int ACTIVE_THRESHOLD = Integer.MAX_VALUE; // 设置为最大值，永远不会达到活跃状态
+    private static final int INACTIVE_THRESHOLD = 0; // 设置为0，始终保持非活跃状态
+    private static final long MONITOR_INTERVAL_MS = 60 * 60 * 1000; // 延长到1小时，减少检查频率
     
-    // 缓存TTL配置 - 优化版
-    private static final long ACTIVE_CACHE_TTL = 5 * 60 * 1000; // 活跃期：5分钟TTL（延长）
-    private static final long INACTIVE_CACHE_TTL = 20 * 60 * 1000; // 非活跃期：20分钟TTL（延长）
-    private static final long DEFAULT_CACHE_TTL = 15 * 60 * 1000; // 默认：15分钟TTL（延长）
+    // 缓存TTL配置 - 禁用活跃度相关的缓存调整
+    private static final long ACTIVE_CACHE_TTL = 60 * 60 * 1000; // 统一设置为1小时
+    private static final long INACTIVE_CACHE_TTL = 60 * 60 * 1000; // 统一设置为1小时
+    private static final long DEFAULT_CACHE_TTL = 60 * 60 * 1000; // 统一设置为1小时
     
     // 消息统计
     private final Map<Long, List<Long>> roomMessageTimes = new ConcurrentHashMap<>();
@@ -47,12 +49,18 @@ public class Pocket48ActivityMonitor {
     private SmartCacheManager cacheManager;
     private final AtomicBoolean cacheEnabled = new AtomicBoolean(true);
     
+    // 统一日志和指标收集
+    private final UnifiedLogger logger = UnifiedLogger.getInstance();
+    private final Pocket48MetricsCollector metricsCollector = Pocket48MetricsCollector.getInstance();
+    
     // 监控任务ID
     private String monitorTaskId;
+    private String reportTaskId; // 周期报告任务ID
     
     private Pocket48ActivityMonitor() {
         this.cacheManager = SmartCacheManager.getInstance();
         startActivityMonitoring();
+        startPeriodicReporting();
     }
     
     public static Pocket48ActivityMonitor getInstance() {
@@ -67,116 +75,84 @@ public class Pocket48ActivityMonitor {
     }
     
     /**
-     * 记录消息活动
+     * 记录消息活动 - 简化版本，仅记录基本统计
      */
     public void recordMessageActivity(long roomId, Pocket48Message message) {
         if (message == null) return;
         
-        long currentTime = System.currentTimeMillis();
-        
-        // 更新房间消息时间列表
-        roomMessageTimes.computeIfAbsent(roomId, k -> new ArrayList<>()).add(currentTime);
-        
-        // 更新房间消息计数
-        roomMessageCounts.computeIfAbsent(roomId, k -> new AtomicInteger(0)).incrementAndGet();
-        
-        // 更新全局统计
+        // 仅更新全局统计，不进行复杂的活跃度计算
         totalMessages.incrementAndGet();
         
-        // 清理过期数据
-        cleanupExpiredData(roomId, currentTime);
+        // 记录指标
+        metricsCollector.recordQueueOffer();
+        
+        logger.debug("Pocket48Activity", "记录消息: " + roomId + ", 类型: " + message.getType());
     }
-    
+
     /**
-     * 记录批量消息活动
+     * 批量记录消息活动 - 简化版本
      */
     public void recordBatchMessageActivity(long roomId, List<Pocket48Message> messages) {
         if (messages == null || messages.isEmpty()) return;
         
-        long currentTime = System.currentTimeMillis();
-        List<Long> messageTimes = roomMessageTimes.computeIfAbsent(roomId, k -> new ArrayList<>());
+        // 仅更新全局统计
+        totalMessages.addAndGet(messages.size());
         
-        // 批量添加消息时间
-        for (Pocket48Message message : messages) {
-            if (message != null) {
-                messageTimes.add(currentTime);
-                totalMessages.incrementAndGet();
-            }
+        // 批量记录指标
+        for (int i = 0; i < messages.size(); i++) {
+            metricsCollector.recordQueueOffer();
         }
         
-        // 更新房间消息计数
-        roomMessageCounts.computeIfAbsent(roomId, k -> new AtomicInteger(0)).addAndGet(messages.size());
-        
-        // 清理过期数据
-        cleanupExpiredData(roomId, currentTime);
+        logger.debug("Pocket48Activity", "批量记录消息: " + roomId + ", 数量: " + messages.size());
     }
-    
+
     /**
-     * 检查房间是否活跃
+     * 检查房间是否活跃 - 始终返回false，禁用活跃度检测
      */
     public boolean isRoomActive(long roomId) {
-        return roomActiveStatus.getOrDefault(roomId, new AtomicBoolean(false)).get();
+        return false; // 始终返回非活跃状态
     }
     
     /**
-     * 检查全局是否活跃
+     * 检查全局是否活跃 - 始终返回false，禁用活跃度检测
      */
     public boolean isGlobalActive() {
-        return globalActiveStatus.get();
+        return false; // 始终返回非活跃状态
     }
-    
+
     /**
-     * 获取当前缓存TTL
+     * 获取当前缓存TTL - 固定返回默认值
      */
     public long getCurrentCacheTTL() {
-        if (!cacheEnabled.get()) {
-            return 0; // 禁用缓存
-        }
-        
-        if (isGlobalActive()) {
-            return ACTIVE_CACHE_TTL; // 活跃期短TTL
-        } else {
-            return INACTIVE_CACHE_TTL; // 非活跃期长TTL
-        }
+        return DEFAULT_CACHE_TTL; // 始终返回固定TTL
     }
     
     /**
-     * 是否启用缓存
+     * 是否启用缓存 - 始终启用
      */
     public boolean isCacheEnabled() {
-        return cacheEnabled.get() && !isGlobalActive();
+        return true; // 始终启用缓存功能
     }
-    
+
     /**
-     * 动态设置缓存状态
+     * 动态设置缓存状态 - 简化版本
      */
     public void setCacheEnabled(boolean enabled) {
         cacheEnabled.set(enabled);
-        updateCacheConfiguration();
+        // 移除复杂的缓存配置更新逻辑
     }
     
     /**
-     * 获取活跃度统计报告
+     * 获取活跃度统计报告 - 简化版本
      */
     public String getActivityReport() {
         StringBuilder report = new StringBuilder();
-        report.append("📊 口袋48消息活跃度报告\n");
+        report.append("📊 口袋48消息统计报告\n");
         report.append("━━━━━━━━━━━━━━━━━━━━\n");
-        report.append(String.format("🌐 全局状态: %s\n", isGlobalActive() ? "活跃" : "非活跃"));
-        report.append(String.format("📈 活跃房间数: %d\n", activeRooms.get()));
+        report.append("🌐 全局状态: 非活跃（已禁用活跃度检测）\n");
         report.append(String.format("📝 总消息数: %d\n", totalMessages.get()));
-        report.append(String.format("💾 缓存状态: %s\n", isCacheEnabled() ? "启用" : "禁用"));
+        report.append("💾 缓存状态: 启用\n");
         report.append(String.format("⏱️ 当前TTL: %d 分钟\n", getCurrentCacheTTL() / 60000));
-        
-        // 房间详情
-        report.append("\n🏠 房间活跃度:\n");
-        for (Map.Entry<Long, AtomicBoolean> entry : roomActiveStatus.entrySet()) {
-            long roomId = entry.getKey();
-            boolean active = entry.getValue().get();
-            int messageCount = roomMessageCounts.getOrDefault(roomId, new AtomicInteger(0)).get();
-            report.append(String.format("  房间 %d: %s (%d 条消息)\n", 
-                roomId, active ? "活跃" : "非活跃", messageCount));
-        }
         
         return report.toString();
     }
@@ -184,76 +160,19 @@ public class Pocket48ActivityMonitor {
     // 私有方法
     
     /**
-     * 启动活跃度监控
+     * 启动活跃度监控 - 禁用监控功能
      */
     private void startActivityMonitoring() {
-        UnifiedSchedulerManager scheduler = UnifiedSchedulerManager.getInstance();
-        this.monitorTaskId = scheduler.scheduleCleanupTask(
-            this::checkActivityStatus, 
-            MONITOR_INTERVAL_MS, 
-            MONITOR_INTERVAL_MS
-        );
+        // 不启动任何监控任务，禁用活跃度监控
+        logger.info("Pocket48Activity", "活跃度监控已禁用");
     }
     
     /**
-     * 检查活跃度状态 - 优化版
+     * 检查活跃度状态 - 禁用状态检查
      */
     private void checkActivityStatus() {
-        try {
-            long currentTime = System.currentTimeMillis();
-            int currentActiveRooms = 0;
-            boolean hasSignificantChange = false;
-            
-            // 检查每个房间的活跃度
-            for (Map.Entry<Long, List<Long>> entry : roomMessageTimes.entrySet()) {
-                long roomId = entry.getKey();
-                List<Long> messageTimes = entry.getValue();
-                
-                // 清理过期数据
-                cleanupExpiredData(roomId, currentTime);
-                
-                // 计算活跃度
-                int recentMessageCount = messageTimes.size();
-                boolean wasActive = roomActiveStatus.getOrDefault(roomId, new AtomicBoolean(false)).get();
-                boolean isActive;
-                
-                // 增加滞后机制，避免频繁状态切换
-                if (wasActive) {
-                    // 如果之前是活跃的，需要消息数量显著下降才变为非活跃
-                    isActive = recentMessageCount >= INACTIVE_THRESHOLD;
-                } else {
-                    // 如果之前不活跃，需要消息数量显著上升才变为活跃
-                    isActive = recentMessageCount >= ACTIVE_THRESHOLD;
-                }
-                
-                // 只有状态真正改变时才更新
-                if (wasActive != isActive) {
-                    roomActiveStatus.computeIfAbsent(roomId, k -> new AtomicBoolean(false)).set(isActive);
-                    hasSignificantChange = true;
-                }
-                
-                if (isActive) {
-                    currentActiveRooms++;
-                }
-            }
-            
-            // 更新全局活跃状态
-            activeRooms.set(currentActiveRooms);
-            boolean wasGlobalActive = globalActiveStatus.get();
-            boolean isGlobalActive = currentActiveRooms > 0;
-            
-            // 只有在有显著变化或全局状态改变时才更新缓存配置
-            if ((wasGlobalActive != isGlobalActive) || hasSignificantChange) {
-                globalActiveStatus.set(isGlobalActive);
-                // 减少缓存配置更新频率
-                if (wasGlobalActive != isGlobalActive) {
-                    updateCacheConfiguration();
-                }
-            }
-            
-        } catch (Exception e) {
-            Newboy.INSTANCE.getLogger().error("[口袋48活跃度] 活跃度检查失败", e);
-        }
+        // 不执行任何活跃度检查逻辑
+        // 所有房间和全局状态始终保持非活跃
     }
     
     /**
@@ -271,7 +190,7 @@ public class Pocket48ActivityMonitor {
     }
     
     /**
-     * 更新缓存配置
+     * 更新缓存配置 - 简化版本，确保实时数据访问
      */
     private void updateCacheConfiguration() {
         try {
@@ -279,14 +198,27 @@ public class Pocket48ActivityMonitor {
             SmartCacheManager.LRUCache<String, SmartCacheManager.CacheEntry> pocket48Cache = 
                 cacheManager.getCache("pocket48_messages", 1000, getCurrentCacheTTL());
             
-            // 如果是活跃期且禁用缓存，清理现有缓存
-            if (isGlobalActive() && !isCacheEnabled()) {
-                pocket48Cache.clear();
-            }
+            // 移除缓存清理逻辑，确保缓存始终可用以支持实时数据访问
+            // 缓存配置已更新，保持缓存可用状态
             
         } catch (Exception e) {
-            Newboy.INSTANCE.getLogger().error("[口袋48活跃度] 缓存配置更新失败", e);
+            logger.error("Pocket48Activity", "缓存配置更新失败", e);
         }
+    }
+    
+    /**
+     * 启动周期性报告 - 禁用报告功能
+     */
+    private void startPeriodicReporting() {
+        // 不启动周期性报告任务
+        logger.info("Pocket48Activity", "周期性报告已禁用");
+    }
+    
+    /**
+     * 生成周期性报告 - 禁用报告生成
+     */
+    private void generatePeriodicReport() {
+        // 不生成任何报告
     }
     
     /**
@@ -296,5 +228,9 @@ public class Pocket48ActivityMonitor {
         if (monitorTaskId != null) {
             UnifiedSchedulerManager.getInstance().cancelTask(monitorTaskId);
         }
+        if (reportTaskId != null) {
+            UnifiedSchedulerManager.getInstance().cancelTask(reportTaskId);
+        }
+        logger.info("Pocket48Activity", "活跃度监控器已关闭");
     }
 }

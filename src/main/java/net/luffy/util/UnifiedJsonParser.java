@@ -33,7 +33,7 @@ public class UnifiedJsonParser {
     
     private UnifiedJsonParser() {
         this.objectMapper = createOptimizedObjectMapper();
-        this.maxCacheSize = 1000; // 缓存最大1000个解析结果
+        this.maxCacheSize = 1000;
         this.parseCache = new ConcurrentHashMap<>(maxCacheSize);
     }
     
@@ -56,7 +56,7 @@ public class UnifiedJsonParser {
      */
     private ObjectMapper createOptimizedObjectMapper() {
         ObjectMapper mapper = new ObjectMapper();
-        // 配置Jackson以获得最佳性能
+
         mapper.configure(com.fasterxml.jackson.core.JsonParser.Feature.ALLOW_COMMENTS, true);
         mapper.configure(com.fasterxml.jackson.core.JsonParser.Feature.ALLOW_UNQUOTED_FIELD_NAMES, true);
         mapper.configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
@@ -76,7 +76,7 @@ public class UnifiedJsonParser {
         totalParseCount.incrementAndGet();
         
         try {
-            // 检查缓存
+    
             String cacheKey = "obj_" + jsonStr.hashCode();
             Object cached = parseCache.get(cacheKey);
             if (cached instanceof JSONObject) {
@@ -86,24 +86,24 @@ public class UnifiedJsonParser {
             
             JSONObject result;
             
-            // 优先使用Jackson解析
+    
             try {
                 JsonNode jsonNode = objectMapper.readTree(jsonStr);
                 if (jsonNode.isObject()) {
                     result = convertJsonNodeToJSONObject(jsonNode);
                     jacksonParseCount.incrementAndGet();
                 } else {
-                    // 不是对象，回退到Hutool
+            
                     result = JSONUtil.parseObj(jsonStr);
                     hutoolParseCount.incrementAndGet();
                 }
             } catch (Exception e) {
-                // Jackson解析失败，回退到Hutool
+        
                 result = JSONUtil.parseObj(jsonStr);
                 hutoolParseCount.incrementAndGet();
             }
             
-            // 缓存结果（如果缓存未满）
+    
             if (parseCache.size() < maxCacheSize) {
                 parseCache.put(cacheKey, result);
             }
@@ -129,7 +129,7 @@ public class UnifiedJsonParser {
         totalParseCount.incrementAndGet();
         
         try {
-            // 检查缓存
+    
             String cacheKey = "arr_" + jsonStr.hashCode();
             Object cached = parseCache.get(cacheKey);
             if (cached instanceof JSONArray) {
@@ -139,24 +139,24 @@ public class UnifiedJsonParser {
             
             JSONArray result;
             
-            // 优先使用Jackson解析
+    
             try {
                 JsonNode jsonNode = objectMapper.readTree(jsonStr);
                 if (jsonNode.isArray()) {
                     result = convertJsonNodeToJSONArray(jsonNode);
                     jacksonParseCount.incrementAndGet();
                 } else {
-                    // 不是数组，回退到Hutool
+            
                     result = JSONUtil.parseArray(jsonStr);
                     hutoolParseCount.incrementAndGet();
                 }
             } catch (Exception e) {
-                // Jackson解析失败，回退到Hutool
+        
                 result = JSONUtil.parseArray(jsonStr);
                 hutoolParseCount.incrementAndGet();
             }
             
-            // 缓存结果（如果缓存未满）
+    
             if (parseCache.size() < maxCacheSize) {
                 parseCache.put(cacheKey, result);
             }
@@ -178,10 +178,10 @@ public class UnifiedJsonParser {
         }
         
         try {
-            // 优先使用Jackson
+    
             return objectMapper.writeValueAsString(obj);
         } catch (JsonProcessingException e) {
-            // 回退到Hutool
+    
             return JSONUtil.toJsonStr(obj);
         }
     }
@@ -267,7 +267,7 @@ public class UnifiedJsonParser {
         long cacheHit = cacheHitCount.get();
         long jacksonParse = jacksonParseCount.get();
         long hutoolParse = hutoolParseCount.get();
-        long avgParseTime = totalParse > 0 ? totalParseTime.get() / totalParse / 1000000 : 0; // 转换为毫秒
+        long avgParseTime = totalParse > 0 ? totalParseTime.get() / totalParse / 1000000 : 0;
         
         double cacheHitRate = totalParse > 0 ? (double) cacheHit / totalParse * 100 : 0;
         double jacksonRate = totalParse > 0 ? (double) jacksonParse / totalParse * 100 : 0;
@@ -297,7 +297,7 @@ public class UnifiedJsonParser {
         return objectMapper;
     }
     
-    // 静态便捷方法，兼容现有代码
+
     
     /**
      * 静态方法：解析JSON字符串为JSONObject
@@ -306,11 +306,11 @@ public class UnifiedJsonParser {
         if (useUnified) {
             return getInstance().parseObj(jsonStr);
         } else {
-            // 记录传统方法使用统计
+    
             try {
-                // 迁移助手已删除，不再记录传统方法使用
+        
             } catch (Exception e) {
-                // 忽略统计记录失败
+        
             }
             return JSONUtil.parseObj(jsonStr);
         }
@@ -323,11 +323,11 @@ public class UnifiedJsonParser {
         if (useUnified) {
             return getInstance().parseArray(jsonStr);
         } else {
-            // 记录传统方法使用统计
+    
             try {
-                // 迁移助手已删除，不再记录传统方法使用
+        
             } catch (Exception e) {
-                // 忽略统计记录失败
+        
             }
             return JSONUtil.parseArray(jsonStr);
         }
@@ -340,11 +340,11 @@ public class UnifiedJsonParser {
         if (useUnified) {
             return getInstance().toJsonStr(obj);
         } else {
-            // 记录传统方法使用统计
+    
             try {
-                // 迁移助手已删除，不再记录传统方法使用
+        
             } catch (Exception e) {
-                // 忽略统计记录失败
+        
             }
             return JSONUtil.toJsonStr(obj);
         }

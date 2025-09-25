@@ -104,6 +104,36 @@ public class MessageIntegrityChecker {
     }
     
     /**
+     * 仅检查消息是否在缓存中重复，不添加到缓存
+     * @param roomId 房间ID
+     * @param message 消息对象
+     * @return 如果是重复消息返回true
+     */
+    private static boolean isMessageDuplicateInCache(long roomId, Pocket48Message message) {
+        String messageId = generateMessageId(message);
+        long currentTime = System.currentTimeMillis();
+        
+        // 检查时间窗口内的重复
+        Long lastSeenTime = messageTimeWindow.get(messageId);
+        if (lastSeenTime != null) {
+            long timeDiff = currentTime - lastSeenTime;
+            if (timeDiff <= TIME_WINDOW_THRESHOLD) {
+                return true;
+            }
+        }
+        
+        // 检查房间消息缓存
+        Set<String> roomCache = roomMessageCache.get(roomId);
+        if (roomCache != null) {
+            synchronized (roomCache) {
+                return roomCache.contains(messageId);
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
      * 清理过期的时间窗口记录
      * @param currentTime 当前时间
      */
@@ -227,8 +257,8 @@ public class MessageIntegrityChecker {
             // 分配序列号
             assignSequenceNumber(roomId, message);
             
-            // 检查重复
-            if (isDuplicateMessage(roomId, message)) {
+            // 检查重复（仅检查不添加到缓存）
+            if (isMessageDuplicateInCache(roomId, message)) {
                 duplicateCount++;
             }
             
@@ -268,11 +298,26 @@ public class MessageIntegrityChecker {
         idBuilder.append(message.getTime()).append("_");
         idBuilder.append(nickname).append("_");
         
-        // 对于图片消息，使用特殊标识
-        if (content.contains("发送了一张图片") || content.contains("[overflow:image")) {
-            idBuilder.append("IMG_").append(content.hashCode());
+        // 根据消息类型生成不同的标识前缀
+        if (message.getType() != null) {
+            switch (message.getType()) {
+                case IMAGE:
+                case EXPRESSIMAGE:
+                    idBuilder.append("IMG_").append(content.hashCode());
+                    break;
+                case AUDIO:
+                    idBuilder.append("AUD_").append(content.hashCode());
+                    break;
+                case VIDEO:
+                    idBuilder.append("VID_").append(content.hashCode());
+                    break;
+                default:
+                    // 对于文本消息和其他类型，使用内容哈希
+                    idBuilder.append("TXT_").append(content.hashCode());
+                    break;
+            }
         } else {
-            // 对于文本消息，使用内容哈希
+            // 如果类型为空，默认使用文本类型
             idBuilder.append("TXT_").append(content.hashCode());
         }
         

@@ -6,6 +6,7 @@ import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import net.luffy.model.*;
+import net.luffy.util.StringMatchUtils;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -61,7 +62,7 @@ public class WeidianHandler extends SyncWebHandler {
         }
         
         // 检查是否是登录页面重定向
-        if (s.contains("<html>") || s.contains("<!DOCTYPE") || s.contains("login") || s.contains("登录")) {
+        if (StringMatchUtils.isHtmlContent(s)) {
             logInfo("获取订单列表时检测到登录页面重定向，cookie已失效");
             return null;
         }
@@ -330,7 +331,7 @@ public class WeidianHandler extends SyncWebHandler {
         logInfo("[微店API调试] 响应长度: " + s.length());
         
         // 检查是否是登录页面重定向（常见的cookie失效表现）
-        if (s.contains("<html>") || s.contains("<!DOCTYPE") || s.contains("login") || s.contains("登录")) {
+        if (StringMatchUtils.isHtmlContent(s)) {
             logInfo("[微店API调试] 检测到登录页面重定向，cookie已失效");
             return null;
         }
@@ -348,7 +349,7 @@ public class WeidianHandler extends SyncWebHandler {
         } catch (Exception e) {
             logInfo("[微店API调试] JSON解析失败: " + e.getMessage());
             logInfo("[微店API调试] 完整响应内容: " + s);
-            logInfo("[微店API调试] 响应内容类型检查: startsWith('<'): " + s.trim().startsWith("<") + ", contains('html'): " + s.toLowerCase().contains("html"));
+            logInfo("[微店API调试] 响应内容类型检查: startsWith('<'): " + s.trim().startsWith("<") + ", isHtmlContent: " + StringMatchUtils.isHtmlContent(s));
             return null;
         }
         

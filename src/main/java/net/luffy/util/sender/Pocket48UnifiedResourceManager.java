@@ -5,6 +5,7 @@ import net.luffy.util.UnifiedResourceManager;
 import net.luffy.util.AdaptiveThreadPoolManager;
 import net.luffy.util.CpuLoadBalancer;
 import net.luffy.util.UnifiedSchedulerManager;
+import net.luffy.util.UnifiedLogger;
 import net.luffy.util.sender.Pocket48ActivityMonitor;
 import net.luffy.model.Pocket48Message;
 
@@ -20,8 +21,9 @@ import java.util.ArrayList;
 
 /**
  * 口袋48统一资源管理器
- * 整合原有的多个资源管理器，提供统一的资源管理接口
- * 包含配置管理、缓存管理、资源优化和资源处理功能
+ * 合并了原有的Pocket48ResourceManager功能，提供统一的资源管理接口
+ * 职责清晰分层：配置管理 + 缓存管理 + 资源下载 + 资源优化 + 活动监控
+ * 移除了中间抽象层，简化了Manager层级结构
  */
 public class Pocket48UnifiedResourceManager {
     
@@ -29,11 +31,21 @@ public class Pocket48UnifiedResourceManager {
     private final Object lock = new Object();
     
     // 核心组件
-    private final Pocket48ResourceManager configManager;
     private final Pocket48ResourceCache cacheManager;
     private final Pocket48ResourceHandler resourceHandler;
     private final Pocket48ResourceOptimizer optimizer;
     private final Pocket48ActivityMonitor activityMonitor;
+    
+    // 直接管理配置，移除中间层
+    private final AtomicBoolean mediaQueueEnabled = new AtomicBoolean(true);
+    private final AtomicInteger mediaQueueSize = new AtomicInteger(500);
+    private final AtomicInteger mediaThreadPoolSize = new AtomicInteger(8);
+    private final AtomicInteger mediaProcessingTimeout = new AtomicInteger(30);
+    private final AtomicBoolean prioritizeTextMessages = new AtomicBoolean(true);
+    private final AtomicInteger mediaBatchSize = new AtomicInteger(12);
+    private final AtomicInteger mediaRetryAttempts = new AtomicInteger(3);
+    private final AtomicLong lastConfigUpdate = new AtomicLong(0);
+    private final AtomicInteger configVersion = new AtomicInteger(1);
     
     // 统一资源管理器引用
     private final UnifiedResourceManager unifiedManager;
@@ -49,11 +61,13 @@ public class Pocket48UnifiedResourceManager {
     
     private Pocket48UnifiedResourceManager() {
         this.unifiedManager = UnifiedResourceManager.getInstance();
-        this.configManager = Pocket48ResourceManager.getInstance();
         this.cacheManager = Pocket48ResourceCache.getInstance();
         this.resourceHandler = new Pocket48ResourceHandler();
         this.optimizer = new Pocket48ResourceOptimizer(resourceHandler);
         this.activityMonitor = Pocket48ActivityMonitor.getInstance();
+        
+        // 根据系统资源动态调整配置
+        adjustConfigurationBasedOnSystemResources();
         
         initialize();
     }
@@ -82,7 +96,7 @@ public class Pocket48UnifiedResourceManager {
             
             // 口袋48统一资源管理器初始化完成
         } catch (Exception e) {
-            Newboy.INSTANCE.getLogger().error("[口袋48统一资源管理器] 初始化失败", e);
+            UnifiedLogger.getInstance().error("Pocket48UnifiedResourceManager", "[口袋48统一资源管理器] 初始化失败", e);
         }
     }
     
@@ -135,7 +149,7 @@ public class Pocket48UnifiedResourceManager {
             performanceMetrics.put("cacheHitRate", calculateCacheHitRate());
             performanceMetrics.put("activeConfigs", getActiveConfigCount());
         } catch (Exception e) {
-            Newboy.INSTANCE.getLogger().error("[口袋48统一资源管理器] 性能指标更新失败", e);
+            UnifiedLogger.getInstance().error("Pocket48UnifiedResourceManager", "[口袋48统一资源管理器] 性能指标更新失败", e);
         }
     }
     
@@ -154,8 +168,8 @@ public class Pocket48UnifiedResourceManager {
      */
     private int getActiveConfigCount() {
         int count = 0;
-        if (configManager.isMediaQueueEnabled()) count++;
-        if (configManager.isPrioritizeTextMessages()) count++;
+        if (isMediaQueueEnabled()) count++;
+        if (isPrioritizeTextMessages()) count++;
         return count;
     }
     
@@ -165,66 +179,125 @@ public class Pocket48UnifiedResourceManager {
     private Map<String, Object> getUnifiedMetrics() {
         Map<String, Object> metrics = new ConcurrentHashMap<>();
         metrics.putAll(performanceMetrics);
-        // 配置指标已包含在其他地方
+        metrics.putAll(getConfigurationMetrics());
         return metrics;
+    }
+    
+    /**
+     * 获取配置指标
+     */
+    private Map<String, Object> getConfigurationMetrics() {
+        Map<String, Object> metrics = new ConcurrentHashMap<>();
+        metrics.put("mediaQueueEnabled", mediaQueueEnabled.get());
+        metrics.put("mediaQueueSize", mediaQueueSize.get());
+        metrics.put("mediaThreadPoolSize", mediaThreadPoolSize.get());
+        metrics.put("mediaProcessingTimeout", mediaProcessingTimeout.get());
+        metrics.put("prioritizeTextMessages", prioritizeTextMessages.get());
+        metrics.put("mediaBatchSize", mediaBatchSize.get());
+        metrics.put("mediaRetryAttempts", mediaRetryAttempts.get());
+        metrics.put("configVersion", configVersion.get());
+        metrics.put("lastConfigUpdate", lastConfigUpdate.get());
+        return metrics;
+    }
+    
+    /**
+     * 根据系统资源调整配置
+     */
+    private void adjustConfigurationBasedOnSystemResources() {
+        int cpuCores = Runtime.getRuntime().availableProcessors();
+        long maxMemory = Runtime.getRuntime().maxMemory();
+        
+        // 根据CPU核心数调整线程池大小
+        int optimalThreadPoolSize = Math.max(4, Math.min(cpuCores, 12));
+        mediaThreadPoolSize.set(optimalThreadPoolSize);
+        
+        // 根据内存大小调整队列大小
+        int optimalQueueSize = maxMemory > 2048 * 1024 * 1024 ? 800 : 400;
+        mediaQueueSize.set(optimalQueueSize);
+        
+        UnifiedLogger.getInstance().info("Pocket48UnifiedResourceManager",
+            String.format("[口袋48统一资源管理器] 根据系统资源调整配置 - CPU核心: %d, 线程池大小: %d, 队列大小: %d",
+                cpuCores, optimalThreadPoolSize, optimalQueueSize));
+    }
+    
+    /**
+     * 更新配置版本
+     */
+    private void updateConfigVersion() {
+        configVersion.incrementAndGet();
+        lastConfigUpdate.set(System.currentTimeMillis());
     }
     
     // ==================== 配置管理接口 ====================
     
     public boolean isMediaQueueEnabled() {
-        return configManager.isMediaQueueEnabled();
+        return mediaQueueEnabled.get();
     }
     
     public void setMediaQueueEnabled(boolean enabled) {
-        configManager.setMediaQueueEnabled(enabled);
+        if (mediaQueueEnabled.compareAndSet(!enabled, enabled)) {
+            updateConfigVersion();
+        }
     }
     
     public int getMediaQueueSize() {
-        return configManager.getMediaQueueSize();
+        return mediaQueueSize.get();
     }
     
     public void setMediaQueueSize(int size) {
-        configManager.setMediaQueueSize(size);
+        if (size > 0 && mediaQueueSize.compareAndSet(mediaQueueSize.get(), size)) {
+            updateConfigVersion();
+        }
     }
     
     public int getMediaThreadPoolSize() {
-        return configManager.getMediaThreadPoolSize();
+        return mediaThreadPoolSize.get();
     }
     
     public void setMediaThreadPoolSize(int size) {
-        configManager.setMediaThreadPoolSize(size);
+        if (size > 0 && mediaThreadPoolSize.compareAndSet(mediaThreadPoolSize.get(), size)) {
+            updateConfigVersion();
+        }
     }
     
     public int getMediaProcessingTimeout() {
-        return configManager.getMediaProcessingTimeout();
+        return mediaProcessingTimeout.get();
     }
     
     public void setMediaProcessingTimeout(int timeout) {
-        configManager.setMediaProcessingTimeout(timeout);
+        if (timeout > 0 && mediaProcessingTimeout.compareAndSet(mediaProcessingTimeout.get(), timeout)) {
+            updateConfigVersion();
+        }
     }
     
     public boolean isPrioritizeTextMessages() {
-        return configManager.isPrioritizeTextMessages();
+        return prioritizeTextMessages.get();
     }
     
     public void setPrioritizeTextMessages(boolean prioritize) {
-        configManager.setPrioritizeTextMessages(prioritize);
+        if (prioritizeTextMessages.compareAndSet(!prioritize, prioritize)) {
+            updateConfigVersion();
+        }
     }
     
     public int getMediaBatchSize() {
-        return configManager.getMediaBatchSize();
+        return mediaBatchSize.get();
     }
     
     public void setMediaBatchSize(int size) {
-        configManager.setMediaBatchSize(size);
+        if (size > 0 && mediaBatchSize.compareAndSet(mediaBatchSize.get(), size)) {
+            updateConfigVersion();
+        }
     }
     
     public int getMediaRetryAttempts() {
-        return configManager.getMediaRetryAttempts();
+        return mediaRetryAttempts.get();
     }
     
     public void setMediaRetryAttempts(int attempts) {
-        configManager.setMediaRetryAttempts(attempts);
+        if (attempts >= 0 && mediaRetryAttempts.compareAndSet(mediaRetryAttempts.get(), attempts)) {
+            updateConfigVersion();
+        }
     }
     
     // ==================== 缓存管理接口 ====================
@@ -371,7 +444,7 @@ public class Pocket48UnifiedResourceManager {
             
             // 系统优化完成
         } catch (Exception e) {
-            Newboy.INSTANCE.getLogger().error("[口袋48统一资源管理器] 系统优化失败", e);
+            UnifiedLogger.getInstance().error("Pocket48UnifiedResourceManager", "[口袋48统一资源管理器] 系统优化失败", e);
         }
     }
     
@@ -414,16 +487,16 @@ public class Pocket48UnifiedResourceManager {
      */
     public void shutdown() {
         try {
+            // 先清理缓存，再关闭optimizer
+            cleanupExpiredCache(0);
+            
             if (optimizer != null) {
                 optimizer.shutdown();
             }
             
-            // 清理缓存
-            cleanupExpiredCache(0);
-            
             // 口袋48统一资源管理器已关闭
         } catch (Exception e) {
-            Newboy.INSTANCE.getLogger().error("[口袋48统一资源管理器] 关闭时发生错误", e);
+            UnifiedLogger.getInstance().error("Pocket48UnifiedResourceManager", "[口袋48统一资源管理器] 关闭时发生错误", e);
         }
     }
 }

@@ -20,8 +20,8 @@ public class JsonOptimizer {
     private static final ConcurrentHashMap<String, JSONObject> JSON_CACHE = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, JSONArray> ARRAY_CACHE = new ConcurrentHashMap<>();
     
-    // 缓存大小限制
-    private static final int MAX_CACHE_SIZE = 1000;
+    // 缓存大小限制 - 极致优化版
+    private static final int MAX_CACHE_SIZE = 5000; // 增加到5000个条目
     
     // 预编译的正则表达式，用于快速字段提取
     private static final Pattern NAME_PATTERN = Pattern.compile("\"name\"\\s*:\\s*\"([^\"]*)\"");

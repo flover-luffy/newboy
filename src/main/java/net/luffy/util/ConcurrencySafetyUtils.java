@@ -11,6 +11,7 @@ import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadMXBean;
 import java.lang.management.ThreadInfo;
 import java.util.stream.Collectors;
+import net.luffy.util.UnifiedSchedulerManager;
 
 /**
  * 并发安全工具类
@@ -30,15 +31,9 @@ public class ConcurrencySafetyUtils {
     private final AtomicLong totalWaitTime = new AtomicLong(0);
     private final ConcurrentHashMap<String, AtomicLong> lockUsageStats = new ConcurrentHashMap<>();
     
-    // 死锁检测
+    // 死锁检测 - 使用统一调度器管理
     private final ThreadMXBean threadBean = ManagementFactory.getThreadMXBean();
-    private final ScheduledExecutorService deadlockDetector = Executors.newSingleThreadScheduledExecutor(
-        r -> {
-            Thread t = new Thread(r, "DeadlockDetector");
-            t.setDaemon(true);
-            return t;
-        }
-    );
+    private final ScheduledExecutorService deadlockDetector = UnifiedSchedulerManager.getInstance().getScheduledExecutor();
     
     private ConcurrencySafetyUtils() {
         // 启动死锁检测
@@ -72,6 +67,42 @@ public class ConcurrencySafetyUtils {
      */
     public CountDownLatch getNamedLatch(String name, int count) {
         return namedLatches.computeIfAbsent(name, k -> new CountDownLatch(count));
+    }
+    
+    /**
+     * 带超时的倒计时锁存器等待
+     */
+    public boolean awaitLatch(String name, int count, long timeout, TimeUnit unit) {
+        CountDownLatch latch = getNamedLatch(name, count);
+        try {
+            return latch.await(timeout, unit);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+    
+    /**
+     * 安全的信号量获取（带超时）
+     */
+    public boolean tryAcquireSemaphore(String semaphoreName, int permits, long timeout, TimeUnit unit) {
+        Semaphore semaphore = getNamedSemaphore(semaphoreName, permits);
+        try {
+            return semaphore.tryAcquire(timeout, unit);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+    
+    /**
+     * 释放信号量
+     */
+    public void releaseSemaphore(String semaphoreName, int permits) {
+        Semaphore semaphore = namedSemaphores.get(semaphoreName);
+        if (semaphore != null) {
+            semaphore.release();
+        }
     }
     
     /**
@@ -171,9 +202,18 @@ public class ConcurrencySafetyUtils {
     }
     
     /**
-     * 限流执行
+     * 限流执行（带默认超时）
      */
-    public <T> T rateLimitedExecution(String semaphoreName, int permits, Supplier<T> operation) throws InterruptedException {
+    public <T> Optional<T> rateLimitedExecution(String semaphoreName, int permits, Supplier<T> operation) {
+        return rateLimitedExecutionWithTimeout(semaphoreName, permits, operation, 30, TimeUnit.SECONDS);
+    }
+    
+    /**
+     * 限流执行（兼容旧版本，已废弃）
+     * @deprecated 使用 rateLimitedExecutionWithTimeout 替代以避免无限期阻塞
+     */
+    @Deprecated
+    public <T> T rateLimitedExecutionBlocking(String semaphoreName, int permits, Supplier<T> operation) throws InterruptedException {
         Semaphore semaphore = getNamedSemaphore(semaphoreName, permits);
         
         semaphore.acquire();
@@ -339,13 +379,7 @@ public class ConcurrencySafetyUtils {
      */
     public void shutdown() {
         try {
-            // 停止死锁检测器
-            if (deadlockDetector != null && !deadlockDetector.isShutdown()) {
-                deadlockDetector.shutdown();
-                if (!deadlockDetector.awaitTermination(5, TimeUnit.SECONDS)) {
-                    deadlockDetector.shutdownNow();
-                }
-            }
+            // deadlockDetector现在由UnifiedSchedulerManager管理，不需要显式关闭
             
             // 清理所有资源
             namedLocks.clear();
@@ -356,7 +390,7 @@ public class ConcurrencySafetyUtils {
             lockCounter.set(0);
             totalWaitTime.set(0);
             
-            Newboy.INSTANCE.getLogger().info("[ConcurrencySafetyUtils] 资源清理完成");
+            Newboy.INSTANCE.getLogger().info("[ConcurrencySafetyUtils] 资源清理完成，调度器由UnifiedSchedulerManager统一管理");
         } catch (Exception e) {
             Newboy.INSTANCE.getLogger().error("[ConcurrencySafetyUtils] 关闭时发生错误", e);
         }
@@ -609,5 +643,35 @@ public class ConcurrencySafetyUtils {
         public String getLockName() { return lockName; }
         public long getLockOwnerId() { return lockOwnerId; }
         public String getLockOwnerName() { return lockOwnerName; }
+    }
+    
+    // 辅助方法：带超时的CountDownLatch等待
+    public static boolean awaitLatch(CountDownLatch latch, long timeout, TimeUnit unit) {
+        try {
+            return latch.await(timeout, unit);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+    
+    // 辅助方法：带超时的信号量获取
+    public static boolean tryAcquireSemaphore(Semaphore semaphore, long timeout, TimeUnit unit) {
+        try {
+            return semaphore.tryAcquire(timeout, unit);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+    
+    // 辅助方法：安全释放信号量
+    public static void releaseSemaphore(Semaphore semaphore) {
+        try {
+            semaphore.release();
+        } catch (Exception e) {
+            // 记录错误但不抛出异常
+            Newboy.INSTANCE.getLogger().warning("[ConcurrencySafetyUtils] 释放信号量时发生错误: " + e.getMessage());
+        }
     }
 }

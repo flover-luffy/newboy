@@ -4,6 +4,8 @@ import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import net.luffy.handler.AsyncWebHandlerBase;
 import net.luffy.util.UnifiedJsonParser;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -22,6 +24,7 @@ import java.util.Locale;
  */
 public class WeiboApiService extends AsyncWebHandlerBase {
     
+    private static final Logger logger = LoggerFactory.getLogger(WeiboApiService.class);
     private static final String API_BASE = "https://m.weibo.cn/api/container/getIndex";
     private final UnifiedJsonParser jsonParser = UnifiedJsonParser.getInstance();
     private final WeiboApiCookieManager cookieManager = WeiboApiCookieManager.getInstance();
@@ -56,7 +59,7 @@ public class WeiboApiService extends AsyncWebHandlerBase {
         } catch (RuntimeException e) {
             // 检查是否为HTTP 432错误
             if (e.getMessage() != null && e.getMessage().contains("432")) {
-                System.err.println("[WeiboAPI] 遇到HTTP 432错误，可能是请求频率过高或认证问题: " + e.getMessage());
+                logger.warn("[WeiboAPI] 遇到HTTP 432错误，可能是请求频率过高或认证问题: {}", e.getMessage());
                 // 对于432错误，返回null而不是抛出异常，让上层代码处理
                 return null;
             }
@@ -92,7 +95,7 @@ public class WeiboApiService extends AsyncWebHandlerBase {
         } catch (RuntimeException e) {
             // 检查是否为HTTP 432错误
             if (e.getMessage() != null && e.getMessage().contains("432")) {
-                System.err.println("[WeiboAPI] 遇到HTTP 432错误，可能是请求频率过高或认证问题: " + e.getMessage());
+                logger.warn("[WeiboAPI] 遇到HTTP 432错误，可能是请求频率过高或认证问题: {}", e.getMessage());
                 // 对于432错误，返回null而不是抛出异常，让上层代码处理
                 return null;
             }

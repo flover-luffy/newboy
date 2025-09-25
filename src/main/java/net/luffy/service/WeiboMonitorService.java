@@ -4,12 +4,14 @@ import cn.hutool.json.JSONObject;
 import net.luffy.model.WeiboData;
 import net.luffy.util.WeiboUtils;
 import net.luffy.util.sender.MessageSender;
+import net.luffy.util.delay.UnifiedDelayService;
 import net.luffy.Newboy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.util.*;
+import java.util.concurrent.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -28,6 +30,7 @@ public class WeiboMonitorService {
     private final WeiboApiService weiboApiService;
     private final MessageSender messageSender;
     private final ScheduledExecutorService scheduler;
+    private final UnifiedDelayService unifiedDelayService;
     
     // 存储每个用户的最新微博ID，用于判断是否有新微博
     private final Map<String, Long> userLatestWeiboId = new ConcurrentHashMap<>();
@@ -48,6 +51,7 @@ public class WeiboMonitorService {
         this.weiboApiService = weiboApiService;
         this.messageSender = messageSender;
         this.scheduler = Executors.newScheduledThreadPool(2);
+        this.unifiedDelayService = UnifiedDelayService.getInstance();
         
         // 加载持久化的微博ID
         loadPersistedWeiboIds();
@@ -370,10 +374,10 @@ public class WeiboMonitorService {
                 // 计算重试延迟：2^retryCount * 1000ms，最大30秒
                 long delayMs = Math.min((long)(Math.pow(2, retryCount) * 1000), 30000);
                 try {
-                    Thread.sleep(delayMs);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    logger.error("用户{}信息加载被中断", uid);
+                    // 使用统一延迟服务进行异步延迟
+                    unifiedDelayService.delayAsync((int)delayMs).join();
+                } catch (Exception ex) {
+                    logger.error("用户{}信息加载延迟被中断", uid);
                     return;
                 }
             }

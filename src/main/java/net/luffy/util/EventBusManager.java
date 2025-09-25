@@ -6,6 +6,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.*;
 import java.util.function.Consumer;
 import net.luffy.Newboy;
+import net.luffy.util.AdaptiveThreadPoolManager;
 
 /**
  * 事件驱动模型管理器
@@ -43,13 +44,8 @@ public class EventBusManager {
             throw new IllegalStateException("PROCESSOR_THREADS must be positive, got: " + PROCESSOR_THREADS);
         }
         
-        // 创建事件处理线程池
-        this.eventProcessor = Executors.newFixedThreadPool(PROCESSOR_THREADS, r -> {
-            Thread t = new Thread(r, "EventBus-Processor-" + System.currentTimeMillis());
-            t.setDaemon(true);
-            t.setPriority(Thread.NORM_PRIORITY - 1);
-            return t;
-        });
+        // 使用统一的线程池管理器
+        this.eventProcessor = AdaptiveThreadPoolManager.getInstance().getEventProcessorPool();
         
         // 启动事件处理循环
         startEventProcessing();
@@ -192,20 +188,13 @@ public class EventBusManager {
      */
     public void shutdown() {
         running = false;
-        eventProcessor.shutdown();
-        
-        try {
-            if (!eventProcessor.awaitTermination(5, TimeUnit.SECONDS)) {
-                eventProcessor.shutdownNow();
-            }
-        } catch (InterruptedException e) {
-            eventProcessor.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
+        // eventProcessor现在由AdaptiveThreadPoolManager管理，不需要显式关闭
         
         // 清理剩余事件
         eventQueue.clear();
         eventHandlers.clear();
+        
+        System.out.println("EventBusManager已关闭，线程池由AdaptiveThreadPoolManager统一管理");
     }
     
     /**

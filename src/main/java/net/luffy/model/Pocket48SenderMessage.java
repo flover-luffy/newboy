@@ -1,9 +1,12 @@
 package net.luffy.model;
 
 import net.mamoe.mirai.message.data.Message;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class Pocket48SenderMessage {
 
+    private static final Logger logger = LoggerFactory.getLogger(Pocket48SenderMessage.class);
     private final boolean canJoin;
     private final Message title;
     private final Message[] message;
@@ -41,7 +44,7 @@ public class Pocket48SenderMessage {
             try {
                 result[0] = title.plus(result[0]);
             } catch (Exception e) {
-                System.err.println("合并消息时发生错误: " + e.getMessage());
+                logger.error("合并消息时发生错误: {}", e.getMessage());
                 // 如果合并失败，保持原消息不变
             }
         }

@@ -1,6 +1,7 @@
 package net.luffy.util;
 
 import net.luffy.Newboy;
+import net.luffy.util.delay.DelayConfig;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -74,9 +75,12 @@ public class MonitorConfig {
     private final long coroutineTimeout;
     private final long coroutineDefaultTimeout;
     
-    // 消息延迟优化配置已迁移到config.setting中
+    // 消息延迟优化配置已迁移到DelayConfig中
+    private final DelayConfig delayConfig;
     
     private MonitorConfig() {
+        // 初始化DelayConfig
+        delayConfig = DelayConfig.getInstance();
         properties = new Properties();
         loadConfiguration();
         
@@ -87,12 +91,12 @@ public class MonitorConfig {
         retryBaseDelay = getLongProperty("monitor.network.retry.base.delay", 1000L);
         retryMaxDelay = getLongProperty("monitor.network.retry.max.delay", 15000L);
         
-        // 初始化口袋48 API专用快速失败配置
+        // 初始化口袋48 API专用快速失败配置 - 进一步优化超时时间
         pocket48FastFailEnabled = getBooleanProperty("monitor.pocket48.fast.fail.enabled", true);
-        pocket48ConnectTimeout = getIntProperty("monitor.pocket48.connect.timeout", 2000); // 2秒连接超时
-        pocket48ReadTimeout = getIntProperty("monitor.pocket48.read.timeout", 3000); // 3秒读取超时
-        pocket48MaxRetries = getIntProperty("monitor.pocket48.max.retries", 1); // 最多重试1次
-        pocket48RetryBaseDelay = getLongProperty("monitor.pocket48.retry.base.delay", 500L); // 500ms基础延迟
+        pocket48ConnectTimeout = getIntProperty("monitor.pocket48.connect.timeout", 1000); // 从2秒降至1秒连接超时
+        pocket48ReadTimeout = getIntProperty("monitor.pocket48.read.timeout", 2000); // 从3秒降至2秒读取超时
+        pocket48MaxRetries = getIntProperty("monitor.pocket48.max.retries", delayConfig.getMaxRetries()); // 使用DelayConfig的重试次数
+        pocket48RetryBaseDelay = getLongProperty("monitor.pocket48.retry.base.delay", delayConfig.getRetryBaseDelay()); // 使用DelayConfig的基础延迟
         
         // 初始化健康检查配置 - 优化为实时监控
         maxConsecutiveFailures = getIntProperty("monitor.health.max.consecutive.failures", 3);
@@ -291,6 +295,18 @@ public class MonitorConfig {
     // 协程配置 Getter 方法
     public long getCoroutineTimeout() { return coroutineTimeout; }
     public long getCoroutineDefaultTimeout() { return coroutineDefaultTimeout; }
+    
+    // DelayConfig 访问方法
+    public DelayConfig getDelayConfig() { return delayConfig; }
+    
+    /**
+     * 重新加载延迟配置
+     * 支持热更新延迟参数
+     */
+    public void reloadDelayConfig() {
+        delayConfig.reloadConfig();
+    }
+    
     
     // 消息延迟优化配置 Getter 方法已移除 - 配置已迁移到config.setting中
     

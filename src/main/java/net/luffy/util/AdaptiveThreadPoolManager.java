@@ -227,4 +227,26 @@ public class AdaptiveThreadPoolManager {
     public Executor getExecutor() {
         return adaptivePool;
     }
+    
+    /**
+     * 获取底层执行器服务
+     */
+    public ExecutorService getExecutorService() {
+        return adaptivePool;
+    }
+    
+    /**
+     * 执行任务
+     */
+    public void execute(Runnable task) {
+        adaptivePool.execute(task);
+    }
+    
+    /**
+     * 获取事件处理器线程池
+     * EventBusManager使用此方法获取统一管理的线程池
+     */
+    public ExecutorService getEventProcessorPool() {
+        return adaptivePool;
+    }
 }

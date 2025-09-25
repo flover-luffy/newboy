@@ -10,6 +10,11 @@ import java.time.format.DateTimeFormatter;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.stream.Collectors;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import net.luffy.util.delay.UnifiedDelayService;
 
 /**
  * 错误处理与恢复管理器
@@ -36,6 +41,7 @@ public class ErrorHandlingManager {
     
     // 恢复策略
     private final Map<Class<? extends Exception>, RecoveryStrategy> recoveryStrategies = new ConcurrentHashMap<>();
+    private final Map<Class<? extends Exception>, AsyncRecoveryStrategy> asyncRecoveryStrategies = new ConcurrentHashMap<>();
     private final Map<String, Supplier<Boolean>> healthChecks = new ConcurrentHashMap<>();
     
     // 告警系统
@@ -46,6 +52,9 @@ public class ErrorHandlingManager {
     private final AtomicLong totalErrors = new AtomicLong(0);
     private final AtomicLong totalRetries = new AtomicLong(0);
     private final AtomicLong totalRecoveries = new AtomicLong(0);
+    
+    // 使用统一调度器管理器
+    private final ScheduledExecutorService delayScheduler = UnifiedSchedulerManager.getInstance().getScheduledExecutor();
     
     private ErrorHandlingManager() {
         // 初始化默认恢复策略
@@ -66,52 +75,67 @@ public class ErrorHandlingManager {
     }
     
     /**
-     * 执行带重试的操作（自定义配置）
+     * 执行带重试的操作（异步版本）
+     */
+    public <T> CompletableFuture<T> executeWithRetryAsync(String operationName, Supplier<T> operation, 
+                                                         int maxRetries, long retryDelayMs) {
+        return executeWithRetryAsyncInternal(operationName, operation, maxRetries, retryDelayMs, 0, null);
+    }
+    
+    private <T> CompletableFuture<T> executeWithRetryAsyncInternal(String operationName, Supplier<T> operation,
+                                                                  int maxRetries, long retryDelayMs, 
+                                                                  int attempt, Exception lastException) {
+        try {
+            T result = operation.get();
+            
+            if (attempt > 0) {
+                recordSuccessAfterRetry(operationName, attempt);
+            }
+            
+            return CompletableFuture.completedFuture(result);
+            
+        } catch (Exception e) {
+            recordError(operationName, e, attempt);
+            
+            if (attempt < maxRetries) {
+                totalRetries.incrementAndGet();
+                
+                // 计算退避延迟
+                long delay = calculateBackoffDelay(retryDelayMs, attempt);
+                
+                // 使用统一日志记录器记录重试信息
+                UnifiedLogger.getInstance().info("ErrorHandling", 
+                    String.format("[错误处理] 操作 '%s' 第 %d 次重试，%dms 后重试", 
+                        operationName, attempt + 1, delay));
+                
+                // 异步延迟后重试
+                return UnifiedDelayService.getInstance().delayAsync(delay)
+                    .thenCompose(v -> executeWithRetryAsyncInternal(
+                        operationName, operation, maxRetries, retryDelayMs, attempt + 1, e));
+            } else {
+                // 所有重试都失败了
+                recordFinalFailure(operationName, e, maxRetries);
+                CompletableFuture<T> failedFuture = new CompletableFuture<>();
+                failedFuture.completeExceptionally(new RuntimeException(
+                    String.format("操作 '%s' 在 %d 次重试后仍然失败", operationName, maxRetries), e));
+                return failedFuture;
+            }
+        }
+    }
+    
+    /**
+     * 执行带重试的操作（同步版本，保持向后兼容）
      */
     public <T> T executeWithRetry(String operationName, Supplier<T> operation, 
                                  int maxRetries, long retryDelayMs) {
-        Exception lastException = null;
-        
-        for (int attempt = 0; attempt <= maxRetries; attempt++) {
-            try {
-                T result = operation.get();
-                
-                // 成功执行，重置错误统计
-                if (attempt > 0) {
-                    recordSuccessAfterRetry(operationName, attempt);
-                }
-                
-                return result;
-                
-            } catch (Exception e) {
-                lastException = e;
-                recordError(operationName, e, attempt);
-                
-                if (attempt < maxRetries) {
-                    totalRetries.incrementAndGet();
-                    
-                    // 计算退避延迟
-                    long delay = calculateBackoffDelay(retryDelayMs, attempt);
-                    
-                    Newboy.INSTANCE.getLogger().info(
-                        String.format("[错误处理] 操作 '%s' 第 %d 次重试，%dms 后重试", 
-                            operationName, attempt + 1, delay));
-                    
-                    try {
-                        Thread.sleep(delay);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        throw new RuntimeException("重试被中断", ie);
-                    }
-                }
+        try {
+            return executeWithRetryAsync(operationName, operation, maxRetries, retryDelayMs).get();
+        } catch (Exception e) {
+            if (e.getCause() instanceof RuntimeException) {
+                throw (RuntimeException) e.getCause();
             }
+            throw new RuntimeException("异步重试执行失败", e);
         }
-        
-        // 所有重试都失败了
-        recordFinalFailure(operationName, lastException, maxRetries);
-        throw new RuntimeException(
-            String.format("操作 '%s' 在 %d 次重试后仍然失败", operationName, maxRetries), 
-            lastException);
     }
     
     /**
@@ -133,7 +157,7 @@ public class ErrorHandlingManager {
             if (exceptionType.isInstance(e)) {
                 RecoveryStrategy strategy = recoveryStrategies.get(exceptionType);
                 if (strategy != null) {
-                    Newboy.INSTANCE.getLogger().info(
+                    UnifiedLogger.getInstance().info("ErrorHandling", 
                         String.format("[错误恢复] 尝试恢复操作 '%s'", operationName));
                     
                     if (strategy.recover(e)) {
@@ -181,7 +205,7 @@ public class ErrorHandlingManager {
         
         // 记录日志
         if (attemptNumber == 0) {
-            Newboy.INSTANCE.getLogger().error(
+            UnifiedLogger.getInstance().error("ErrorHandling", 
                 String.format("[错误处理] 上下文: %s, 异常: %s", context, exception.getMessage()), 
                 exception);
         }
@@ -194,6 +218,15 @@ public class ErrorHandlingManager {
                                         RecoveryStrategy strategy) {
         recoveryStrategies.put(exceptionType, strategy);
         // 注册恢复策略
+    }
+    
+    /**
+     * 注册异步恢复策略
+     */
+    public void registerAsyncRecoveryStrategy(Class<? extends Exception> exceptionType, 
+                                            AsyncRecoveryStrategy strategy) {
+        asyncRecoveryStrategies.put(exceptionType, strategy);
+        // 注册异步恢复策略
     }
     
     /**
@@ -219,7 +252,7 @@ public class ErrorHandlingManager {
                 }
             } catch (Exception e) {
                 results.put(entry.getKey(), false);
-                Newboy.INSTANCE.getLogger().error(
+                UnifiedLogger.getInstance().error("ErrorHandling", 
                     String.format("[健康检查] %s 检查异常", entry.getKey()), e);
             }
         }
@@ -307,28 +340,52 @@ public class ErrorHandlingManager {
     
     // 私有方法
     private void initializeDefaultRecoveryStrategies() {
-        // 网络连接异常恢复策略
-        registerRecoveryStrategy(java.net.ConnectException.class, (exception) -> {
+        // 网络连接异常恢复策略（异步版本）
+        registerAsyncRecoveryStrategy(java.net.ConnectException.class, (exception) -> {
             // 尝试重新建立网络连接
-            try {
-                Thread.sleep(2000); // 等待2秒
-                return true;
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return false;
-            }
+            return UnifiedDelayService.getInstance().delayAsync(2000) // 异步等待2秒
+                .thenApply(v -> true)
+                .exceptionally(e -> false);
         });
         
-        // 内存不足恢复策略
-        registerRecoveryStrategy(RuntimeException.class, (exception) -> {
+        // 内存不足恢复策略（异步版本）
+        registerAsyncRecoveryStrategy(RuntimeException.class, (exception) -> {
             if (exception.getCause() instanceof OutOfMemoryError) {
                 // 检测到内存不足，尝试清理缓存
                 try {
                     // 触发缓存清理
                     SmartCacheManager.getInstance().performMemoryPressureCleanup();
                     System.gc();
-                    Thread.sleep(1000);
-                    return true;
+                    // 异步等待1秒
+                    return UnifiedDelayService.getInstance().delayAsync(1000)
+                        .thenApply(v -> true)
+                        .exceptionally(e -> false);
+                } catch (Exception e) {
+                    return CompletableFuture.completedFuture(false);
+                }
+            }
+            return CompletableFuture.completedFuture(false);
+        });
+        
+        // 为了向后兼容，保留同步版本的恢复策略
+        registerRecoveryStrategy(java.net.ConnectException.class, (exception) -> {
+            try {
+                AsyncRecoveryStrategy asyncStrategy = asyncRecoveryStrategies.get(java.net.ConnectException.class);
+                if (asyncStrategy != null) {
+                    return asyncStrategy.recover(exception).get();
+                }
+                return false;
+            } catch (Exception e) {
+                return false;
+            }
+        });
+        
+        registerRecoveryStrategy(RuntimeException.class, (exception) -> {
+            if (exception.getCause() instanceof OutOfMemoryError) {
+                try {
+                    SmartCacheManager.getInstance().performMemoryPressureCleanup();
+                    System.gc();
+                    return UnifiedDelayService.getInstance().delayAsync(1000).thenApply(v -> true).get();
                 } catch (Exception e) {
                     return false;
                 }
@@ -346,12 +403,14 @@ public class ErrorHandlingManager {
         return (long) (baseDelay * Math.pow(DEFAULT_BACKOFF_MULTIPLIER, attempt));
     }
     
+    // delayAsync方法已移除，统一使用UnifiedDelayService.getInstance().delayAsync()
+    
     private void recordSuccessAfterRetry(String operationName, int attempts) {
         // 操作重试成功
     }
     
     private void recordFinalFailure(String operationName, Exception exception, int maxRetries) {
-        Newboy.INSTANCE.getLogger().error(
+        UnifiedLogger.getInstance().error("ErrorHandling", 
             String.format("[错误处理] 操作 '%s' 最终失败，已重试 %d 次", operationName, maxRetries));
         
         // 触发严重错误告警
@@ -382,7 +441,7 @@ public class ErrorHandlingManager {
             callback.onErrorAlert(alertType, message);
         }
         
-        Newboy.INSTANCE.getLogger().error(String.format("[错误告警] %s: %s", alertType, message));
+        UnifiedLogger.getInstance().error("ErrorHandling", String.format("[错误告警] %s: %s", alertType, message));
     }
     
     // 内部类：错误统计
@@ -513,6 +572,11 @@ public class ErrorHandlingManager {
     @FunctionalInterface
     public interface RecoveryStrategy {
         boolean recover(Exception exception);
+    }
+    
+    @FunctionalInterface
+    public interface AsyncRecoveryStrategy {
+        CompletableFuture<Boolean> recover(Exception exception);
     }
     
     @FunctionalInterface

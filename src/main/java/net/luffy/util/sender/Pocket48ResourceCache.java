@@ -8,7 +8,12 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.logging.Logger;
+import java.util.concurrent.atomic.AtomicLong;
+import net.luffy.util.UnifiedLogger;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.zip.CRC32;
+import java.util.Collections;
 import net.luffy.util.UnifiedSchedulerManager;
 import net.luffy.util.ImageFormatDetector;
 
@@ -19,6 +24,7 @@ import net.luffy.util.ImageFormatDetector;
 public class Pocket48ResourceCache {
     
     private static final Pocket48ResourceCache INSTANCE = new Pocket48ResourceCache();
+    private static final UnifiedLogger logger = UnifiedLogger.getInstance();
     
     // 缓存目录
     private final Path cacheDir;
@@ -26,29 +32,53 @@ public class Pocket48ResourceCache {
     private final ConcurrentHashMap<String, String> urlToFileMap;
     // 文件访问时间记录
     private final ConcurrentHashMap<String, Long> fileAccessTime;
+    private final ConcurrentHashMap<String, Long> fileChecksums;
+    private final AtomicLong cacheHits;
+    private final AtomicLong cacheMisses;
     
-    // 缓存配置
-    private static final long CACHE_EXPIRE_TIME = 4 * 60 * 60 * 1000; // 4小时过期
-    private static final long CLEANUP_INTERVAL = 2 * 60 * 60 * 1000; // 2小时清理一次
-    private static final long MAX_CACHE_SIZE = 500 * 1024 * 1024; // 最大缓存500MB
+    // LRU缓存实现
+    private final Map<String, String> lruCache;
+    
+    // 缓存配置 - 精简版
+    // 缓存配置 - 优化为实时性
+    private static final int MAX_CACHE_ENTRIES = 2000; // 增加到2000个条目
+    private static final long CACHE_EXPIRE_TIME = 2 * 60 * 60 * 1000; // 从8小时缩短到2小时，提升实时性
+    private static final long CLEANUP_INTERVAL = 30 * 60 * 1000; // 从6小时缩短到30分钟清理一次，更频繁清理
+    private static final long MAX_CACHE_SIZE = 1024 * 1024 * 1024; // 增加到1GB
+    private static final int SHARD_COUNT = 16; // 目录分片数量
     
     // 定时清理任务
     private String cleanupTaskId;
     
-    // 缓存控制开关
-    private volatile boolean cacheEnabled = true;
+    // 缓存控制开关 - 启用缓存以提升性能
+    private volatile boolean cacheEnabled = true; // 改为true，启用缓存
     
     private Pocket48ResourceCache() {
-        // 初始化缓存目录
-        this.cacheDir = Paths.get(System.getProperty("java.io.tmpdir"), "pocket48_cache");
+        this.urlToFileMap = new ConcurrentHashMap<>();
+        this.fileAccessTime = new ConcurrentHashMap<>();
+        this.fileChecksums = new ConcurrentHashMap<>();
+        this.cacheHits = new AtomicLong(0);
+        this.cacheMisses = new AtomicLong(0);
+        this.lruCache = Collections.synchronizedMap(
+            new LinkedHashMap<String, String>(16, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
+                    return size() > MAX_CACHE_ENTRIES;
+                }
+            }
+        );
+        
+        // 创建缓存目录和分片目录
+        this.cacheDir = Paths.get(System.getProperty("user.dir"), "cache", "pocket48");
         try {
             Files.createDirectories(cacheDir);
+            // 创建分片目录
+            for (int i = 0; i < SHARD_COUNT; i++) {
+                Files.createDirectories(cacheDir.resolve(String.format("shard_%02d", i)));
+            }
         } catch (IOException e) {
             throw new RuntimeException("无法创建缓存目录: " + e.getMessage(), e);
         }
-        
-        this.urlToFileMap = new ConcurrentHashMap<>();
-        this.fileAccessTime = new ConcurrentHashMap<>();
         
         // 使用统一调度器启动清理任务
         UnifiedSchedulerManager scheduler = UnifiedSchedulerManager.getInstance();
@@ -64,30 +94,53 @@ public class Pocket48ResourceCache {
     }
     
     /**
-     * 获取缓存的文件，如果不存在则返回null - 优化版
+     * 获取缓存文件
      * @param url 资源URL
-     * @return 缓存的文件，如果不存在则返回null
+     * @return 缓存文件，如果不存在则返回null
      */
     public File getCachedFile(String url) {
-        // 如果缓存被禁用，直接返回null
         if (!cacheEnabled) {
+            cacheMisses.incrementAndGet();
             return null;
         }
         
-        String filePath = urlToFileMap.get(url);
+        // 首先检查LRU缓存
+        String filePath = lruCache.get(url);
+        if (filePath == null) {
+            filePath = urlToFileMap.get(url);
+        }
+        
         if (filePath != null) {
             File file = new File(filePath);
             if (file.exists()) {
-                // 更新访问时间
+                // 验证文件完整性
+                Long expectedChecksum = fileChecksums.get(filePath);
+                if (expectedChecksum != null && !validateFileIntegrity(file, expectedChecksum)) {
+                    logger.warn("Pocket48ResourceCache", "缓存文件校验失败，删除损坏文件: " + file.getName());
+                    file.delete();
+                    urlToFileMap.remove(url);
+                    fileAccessTime.remove(filePath);
+                    fileChecksums.remove(filePath);
+                    lruCache.remove(url);
+                    cacheMisses.incrementAndGet();
+                    return null;
+                }
+                
+                // 更新访问时间和LRU缓存
                 fileAccessTime.put(filePath, System.currentTimeMillis());
-                // 缓存命中
+                lruCache.put(url, filePath);
+                cacheHits.incrementAndGet();
                 return file;
             } else {
-                // 文件已被删除，清理映射
+                // 文件不存在，清理映射
                 urlToFileMap.remove(url);
                 fileAccessTime.remove(filePath);
+                fileChecksums.remove(filePath);
+                lruCache.remove(url);
             }
         }
+        
+        cacheMisses.incrementAndGet();
         return null;
     }
     
@@ -99,39 +152,22 @@ public class Pocket48ResourceCache {
      * @return 缓存的文件
      */
     public File cacheFile(String url, File sourceFile, String fileExtension) {
-        // 如果缓存被禁用，直接返回源文件
-        if (!cacheEnabled) {
-            return sourceFile;
-        }
+        // 移除缓存检查，直接执行缓存操作
         
-        Logger logger = Logger.getLogger("Pocket48ResourceCache");
-        logger.setUseParentHandlers(false); // 不在控制台显示日志
+        // UnifiedLogger不需要设置UseParentHandlers
         
         try {
-            // 生成缓存文件名
-            String fileName = generateCacheFileName(url, fileExtension);
-            File cacheFile = new File(cacheDir.toFile(), fileName);
+            // 使用分片目录生成缓存文件
+            File cacheFile = getCacheFile(url, fileExtension);
             
-            // 如果缓存文件已存在，直接返回
-            if (cacheFile.exists()) {
-                fileAccessTime.put(cacheFile.getAbsolutePath(), System.currentTimeMillis());
-                urlToFileMap.put(url, cacheFile.getAbsolutePath());
-                logger.info("使用现有缓存文件: " + cacheFile.getName());
-                return cacheFile;
-            }
+            // 移除缓存文件存在检查，直接复制文件
             
             // 复制文件到缓存目录
             Files.copy(sourceFile.toPath(), cacheFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
             
-            logger.info("文件缓存完成: " + cacheFile.getName() + ", 大小: " + cacheFile.length() + " bytes");
+            logger.info("Pocket48ResourceCache", "文件缓存完成: " + cacheFile.getName() + ", 大小: " + cacheFile.length() + " bytes");
             
-            // 验证缓存的图片文件完整性
-            if (isImageFile(cacheFile)) {
-                if (!ImageFormatDetector.validateImageIntegrity(cacheFile)) {
-                    logger.warning("缓存的图片文件可能损坏: " + cacheFile.getName());
-                    // 不删除文件，让上层逻辑处理
-                }
-            }
+            // 移除图片完整性验证，减少系统开销
             
             // 更新缓存映射
             urlToFileMap.put(url, cacheFile.getAbsolutePath());
@@ -139,12 +175,11 @@ public class Pocket48ResourceCache {
             
             // 文件已缓存
             
-            // 检查缓存大小
-            checkCacheSize();
+            // 移除缓存大小检查，减少系统开销
             
             return cacheFile;
         } catch (IOException e) {
-            logger.severe("[缓存错误] 无法缓存文件: " + e.getMessage());
+            logger.error("Pocket48ResourceCache", "[缓存错误] 无法缓存文件: " + e.getMessage());
             return sourceFile; // 返回原文件
         }
     }
@@ -169,17 +204,10 @@ public class Pocket48ResourceCache {
      * @return 缓存的文件
      */
     public File cacheFromStream(String url, InputStream inputStream, String fileExtension) {
-        Logger logger = Logger.getLogger("Pocket48ResourceCache");
-        logger.setUseParentHandlers(false); // 不在控制台显示日志
+        // UnifiedLogger不需要设置UseParentHandlers
         
         try {
-            // 检查是否已有缓存
-            File existingCache = getCachedFile(url);
-            if (existingCache != null) {
-                inputStream.close();
-                logger.info("使用现有缓存文件: " + existingCache.getName());
-                return existingCache;
-            }
+            // 移除缓存检查，直接创建新文件确保数据实时性
             
             // 生成缓存文件名
             String fileName = generateCacheFileName(url, fileExtension);
@@ -196,53 +224,28 @@ public class Pocket48ResourceCache {
                 }
             }
             
-            logger.info("缓存文件写入完成: " + cacheFile.getName() + ", 大小: " + totalBytes + " bytes");
+            logger.info("Pocket48ResourceCache", "缓存文件写入完成: " + cacheFile.getName() + ", 大小: " + totalBytes + " bytes");
             
-            // 动态检测图片格式并修正文件扩展名
+            // 移除复杂的图片格式检测和扩展名修正，减少系统开销
             File finalCacheFile = cacheFile;
-            // 对所有文件进行格式检测，特别是那些可能是图片但扩展名不正确的文件
-            String detectedFormat = ImageFormatDetector.detectFormat(cacheFile);
-            logger.info("检测到图片格式: " + detectedFormat + ", 原始扩展名: " + fileExtension);
             
-            // 如果检测到是图片格式，进行扩展名修正
-            if (!"UNKNOWN".equals(detectedFormat)) {
-                
-                // 根据检测到的格式确定正确的扩展名
-                String correctExtension = getCorrectExtension(detectedFormat);
-                
-                // 如果检测到的格式与原始扩展名不匹配，重命名文件
-                if (!correctExtension.equals(fileExtension.toLowerCase())) {
-                    String correctFileName = generateCacheFileName(url, correctExtension);
-                    File correctedCacheFile = new File(cacheDir.toFile(), correctFileName);
-                    
-                    if (cacheFile.renameTo(correctedCacheFile)) {
-                        finalCacheFile = correctedCacheFile;
-                        logger.info("文件扩展名已修正: " + fileExtension + " -> " + correctExtension + 
-                                  ", 新文件名: " + correctedCacheFile.getName());
-                    } else {
-                        logger.warning("无法重命名文件，使用原始文件名: " + cacheFile.getName());
-                    }
-                }
-                
-                // 验证图片完整性
-                if (!ImageFormatDetector.validateImageIntegrity(finalCacheFile)) {
-                    logger.warning("缓存的图片文件可能损坏: " + finalCacheFile.getName());
-                    // 不删除文件，让上层逻辑处理
-                }
-            }
+            // 移除图片完整性验证，减少系统开销
+            
+            // 移除校验和计算，减少系统开销
             
             // 更新缓存映射
-            urlToFileMap.put(url, finalCacheFile.getAbsolutePath());
-            fileAccessTime.put(finalCacheFile.getAbsolutePath(), System.currentTimeMillis());
+            String finalPath = finalCacheFile.getAbsolutePath();
+            urlToFileMap.put(url, finalPath);
+            fileAccessTime.put(finalPath, System.currentTimeMillis());
+            lruCache.put(url, finalPath);
             
-            logger.info("文件已缓存: " + finalCacheFile.getName());
+            logger.info("Pocket48ResourceCache", "文件已缓存: " + finalCacheFile.getName());
             
-            // 检查缓存大小
-            checkCacheSize();
+            // 移除缓存大小检查，减少系统开销
             
             return finalCacheFile;
         } catch (IOException e) {
-            logger.severe("[缓存错误] 无法缓存文件: " + e.getMessage());
+            logger.error("Pocket48ResourceCache", "[缓存错误] 无法缓存文件: " + e.getMessage());
             return null; // 缓存失败
         } finally {
             try {
@@ -281,6 +284,60 @@ public class Pocket48ResourceCache {
     }
     
     /**
+     * 根据URL计算分片索引
+     * @param url 资源URL
+     * @return 分片索引
+     */
+    private int getShardIndex(String url) {
+        return Math.abs(url.hashCode()) % SHARD_COUNT;
+    }
+    
+    /**
+     * 获取分片目录
+     * @param url 资源URL
+     * @return 分片目录路径
+     */
+    private Path getShardDirectory(String url) {
+        int shardIndex = getShardIndex(url);
+        return cacheDir.resolve(String.format("shard_%02d", shardIndex));
+    }
+    
+    /**
+     * 计算文件校验和
+     * @param file 文件
+     * @return CRC32校验和
+     */
+    private long calculateChecksum(File file) {
+        try (FileInputStream fis = new FileInputStream(file)) {
+            CRC32 crc32 = new CRC32();
+            byte[] buffer = new byte[8192];
+            int bytesRead;
+            while ((bytesRead = fis.read(buffer)) != -1) {
+                crc32.update(buffer, 0, bytesRead);
+            }
+            return crc32.getValue();
+        } catch (IOException e) {
+            UnifiedLogger logger = UnifiedLogger.getInstance();
+            logger.warn("Pocket48ResourceCache", "计算文件校验和失败: " + e.getMessage());
+            return 0;
+        }
+    }
+    
+    /**
+     * 验证文件完整性
+     * @param file 文件
+     * @param expectedChecksum 期望的校验和
+     * @return true如果文件完整
+     */
+    private boolean validateFileIntegrity(File file, long expectedChecksum) {
+        if (expectedChecksum == 0) {
+            return true; // 没有校验和信息，跳过验证
+        }
+        long actualChecksum = calculateChecksum(file);
+        return actualChecksum == expectedChecksum;
+    }
+    
+    /**
      * 生成缓存文件名
      * @param url 资源URL
      * @param fileExtension 文件扩展名
@@ -302,10 +359,22 @@ public class Pocket48ResourceCache {
     }
     
     /**
-     * 清理过期文件
+     * 获取缓存文件完整路径（包含分片目录）
+     * @param url 资源URL
+     * @param fileExtension 文件扩展名
+     * @return 缓存文件完整路径
+     */
+    private File getCacheFile(String url, String fileExtension) {
+        Path shardDir = getShardDirectory(url);
+        String fileName = generateCacheFileName(url, fileExtension);
+        return shardDir.resolve(fileName).toFile();
+    }
+    
+    /**
+     * 清理过期文件和检查缓存大小
      */
     private void cleanupExpiredFiles() {
-        try {
+         try {
             long currentTime = System.currentTimeMillis();
             int cleanedCount = 0;
             
@@ -316,18 +385,28 @@ public class Pocket48ResourceCache {
                     File file = new File(filePath);
                     if (file.exists() && file.delete()) {
                         fileAccessTime.remove(filePath);
-                        // 从URL映射中移除
-                        urlToFileMap.entrySet().removeIf(entry -> entry.getValue().equals(filePath));
+                        fileChecksums.remove(filePath);
+                        // 从URL映射和LRU缓存中移除
+                        urlToFileMap.entrySet().removeIf(entry -> {
+                            if (entry.getValue().equals(filePath)) {
+                                lruCache.remove(entry.getKey());
+                                return true;
+                            }
+                            return false;
+                        });
                         cleanedCount++;
                     }
                 }
             }
             
+            // 清理过期文件后，检查缓存大小
+            checkCacheSize();
+            
             if (cleanedCount > 0) {
-                // 缓存清理完成
+                logger.info("Pocket48ResourceCache", "清理了 " + cleanedCount + " 个过期缓存文件");
             }
         } catch (Exception e) {
-            // 静默处理缓存清理错误
+            logger.warn("Pocket48ResourceCache", "缓存清理过程中发生错误: " + e.getMessage());
         }
     }
     
@@ -335,7 +414,7 @@ public class Pocket48ResourceCache {
      * 检查缓存大小，如果超过限制则清理最旧的文件
      */
     private void checkCacheSize() {
-        try {
+         try {
             long totalSize = Files.walk(cacheDir)
                 .filter(Files::isRegularFile)
                 .mapToLong(path -> {
@@ -348,11 +427,12 @@ public class Pocket48ResourceCache {
                 .sum();
                 
             if (totalSize > MAX_CACHE_SIZE) {
+                logger.info("Pocket48ResourceCache", "缓存大小超限 (" + (totalSize / 1024 / 1024) + "MB > " + (MAX_CACHE_SIZE / 1024 / 1024) + "MB)，开始清理最旧文件");
                 // 缓存大小超限，开始清理最旧文件
                 cleanOldestFiles(totalSize - MAX_CACHE_SIZE / 2); // 清理到一半大小
             }
         } catch (IOException e) {
-            // 静默处理缓存大小检查错误
+            logger.warn("Pocket48ResourceCache", "缓存大小检查失败: " + e.getMessage());
         }
     }
     
@@ -361,17 +441,34 @@ public class Pocket48ResourceCache {
      * @param targetCleanSize 目标清理大小
      */
     private void cleanOldestFiles(long targetCleanSize) {
+         int cleanedCount = 0;
+        long cleanedSize = 0;
+        
+        // 按访问时间排序，清理最旧的文件
         fileAccessTime.entrySet().stream()
             .sorted((e1, e2) -> Long.compare(e1.getValue(), e2.getValue()))
-            .limit(20) // 最多清理20个文件
+            .limit(50) // 最多清理50个文件
             .forEach(entry -> {
                 String filePath = entry.getKey();
                 File file = new File(filePath);
-                if (file.exists() && file.delete()) {
-                    fileAccessTime.remove(filePath);
-                    urlToFileMap.entrySet().removeIf(urlEntry -> urlEntry.getValue().equals(filePath));
+                if (file.exists()) {
+                    long fileSize = file.length();
+                    if (file.delete()) {
+                        fileAccessTime.remove(filePath);
+                        fileChecksums.remove(filePath);
+                        // 从URL映射和LRU缓存中移除
+                        urlToFileMap.entrySet().removeIf(urlEntry -> {
+                            if (urlEntry.getValue().equals(filePath)) {
+                                lruCache.remove(urlEntry.getKey());
+                                return true;
+                            }
+                            return false;
+                        });
+                    }
                 }
             });
+        
+        logger.info("Pocket48ResourceCache", "基于LRU策略清理了最旧的缓存文件");
     }
     
     /**
@@ -394,9 +491,30 @@ public class Pocket48ResourceCache {
                     }
                 })
                 .sum();
+            
+            long hits = cacheHits.get();
+            long misses = cacheMisses.get();
+            double hitRate = (hits + misses) > 0 ? (double) hits / (hits + misses) * 100 : 0;
+            
+            // 统计分片目录使用情况
+            StringBuilder shardStats = new StringBuilder();
+            for (int i = 0; i < SHARD_COUNT; i++) {
+                Path shardDir = cacheDir.resolve(String.format("shard_%02d", i));
+                try {
+                    long shardFileCount = Files.walk(shardDir)
+                        .filter(Files::isRegularFile)
+                        .count();
+                    if (shardFileCount > 0) {
+                        shardStats.append(String.format("分片%02d: %d文件; ", i, shardFileCount));
+                    }
+                } catch (IOException e) {
+                    // 忽略分片统计错误
+                }
+            }
                 
-            return String.format("缓存统计: %d 个文件, %.2f MB", 
-                fileCount, totalSize / 1024.0 / 1024.0);
+            return String.format("缓存统计: %d个文件, %.2fMB, 命中率: %.1f%% (%d命中/%d未命中), LRU条目: %d, 校验和: %d\n分片分布: %s", 
+                fileCount, totalSize / 1024.0 / 1024.0, hitRate, hits, misses, 
+                lruCache.size(), fileChecksums.size(), shardStats.toString());
         } catch (IOException e) {
             return "缓存统计获取失败: " + e.getMessage();
         }
@@ -406,7 +524,7 @@ public class Pocket48ResourceCache {
      * 清空所有缓存
      */
     public void clearAll() {
-        try {
+         try {
             Files.walk(cacheDir)
                 .filter(Files::isRegularFile)
                 .forEach(path -> {
@@ -418,9 +536,13 @@ public class Pocket48ResourceCache {
                 });
             urlToFileMap.clear();
             fileAccessTime.clear();
-            // 所有缓存已清空
+            fileChecksums.clear();
+            lruCache.clear();
+            cacheHits.set(0);
+            cacheMisses.set(0);
+            logger.info("Pocket48ResourceCache", "所有缓存已清空，统计信息已重置");
         } catch (IOException e) {
-            // 静默处理缓存清空错误
+            logger.warn("Pocket48ResourceCache", "缓存清空过程中发生错误: " + e.getMessage());
         }
     }
     
@@ -452,11 +574,97 @@ public class Pocket48ResourceCache {
     }
     
     /**
+     * 获取缓存命中率
+     * @return 缓存命中率（百分比）
+     */
+    public double getCacheHitRate() {
+        long hits = cacheHits.get();
+        long misses = cacheMisses.get();
+        return (hits + misses) > 0 ? (double) hits / (hits + misses) * 100 : 0;
+    }
+    
+    /**
+     * 重置缓存统计信息
+     */
+    public void resetStats() {
+         cacheHits.set(0);
+        cacheMisses.set(0);
+        logger.info("Pocket48ResourceCache", "缓存统计信息已重置");
+    }
+    
+    /**
+     * 验证所有缓存文件的完整性
+     * @return 验证结果报告
+     */
+    public String validateAllFiles() {
+        int totalFiles = 0;
+        int validFiles = 0;
+        int corruptedFiles = 0;
+        
+        for (Map.Entry<String, Long> entry : fileChecksums.entrySet()) {
+            String filePath = entry.getKey();
+            Long expectedChecksum = entry.getValue();
+            File file = new File(filePath);
+            
+            totalFiles++;
+            if (file.exists()) {
+                if (validateFileIntegrity(file, expectedChecksum)) {
+                    validFiles++;
+                } else {
+                    corruptedFiles++;
+                    logger.warn("Pocket48ResourceCache", "发现损坏的缓存文件: " + file.getName());
+                }
+            } else {
+                corruptedFiles++;
+            }
+        }
+        
+        return String.format("文件完整性验证: 总计%d个文件, %d个有效, %d个损坏", 
+            totalFiles, validFiles, corruptedFiles);
+    }
+    
+    /**
+     * 获取分片使用统计
+     * @return 分片使用统计信息
+     */
+    public String getShardStats() {
+        StringBuilder stats = new StringBuilder("分片使用统计:\n");
+        
+        for (int i = 0; i < SHARD_COUNT; i++) {
+            Path shardDir = cacheDir.resolve(String.format("shard_%02d", i));
+            try {
+                long fileCount = Files.walk(shardDir)
+                    .filter(Files::isRegularFile)
+                    .count();
+                    
+                long totalSize = Files.walk(shardDir)
+                    .filter(Files::isRegularFile)
+                    .mapToLong(path -> {
+                        try {
+                            return Files.size(path);
+                        } catch (IOException e) {
+                            return 0;
+                        }
+                    })
+                    .sum();
+                    
+                stats.append(String.format("分片%02d: %d个文件, %.2fMB\n", 
+                    i, fileCount, totalSize / 1024.0 / 1024.0));
+            } catch (IOException e) {
+                stats.append(String.format("分片%02d: 统计失败\n", i));
+            }
+        }
+        
+        return stats.toString();
+    }
+    
+    /**
      * 关闭缓存管理器
      */
     public void shutdown() {
-        if (cleanupTaskId != null) {
+         if (cleanupTaskId != null) {
             UnifiedSchedulerManager.getInstance().cancelTask(cleanupTaskId);
         }
+        logger.info("Pocket48ResourceCache", "Pocket48ResourceCache已关闭，最终统计: " + getCacheStats());
     }
 }

@@ -1,5 +1,7 @@
 package net.luffy.util;
 
+
+
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.Map;
@@ -10,6 +12,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 用于优化CPU占用，避免多个独立调度器同时运行
  */
 public class UnifiedSchedulerManager {
+    private static final UnifiedLogger logger = UnifiedLogger.getInstance();
     private static final UnifiedSchedulerManager INSTANCE = new UnifiedSchedulerManager();
     
     // 全局调度器：使用单个调度器管理所有定时任务
@@ -37,36 +40,76 @@ public class UnifiedSchedulerManager {
     }
     
     /**
-     * 调度清理任务（低频率）
+     * 任务类型枚举
+     */
+    public enum TaskType {
+        CLEANUP("cleanup", "清理任务"),
+        MONITOR("monitor", "监控任务"),
+        BATCH("batch", "批量任务");
+        
+        private final String prefix;
+        private final String description;
+        
+        TaskType(String prefix, String description) {
+            this.prefix = prefix;
+            this.description = description;
+        }
+        
+        public String getPrefix() {
+            return prefix;
+        }
+        
+        public String getDescription() {
+            return description;
+        }
+    }
+    
+    /**
+     * 统一的任务调度方法
+     * @param taskType 任务类型
+     * @param task 要执行的任务
+     * @param initialDelay 初始延迟（毫秒）
+     * @param period 执行周期（毫秒）
+     * @return 任务ID
+     */
+    public String scheduleTask(TaskType taskType, Runnable task, long initialDelay, long period) {
+        return scheduleTask(taskType.getPrefix(), wrapTask(task, taskType), initialDelay, period);
+    }
+    
+    /**
+     * 调度清理任务（低频率）- 兼容性方法
      * @param task 清理任务
      * @param initialDelay 初始延迟（毫秒）
      * @param period 执行周期（毫秒）
      * @return 任务ID
      */
+    @Deprecated
     public String scheduleCleanupTask(Runnable task, long initialDelay, long period) {
-        return scheduleTask("cleanup", wrapTask(task), initialDelay, period);
+        return scheduleTask(TaskType.CLEANUP, task, initialDelay, period);
     }
     
     /**
-     * 调度监控任务（中频率）
+     * 调度监控任务（中频率）- 兼容性方法
      * @param task 监控任务
      * @param initialDelay 初始延迟（毫秒）
      * @param period 执行周期（毫秒）
      * @return 任务ID
      */
+    @Deprecated
     public String scheduleMonitorTask(Runnable task, long initialDelay, long period) {
-        return scheduleTask("monitor", wrapTask(task), initialDelay, period);
+        return scheduleTask(TaskType.MONITOR, task, initialDelay, period);
     }
     
     /**
-     * 调度批量任务（高频率）
+     * 调度批量任务（高频率）- 兼容性方法
      * @param task 批量任务
      * @param initialDelay 初始延迟（毫秒）
      * @param period 执行周期（毫秒）
      * @return 任务ID
      */
+    @Deprecated
     public String scheduleBatchTask(Runnable task, long initialDelay, long period) {
-        return scheduleTask("batch", wrapTask(task), initialDelay, period);
+        return scheduleTask(TaskType.BATCH, task, initialDelay, period);
     }
     
     /**
@@ -79,7 +122,7 @@ public class UnifiedSchedulerManager {
      */
     private String scheduleTask(String prefix, Runnable task, long initialDelay, long period) {
         if (scheduledTasks.size() >= MAX_CONCURRENT_TASKS) {
-            System.err.println("[调度器警告] 已达到最大并发任务数限制: " + MAX_CONCURRENT_TASKS);
+            logger.warn("UnifiedSchedulerManager", "[调度器警告] 已达到最大并发任务数限制: " + MAX_CONCURRENT_TASKS);
             return null;
         }
         
@@ -94,22 +137,32 @@ public class UnifiedSchedulerManager {
     /**
      * 包装任务，添加异常处理和性能监控
      * @param task 原始任务
+     * @param taskType 任务类型
      * @return 包装后的任务
      */
-    private Runnable wrapTask(Runnable task) {
+    private Runnable wrapTask(Runnable task, TaskType taskType) {
         return () -> {
             long startTime = System.currentTimeMillis();
             try {
                 task.run();
             } catch (Exception e) {
-                System.err.println("[调度器错误] 任务执行异常: " + e.getMessage());
+                logger.error("UnifiedSchedulerManager", "[调度器错误] " + taskType.getDescription() + "执行异常: " + e.getMessage());
             } finally {
                 long duration = System.currentTimeMillis() - startTime;
                 if (duration > 1000) { // 超过1秒的任务记录警告
-                    // 任务执行耗时过长
+                    logger.warn("UnifiedSchedulerManager", "[调度器警告] " + taskType.getDescription() + "执行耗时: " + duration + "ms");
                 }
             }
         };
+    }
+    
+    /**
+     * 包装任务，添加异常处理和性能监控（兼容性方法）
+     * @param task 原始任务
+     * @return 包装后的任务
+     */
+    private Runnable wrapTask(Runnable task) {
+        return wrapTask(task, TaskType.MONITOR); // 默认为监控任务类型
     }
     
     /**
@@ -154,7 +207,7 @@ public class UnifiedSchedulerManager {
             if (!globalScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
                 globalScheduler.shutdownNow();
                 if (!globalScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
-                    System.err.println("[调度器错误] 无法正常关闭调度器");
+                    logger.error("UnifiedSchedulerManager", "[调度器错误] 无法正常关闭调度器");
                 }
             }
         } catch (InterruptedException e) {
@@ -176,6 +229,14 @@ public class UnifiedSchedulerManager {
      * @return 执行器
      */
     public Executor getExecutor() {
+        return globalScheduler;
+    }
+    
+    /**
+     * 获取底层调度执行器（用于延迟任务）
+     * @return 调度执行器
+     */
+    public ScheduledExecutorService getScheduledExecutor() {
         return globalScheduler;
     }
     

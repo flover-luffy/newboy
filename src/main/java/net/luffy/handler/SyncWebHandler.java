@@ -1,6 +1,7 @@
 package net.luffy.handler;
 
 import net.luffy.Newboy;
+import net.luffy.util.UnifiedLogger;
 import net.luffy.util.Properties;
 import net.luffy.util.UnifiedHttpClient;
 
@@ -60,7 +61,8 @@ public class SyncWebHandler {
      */
     protected String get(String url, Map<String, String> headers) {
         try {
-            return UnifiedHttpClient.getInstance().get(url, headers);
+            UnifiedHttpClient.HttpResponse response = UnifiedHttpClient.getInstance().get(url, headers);
+            return response.getBody();
         } catch (Exception e) {
             throw new RuntimeException("GET请求失败: " + e.getMessage(), e);
         }
@@ -111,9 +113,9 @@ public class SyncWebHandler {
     protected void logError(String message, Throwable throwable) {
         // 使用Mirai日志系统而非控制台输出
         if (throwable != null) {
-            Newboy.INSTANCE.getLogger().error(message, throwable);
+            UnifiedLogger.getInstance().error("SyncWebHandler", message, throwable);
         } else {
-            Newboy.INSTANCE.getLogger().error(message);
+            UnifiedLogger.getInstance().error("SyncWebHandler", message);
         }
     }
 
