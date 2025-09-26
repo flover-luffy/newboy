@@ -9,7 +9,6 @@ import net.luffy.handler.Pocket48Handler;
 import net.luffy.Newboy;
 import net.luffy.util.AdaptiveThreadPoolManager;
 import net.luffy.util.StringMatchUtils;
-// OkHttp imports removed - migrated to UnifiedHttpClient
 
 import java.io.File;
 import java.io.IOException;
@@ -63,6 +62,51 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
     };
     
     /**
+     * 将文件添加到缓存
+     * @param cacheKey 缓存键
+     * @param file 文件
+     * @param fileExtension 文件扩展名
+     */
+    private void addToCache(String cacheKey, File file, String fileExtension) {
+         try {
+             Pocket48ResourceCache cache = Pocket48ResourceCache.getInstance();
+             cache.cacheFile(cacheKey, file, fileExtension);
+             logger.debug("Pocket48ResourceHandler", "文件已添加到缓存: " + cacheKey);
+         } catch (Exception e) {
+             logger.warn("Pocket48ResourceHandler", "添加到缓存失败: " + e.getMessage());
+         }
+     }
+    
+    /**
+     * 生成缓存键
+     * @param url 资源URL
+     * @return 缓存键
+     */
+    private String generateCacheKey(String url) {
+        if (url == null || url.isEmpty()) {
+            return "";
+        }
+        // 使用URL的哈希值作为缓存键
+        return String.valueOf(url.hashCode());
+    }
+    
+    /**
+     * 从缓存中获取文件
+     * @param cacheKey 缓存键
+     * @param fileExtension 文件扩展名
+     * @return 缓存的文件，如果不存在则返回null
+     */
+    private File getCachedFile(String cacheKey, String fileExtension) {
+        try {
+            Pocket48ResourceCache cache = Pocket48ResourceCache.getInstance();
+            return cache.getCachedFile(cacheKey);
+        } catch (Exception e) {
+            logger.warn("Pocket48ResourceHandler", "获取缓存文件失败: " + e.getMessage());
+            return null;
+        }
+    }
+    
+    /**
      * 获取口袋48资源的输入流（带缓存支持）
      * 添加必要的请求头以确保资源能够正常访问
      * 
@@ -88,6 +132,44 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
         } catch (IOException e) {
             throw new RuntimeException("获取口袋48资源流失败: " + e.getMessage(), e);
         }
+    }
+    
+    /**
+     * 获取口袋48资源的输入流（带重试机制）
+     * 
+     * @param url 资源URL
+     * @param maxRetries 最大重试次数
+     * @return 资源输入流
+     * @throws RuntimeException 当请求失败时抛出
+     */
+    public InputStream getPocket48InputStreamWithRetry(String url, int maxRetries) {
+        int retries = 0;
+        while (retries <= maxRetries) {
+            try {
+                return getPocket48InputStream(url);
+            } catch (Exception e) {
+                retries++;
+                if (retries > maxRetries) {
+                    logger.error("Pocket48ResourceHandler", "获取资源流失败，已达到最大重试次数: " + url, e);
+                    metricsCollector.recordError("stream_max_retries_reached");
+                    throw new RuntimeException("获取口袋48资源流失败，已达到最大重试次数: " + e.getMessage(), e);
+                }
+                
+                // 指数退避重试
+                long delayMs = 1000 * (long)Math.pow(2, retries - 1);
+                logger.warn("Pocket48ResourceHandler", "获取资源流失败，将在" + delayMs + "ms后重试(" + retries + "/" + maxRetries + "): " + url);
+                
+                try {
+                    Thread.sleep(delayMs);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException("获取口袋48资源流被中断", ie);
+                }
+            }
+        }
+        
+        // 这里不应该到达，但为了编译通过
+        throw new RuntimeException("获取口袋48资源流失败，未知错误");
     }
     
     /**
@@ -463,389 +545,63 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
     }
     
     /**
-     * 获取口袋48资源输入流（带重试机制）- 异步版本
-     * 
-     * @param url 资源URL
-     * @param maxRetries 最大重试次数
-     * @return CompletableFuture<InputStream> 异步输入流
-     */
-    public java.util.concurrent.CompletableFuture<InputStream> getPocket48InputStreamWithRetryAsync(String url, int maxRetries) {
-        return getPocket48InputStreamWithRetryAsyncInternal(url, maxRetries, 0, System.currentTimeMillis(), null);
-    }
-    
-    /**
-     * 获取口袋48资源输入流（带动态重试机制）- 异步版本
-     * 
-     * @param url 资源URL
-     * @return CompletableFuture<InputStream> 异步输入流
-     */
-    public java.util.concurrent.CompletableFuture<InputStream> getPocket48InputStreamWithDynamicRetryAsync(String url) {
-        net.luffy.util.DynamicTimeoutManager timeoutManager = net.luffy.util.DynamicTimeoutManager.getInstance();
-        int dynamicMaxRetries = timeoutManager.getDynamicRetries(3);
-        return getPocket48InputStreamWithRetryAsyncInternal(url, dynamicMaxRetries, 0, System.currentTimeMillis(), null);
-    }
-    
-    /**
-     * 获取口袋48资源输入流（带重试机制）- 同步版本（保持向后兼容）
-     * 
-     * @param url 资源URL
-     * @param maxRetries 最大重试次数
-     * @return 输入流
-     * @throws RuntimeException 当获取失败时抛出
-     */
-    public InputStream getPocket48InputStreamWithRetry(String url, int maxRetries) {
-        try {
-            return getPocket48InputStreamWithRetryAsync(url, maxRetries).get(30, java.util.concurrent.TimeUnit.SECONDS);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to get input stream: " + e.getMessage(), e);
-        }
-    }
-    
-    /**
-     * 获取口袋48资源输入流（带动态重试机制）- 同步版本
-     * 
-     * @param url 资源URL
-     * @return 输入流
-     * @throws RuntimeException 当获取失败时抛出
-     */
-    public InputStream getPocket48InputStreamWithDynamicRetry(String url) {
-        try {
-            net.luffy.util.DynamicTimeoutManager timeoutManager = net.luffy.util.DynamicTimeoutManager.getInstance();
-            net.luffy.util.DynamicTimeoutManager.Pocket48TimeoutConfig config = timeoutManager.getPocket48DynamicConfig();
-            
-            return getPocket48InputStreamWithDynamicRetryAsync(url).get(config.getReadTimeout(), java.util.concurrent.TimeUnit.MILLISECONDS);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to get input stream with dynamic retry: " + e.getMessage(), e);
-        }
-    }
-    
-    /**
-     * 异步重试获取输入流的内部实现
-     */
-    private java.util.concurrent.CompletableFuture<InputStream> getPocket48InputStreamWithRetryAsyncInternal(
-            String url, int maxRetries, int attempt, long startTime, Exception lastException) {
-        
-        return java.util.concurrent.CompletableFuture.supplyAsync(() -> {
-            try {
-                // 使用动态超时管理器获取超时时间
-                net.luffy.util.DynamicTimeoutManager timeoutManager = net.luffy.util.DynamicTimeoutManager.getInstance();
-                
-                // 快速失败检查
-                if (timeoutManager.shouldFastFail()) {
-                    logger.warn("Pocket48ResourceHandler", "URL标记为快速失败: " + url);
-                    metricsCollector.recordError("fast_fail");
-                    throw new RuntimeException("URL marked for fast fail: " + url);
-                }
-                
-                logger.debug("Pocket48ResourceHandler", "尝试获取资源流，第" + (attempt + 1) + "次: " + url);
-                InputStream stream = getPocket48InputStream(url);
-                
-                // 成功时记录
-                long duration = System.currentTimeMillis() - startTime;
-                metricsCollector.recordDownloadSuccess(duration);
-                metricsCollector.recordLatency(duration);
-                logger.debug("Pocket48ResourceHandler", "成功获取资源流: " + url + ", 耗时: " + duration + "ms");
-                
-                return stream;
-                
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        }).handle((result, throwable) -> {
-            if (throwable == null) {
-                return java.util.concurrent.CompletableFuture.completedFuture(result);
-            }
-            
-            Exception currentException = (Exception) throwable.getCause();
-            
-            // 记录失败
-            metricsCollector.recordRetry();
-            
-            // 分析异常类型，判断是否应该重试
-            boolean shouldRetry = shouldRetryOnException(currentException, attempt, maxRetries);
-            
-            if (!shouldRetry) {
-                logger.warn("Pocket48ResourceHandler", "遇到不可重试的错误，停止重试: " + url + ", 错误: " + currentException.getMessage());
-                metricsCollector.recordError("non_retryable_error");
-                return java.util.concurrent.CompletableFuture.<InputStream>failedFuture(currentException);
-            }
-            
-            if (attempt < maxRetries) {
-                // 使用动态超时管理器获取动态重试延迟
-                net.luffy.util.DynamicTimeoutManager timeoutManager = net.luffy.util.DynamicTimeoutManager.getInstance();
-                long backoffMs = timeoutManager.getDynamicRetryDelay(attempt);
-                
-                logger.debug("Pocket48ResourceHandler", "第" + (attempt + 1) + "次尝试失败，" + backoffMs + "ms后重试: " + url + ", 错误: " + currentException.getMessage());
-                
-                // 异步延迟后递归重试
-                return unifiedDelayService.delayAsync((int)backoffMs).thenCompose(v -> 
-                    getPocket48InputStreamWithRetryAsyncInternal(url, maxRetries, attempt + 1, startTime, currentException)
-                );
-            } else {
-                logger.error("Pocket48ResourceHandler", "达到最大重试次数，获取资源流失败: " + url, currentException);
-                
-                metricsCollector.recordError("max_retries_exceeded");
-                long totalDuration = System.currentTimeMillis() - startTime;
-                metricsCollector.recordLatency(totalDuration);
-                
-                RuntimeException finalException = new RuntimeException(
-                    "Failed to get input stream after " + (maxRetries + 1) + " attempts, total time: " + totalDuration + "ms", 
-                    currentException
-                );
-                return java.util.concurrent.CompletableFuture.<InputStream>failedFuture(finalException);
-            }
-        }).thenCompose(future -> future);
-    }
-    
-    /**
-     * 判断异常是否应该重试
-     * @param exception 异常
-     * @param attempt 当前尝试次数
-     * @param maxRetries 最大重试次数
-     * @return 是否应该重试
-     */
-    private boolean shouldRetryOnException(Exception exception, int attempt, int maxRetries) {
-        if (attempt >= maxRetries) {
-            return false;
-        }
-        
-        String message = exception.getMessage();
-        if (message == null) {
-            message = "";
-        }
-        
-        // 使用StringMatchUtils优化错误消息检查
-        if (StringMatchUtils.isClientError(message)) {
-            metricsCollector.recordError("client_error_no_retry");
-            return false;
-        }
-        
-        if (StringMatchUtils.isRetryableError(message)) {
-            metricsCollector.recordError("retryable_error");
-            return true;
-        }
-        
-        // 默认情况下重试（保守策略）
-        metricsCollector.recordError("unknown_error_retry");
-        return true;
-    }
-    
-    /**
-     * 下载口袋48资源到本地临时文件（带缓存支持）- 异步版本
-     * 
-     * @param url 资源URL
-     * @param fileExtension 文件扩展名（如 ".mp4", ".jpg"）
-     * @return CompletableFuture<File> 异步本地临时文件
-     */
-    public java.util.concurrent.CompletableFuture<File> downloadToTempFileAsync(String url, String fileExtension) {
-        // 异步检查缓存，避免阻塞主线程
-        return java.util.concurrent.CompletableFuture.supplyAsync(() -> {
-            Pocket48ResourceCache cache = Pocket48ResourceCache.getInstance();
-            return cache.getCachedFile(url);
-        }, THREAD_POOL_MANAGER.getExecutorService()).thenCompose(cachedFile -> {
-            if (cachedFile != null) {
-                return java.util.concurrent.CompletableFuture.completedFuture(cachedFile);
-            }
-            
-            // 缓存未命中，异步下载文件
-            return downloadToTempFileWithRetryAsync(url, fileExtension, 3);
-        }).orTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
-        .exceptionally(throwable -> {
-            if (throwable instanceof java.util.concurrent.TimeoutException) {
-                throw new RuntimeException("下载超时: " + url, throwable);
-            } else {
-                throw new RuntimeException("下载失败: " + throwable.getMessage(), throwable);
-            }
-        });
-    }
-    
-    /**
-     * 下载口袋48资源到本地临时文件（带动态重试和缓存支持）- 异步版本
-     * 
-     * @param url 资源URL
-     * @param fileExtension 文件扩展名（如 ".mp4", ".jpg"）
-     * @return CompletableFuture<File> 异步本地临时文件
-     */
-    public java.util.concurrent.CompletableFuture<File> downloadToTempFileWithDynamicRetryAsync(String url, String fileExtension) {
-        // 异步检查缓存，避免阻塞主线程
-        return java.util.concurrent.CompletableFuture.supplyAsync(() -> {
-            Pocket48ResourceCache cache = Pocket48ResourceCache.getInstance();
-            return cache.getCachedFile(url);
-        }, THREAD_POOL_MANAGER.getExecutorService()).thenCompose(cachedFile -> {
-            if (cachedFile != null) {
-                return java.util.concurrent.CompletableFuture.completedFuture(cachedFile);
-            }
-            
-            // 缓存未命中，使用动态重试次数异步下载文件
-            net.luffy.util.DynamicTimeoutManager timeoutManager = net.luffy.util.DynamicTimeoutManager.getInstance();
-            int dynamicMaxRetries = timeoutManager.getDynamicRetries(5); // 增加默认重试次数到5次
-            net.luffy.util.DynamicTimeoutManager.Pocket48TimeoutConfig config = timeoutManager.getPocket48DynamicConfig();
-            
-            return downloadToTempFileWithRetryAsync(url, fileExtension, dynamicMaxRetries);
-        }).orTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
-        .exceptionally(throwable -> {
-            if (throwable instanceof java.util.concurrent.TimeoutException) {
-                throw new RuntimeException("下载超时: " + url, throwable);
-            } else {
-                throw new RuntimeException("下载失败: " + throwable.getMessage(), throwable);
-            }
-        });
-    }
-    
-    /**
-     * 下载口袋48资源到本地临时文件（带缓存支持）- 同步版本（保持向后兼容）
-     * 
-     * @param url 资源URL
-     * @param fileExtension 文件扩展名（如 ".mp4", ".jpg"）
-     * @return 本地临时文件
-     * @throws RuntimeException 当下载失败时抛出
-     */
-    public File downloadToTempFile(String url, String fileExtension) {
-        try {
-            return downloadToTempFileAsync(url, fileExtension).get(60, java.util.concurrent.TimeUnit.SECONDS);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to download file: " + e.getMessage(), e);
-        }
-    }
-    
-    /**
-     * 下载口袋48资源到本地临时文件（带动态重试和缓存支持）- 同步版本
-     * 
-     * @param url 资源URL
-     * @param fileExtension 文件扩展名（如 ".mp4", ".jpg"）
-     * @return 本地临时文件
-     * @throws RuntimeException 当下载失败时抛出
-     */
-    public File downloadToTempFileWithDynamicRetry(String url, String fileExtension) {
-        try {
-            net.luffy.util.DynamicTimeoutManager timeoutManager = net.luffy.util.DynamicTimeoutManager.getInstance();
-            net.luffy.util.DynamicTimeoutManager.Pocket48TimeoutConfig config = timeoutManager.getPocket48DynamicConfig();
-            
-            return downloadToTempFileWithDynamicRetryAsync(url, fileExtension).get(config.getReadTimeout(), java.util.concurrent.TimeUnit.MILLISECONDS);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to download file with dynamic retry: " + e.getMessage(), e);
-        }
-    }
-    
-    /**
-     * 带重试机制下载口袋48资源到本地临时文件 - 异步版本
-     * 
-     * @param url 资源URL
-     * @param fileExtension 文件扩展名（如 ".mp4", ".jpg"）
-     * @param maxRetries 最大重试次数
-     * @return CompletableFuture<File> 异步本地临时文件
-     */
-    public java.util.concurrent.CompletableFuture<File> downloadToTempFileWithRetryAsync(String url, String fileExtension, int maxRetries) {
-        return downloadToTempFileWithRetryAsyncInternal(url, fileExtension, maxRetries, 0, null);
-    }
-    
-    /**
-     * 带重试机制下载口袋48资源到本地临时文件 - 同步版本（保持向后兼容）
-     * 
-     * @param url 资源URL
-     * @param fileExtension 文件扩展名（如 ".mp4", ".jpg"）
-     * @param maxRetries 最大重试次数
-     * @return 本地临时文件
-     * @throws RuntimeException 当下载失败时抛出
-     */
-    public File downloadToTempFileWithRetry(String url, String fileExtension, int maxRetries) {
-        try {
-            return downloadToTempFileWithRetryAsync(url, fileExtension, maxRetries).get(60, java.util.concurrent.TimeUnit.SECONDS);
-        } catch (Exception e) {
-            throw new RuntimeException("下载重试 " + maxRetries + " 次后仍然失败: " + e.getMessage(), e);
-        }
-    }
-    
-    /**
-     * 异步重试下载的内部实现
-     */
-    private java.util.concurrent.CompletableFuture<File> downloadToTempFileWithRetryAsyncInternal(
-            String url, String fileExtension, int maxRetries, int attempt, Exception lastException) {
-        
-        return downloadToTempFileInternalAsync(url, fileExtension).handle((result, throwable) -> {
-            if (throwable == null) {
-                return java.util.concurrent.CompletableFuture.completedFuture(result);
-            }
-            
-            Exception currentException = (Exception) throwable.getCause();
-            
-            if (attempt < maxRetries) {
-                // 使用动态超时管理器获取动态重试延迟
-                net.luffy.util.DynamicTimeoutManager timeoutManager = net.luffy.util.DynamicTimeoutManager.getInstance();
-                long waitTime = timeoutManager.getDynamicRetryDelay(attempt);
-                
-                logger.debug("Pocket48ResourceHandler", "第" + (attempt + 1) + "次下载失败，" + waitTime + "ms后重试: " + url + ", 错误: " + currentException.getMessage());
-                
-                // 记录重试指标
-                metricsCollector.recordRetryAttempt("download", attempt + 1, currentException.getClass().getSimpleName());
-                
-                // 异步延迟后递归重试
-                return unifiedDelayService.delayAsync((int)waitTime).thenCompose(v -> 
-                    downloadToTempFileWithRetryAsyncInternal(url, fileExtension, maxRetries, attempt + 1, currentException)
-                );
-            } else {
-                RuntimeException finalException = new RuntimeException(
-                    "下载重试 " + maxRetries + " 次后仍然失败: " + currentException.getMessage(), 
-                    currentException
-                );
-                return java.util.concurrent.CompletableFuture.<File>failedFuture(finalException);
-            }
-        }).thenCompose(future -> future);
-    }
-    
-
-    
-    /**
-     * 内部下载方法（集成缓存，增强版）- 异步版本
-     * 
-     * @param url 资源URL
-     * @param fileExtension 文件扩展名
-     * @return CompletableFuture<File> 异步本地临时文件
-     */
-    private java.util.concurrent.CompletableFuture<File> downloadToTempFileInternalAsync(String url, String fileExtension) {
-        // 使用动态超时配置
-        net.luffy.util.DynamicTimeoutManager timeoutManager = net.luffy.util.DynamicTimeoutManager.getInstance();
-        net.luffy.util.DynamicTimeoutManager.Pocket48TimeoutConfig config = timeoutManager.getPocket48DynamicConfig();
-        
-        // 检查URL是否有效
-        if (url == null || url.trim().isEmpty()) {
-            return java.util.concurrent.CompletableFuture.failedFuture(
-                new IllegalArgumentException("无效的URL: " + url)
-            );
-        }
-        
-        // 增加超时时间处理大型媒体文件
-        int adjustedTimeout = url.contains("nosdn.yunxinsvr.com") ? config.getReadTimeout() * 2 : config.getReadTimeout();
-        
-        return java.util.concurrent.CompletableFuture.supplyAsync(() -> {
-            try {
-                logger.debug("Pocket48ResourceHandler", "开始下载文件: " + url);
-                return downloadToTempFileInternal(url, fileExtension);
-            } catch (Exception e) {
-                logger.warn("Pocket48ResourceHandler", "下载内部错误: " + e.getMessage() + ", URL: " + url);
-                throw new RuntimeException("下载内部错误: " + e.getMessage() + ", URL: " + url, e);
-            }
-        }, THREAD_POOL_MANAGER.getExecutorService()).orTimeout(adjustedTimeout, java.util.concurrent.TimeUnit.MILLISECONDS)
-        .exceptionally(throwable -> {
-            if (throwable instanceof java.util.concurrent.TimeoutException) {
-                logger.warn("Pocket48ResourceHandler", "下载超时(" + adjustedTimeout + "ms): " + url);
-                throw new RuntimeException("单次下载超时(" + adjustedTimeout + "ms): " + url, throwable);
-            } else {
-                logger.warn("Pocket48ResourceHandler", "下载失败: " + throwable.getMessage() + ", URL: " + url);
-                throw new RuntimeException(throwable.getMessage(), throwable);
-            }
-        });
-    }
-    
-    /**
-     * 内部下载方法（集成缓存，增强版）- 同步版本（保持向后兼容）
-     * 
-     * @param url 资源URL
-     * @param fileExtension 文件扩展名
-     * @return 本地临时文件
-     * @throws IOException 当下载失败时抛出
-     */
-    private File downloadToTempFileInternal(String url, String fileExtension) throws IOException {
+       * 下载资源到临时文件（公共API）
+       * 
+       * @param url 资源URL
+       * @param fileExtension 文件扩展名
+       * @return 本地临时文件
+       * @throws IOException 当下载失败时抛出
+       */
+      public File downloadToTempFile(String url, String fileExtension) throws IOException {
+          return downloadToTempFileInternal(url, fileExtension);
+      }
+      
+      /**
+       * 下载资源到临时文件（带重试机制）
+       * 
+       * @param url 资源URL
+       * @param fileExtension 文件扩展名
+       * @param maxRetries 最大重试次数
+       * @return 本地临时文件，如果下载失败返回null
+       */
+      public File downloadToTempFileWithRetry(String url, String fileExtension, int maxRetries) {
+          int retries = 0;
+          while (retries <= maxRetries) {
+              try {
+                  return downloadToTempFileInternal(url, fileExtension);
+              } catch (IOException e) {
+                  retries++;
+                  if (retries > maxRetries) {
+                      logger.error("Pocket48ResourceHandler", "下载失败，已达到最大重试次数: " + url, e);
+                      metricsCollector.recordError("download_max_retries_reached");
+                      return null;
+                  }
+                  
+                  // 指数退避重试
+                  long delayMs = 1000 * (long)Math.pow(2, retries - 1);
+                  logger.warn("Pocket48ResourceHandler", "下载失败，将在" + delayMs + "ms后重试(" + retries + "/" + maxRetries + "): " + url);
+                  
+                  try {
+                      Thread.sleep(delayMs);
+                  } catch (InterruptedException ie) {
+                      Thread.currentThread().interrupt();
+                      return null;
+                  }
+              }
+          }
+          
+          return null;
+      }
+     
+     /**
+      * 内部下载方法（集成缓存，增强版）- 同步版本（保持向后兼容）
+      * 
+      * @param url 资源URL
+      * @param fileExtension 文件扩展名
+      * @return 本地临时文件
+      * @throws IOException 当下载失败时抛出
+      */
+     private File downloadToTempFileInternal(String url, String fileExtension) throws IOException {
         java.util.logging.Logger logger = java.util.logging.Logger.getLogger(this.getClass().getName());
         logger.setUseParentHandlers(false); // 不在控制台显示日志
         
@@ -891,30 +647,47 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
     }
     
     /**
-     * 获取域名记忆化统计信息
-     * @return 统计信息字符串
+     * 验证文件是否有效
+     * @param file 要验证的文件
+     * @param fileExtension 文件扩展名
+     * @return 文件是否有效
      */
-    public String getDomainMemorizationStats() {
-        StringBuilder stats = new StringBuilder();
-        stats.append("HEAD不支持域名数量: ").append(HEAD_UNSUPPORTED_DOMAINS.size());
-        stats.append(", HEAD成功域名数量: ").append(HEAD_SUCCESS_DOMAINS.size());
-        
-        if (!HEAD_UNSUPPORTED_DOMAINS.isEmpty()) {
-            stats.append(", 不支持HEAD的域名: ").append(HEAD_UNSUPPORTED_DOMAINS);
+    private boolean isValidFile(File file, String fileExtension) {
+        if (file == null || !file.exists() || file.length() == 0) {
+            return false;
         }
         
-        return stats.toString();
-    }
-    
-    /**
-     * 清理过期的域名记录（用于内存管理）
-     */
-    public void cleanupExpiredDomainRecords() {
-        long currentTime = System.currentTimeMillis();
-        HEAD_SUCCESS_DOMAINS.entrySet().removeIf(entry -> 
-            (currentTime - entry.getValue()) > DOMAIN_RECHECK_INTERVAL * 2); // 保留2倍间隔的记录
+        // 对于图片文件，可以尝试读取头部验证格式
+        if ("jpg".equalsIgnoreCase(fileExtension) || "jpeg".equalsIgnoreCase(fileExtension) || 
+            "png".equalsIgnoreCase(fileExtension) || "gif".equalsIgnoreCase(fileExtension)) {
+            try (java.io.FileInputStream fis = new java.io.FileInputStream(file)) {
+                byte[] header = new byte[8];
+                int read = fis.read(header);
+                if (read < 2) {
+                    return false;
+                }
+                
+                // 简单检查文件头
+                if ("jpg".equalsIgnoreCase(fileExtension) || "jpeg".equalsIgnoreCase(fileExtension)) {
+                    // JPEG文件头: FF D8
+                    return (header[0] & 0xFF) == 0xFF && (header[1] & 0xFF) == 0xD8;
+                } else if ("png".equalsIgnoreCase(fileExtension)) {
+                    // PNG文件头: 89 50 4E 47 0D 0A 1A 0A
+                    return (header[0] & 0xFF) == 0x89 && (header[1] & 0xFF) == 0x50 && 
+                           (header[2] & 0xFF) == 0x4E && (header[3] & 0xFF) == 0x47;
+                } else if ("gif".equalsIgnoreCase(fileExtension)) {
+                    // GIF文件头: 47 49 46 38
+                    return (header[0] & 0xFF) == 0x47 && (header[1] & 0xFF) == 0x49 && 
+                           (header[2] & 0xFF) == 0x46 && (header[3] & 0xFF) == 0x38;
+                }
+            } catch (Exception e) {
+                logger.warn("Pocket48ResourceHandler", "验证文件格式时出错: " + e.getMessage());
+                return false;
+            }
+        }
         
-        logger.debug("Pocket48ResourceHandler", "清理过期域名记录完成，当前记录数: " + HEAD_SUCCESS_DOMAINS.size());
+        // 对于其他类型文件，只检查文件大小
+        return file.length() > 100; // 至少100字节
     }
     
     /**

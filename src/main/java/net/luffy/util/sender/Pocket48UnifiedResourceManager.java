@@ -17,6 +17,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.Map;
 import java.util.List;
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 
 /**
@@ -334,7 +335,12 @@ public class Pocket48UnifiedResourceManager {
     
     public File downloadToTempFile(String url, String fileExtension) {
         totalResourcesProcessed.incrementAndGet();
-        return resourceHandler.downloadToTempFile(url, fileExtension);
+        try {
+            return resourceHandler.downloadToTempFile(url, fileExtension);
+        } catch (IOException e) {
+            UnifiedLogger.getInstance().error("Pocket48UnifiedResourceManager", "下载资源失败: " + url, e);
+            return null;
+        }
     }
     
     public File downloadToTempFileWithRetry(String url, String fileExtension, int maxRetries) {
