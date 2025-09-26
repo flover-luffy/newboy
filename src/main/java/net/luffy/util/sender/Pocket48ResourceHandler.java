@@ -807,17 +807,31 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
         net.luffy.util.DynamicTimeoutManager timeoutManager = net.luffy.util.DynamicTimeoutManager.getInstance();
         net.luffy.util.DynamicTimeoutManager.Pocket48TimeoutConfig config = timeoutManager.getPocket48DynamicConfig();
         
+        // 检查URL是否有效
+        if (url == null || url.trim().isEmpty()) {
+            return java.util.concurrent.CompletableFuture.failedFuture(
+                new IllegalArgumentException("无效的URL: " + url)
+            );
+        }
+        
+        // 增加超时时间处理大型媒体文件
+        int adjustedTimeout = url.contains("nosdn.yunxinsvr.com") ? config.getReadTimeout() * 2 : config.getReadTimeout();
+        
         return java.util.concurrent.CompletableFuture.supplyAsync(() -> {
             try {
+                logger.debug("Pocket48ResourceHandler", "开始下载文件: " + url);
                 return downloadToTempFileInternal(url, fileExtension);
             } catch (Exception e) {
+                logger.warn("Pocket48ResourceHandler", "下载内部错误: " + e.getMessage() + ", URL: " + url);
                 throw new RuntimeException("下载内部错误: " + e.getMessage() + ", URL: " + url, e);
             }
-        }, THREAD_POOL_MANAGER.getExecutorService()).orTimeout(config.getReadTimeout(), java.util.concurrent.TimeUnit.MILLISECONDS)
+        }, THREAD_POOL_MANAGER.getExecutorService()).orTimeout(adjustedTimeout, java.util.concurrent.TimeUnit.MILLISECONDS)
         .exceptionally(throwable -> {
             if (throwable instanceof java.util.concurrent.TimeoutException) {
-                throw new RuntimeException("单次下载超时(" + config.getReadTimeout() + "ms): " + url, throwable);
+                logger.warn("Pocket48ResourceHandler", "下载超时(" + adjustedTimeout + "ms): " + url);
+                throw new RuntimeException("单次下载超时(" + adjustedTimeout + "ms): " + url, throwable);
             } else {
+                logger.warn("Pocket48ResourceHandler", "下载失败: " + throwable.getMessage() + ", URL: " + url);
                 throw new RuntimeException(throwable.getMessage(), throwable);
             }
         });
