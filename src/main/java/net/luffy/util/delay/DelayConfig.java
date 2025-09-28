@@ -45,9 +45,9 @@ public class DelayConfig {
     private volatile long currentTextInterval = 0;
     private volatile long currentMediaInterval = 0;
     
-    // 活跃度调整因子 - 禁用活跃度调整
-    private volatile double activeMultiplier = 1.0; // 设置为1.0，不进行调整
-    private volatile double inactiveMultiplier = 1.0; // 设置为1.0，不进行调整
+    // 活跃度调整因子 - 已废弃，不再使用
+    private volatile double activeMultiplier = 1.0; // 已废弃：设置为1.0，不进行调整
+    private volatile double inactiveMultiplier = 1.0; // 已废弃：设置为1.0，不进行调整
     
     // 延迟范围限制 - 全部设置为0
     private volatile long minInterval = 0; // 设置为0，允许无延迟
@@ -70,7 +70,6 @@ public class DelayConfig {
     // 网络延迟监控
     private volatile long lastNetworkCheckTime = 0;
     private volatile double averageNetworkLatency = 0.0;
-    private volatile String currentNetworkQuality = "FAIR";
     
     // 智能调整历史记录
     private final Map<String, Double> adjustmentHistory = new ConcurrentHashMap<>();
@@ -82,7 +81,6 @@ public class DelayConfig {
     private volatile double lastLoggedAdjustmentFactor = 1.0;
     private volatile long lastLoggedTextInterval = 300;
     private volatile long lastLoggedMediaInterval = 800;
-    private volatile String lastLoggedNetworkQuality = "FAIR";
     private static final long LOG_OUTPUT_INTERVAL = 900000; // 15分钟（更长间隔）
     private static final double FACTOR_CHANGE_THRESHOLD = 0.5; // 调整因子变化阈值（更大变化才输出）
     private static final double INTERVAL_CHANGE_THRESHOLD = 0.3; // 延迟变化阈值（30%）
@@ -96,7 +94,6 @@ public class DelayConfig {
     private volatile double highFrequencyMultiplier = 2.0;  // 高频时延迟倍率
     
     // 特性开关 - 简化配置
-    private volatile boolean enableRateLimiting = true;      // 启用速率限制
     private volatile boolean enableMetricsCollection = true; // 启用指标收集
     
     private DelayConfig() {
@@ -171,9 +168,6 @@ public class DelayConfig {
                 return;
             }
             
-            // 更新网络质量评估
-            updateNetworkQuality();
-            
             // 计算综合调整因子
             double adjustmentFactor = calculateEnhancedAdjustmentFactor();
             
@@ -186,7 +180,7 @@ public class DelayConfig {
             currentMediaInterval = Math.max(minInterval, Math.min(maxInterval, newMediaInterval));
             
             // 动态调整重试参数
-            adjustRetryParameters(currentNetworkQuality, currentSystemLoad);
+            adjustRetryParameters(currentSystemLoad);
             
             // 记录调整历史
             adjustmentHistory.put("factor_" + currentTime, adjustmentFactor);
@@ -201,9 +195,9 @@ public class DelayConfig {
             // 智能日志输出控制 - 只有在启用详细日志时才输出
             if (enableVerboseLogging && enableMetricsCollection && shouldOutputLog(adjustmentFactor, currentTime)) {
                 logger.info("DelayConfig", String.format(
-                    "智能延迟调整: 因子=%.2f, 文本=%dms, 媒体=%dms, CPU=%.2f, 内存=%.2f, 网络=%s, 延迟=%.1fms", 
+                    "智能延迟调整: 因子=%.2f, 文本=%dms, 媒体=%dms, CPU=%.2f, 内存=%.2f, 延迟=%.1fms", 
                     adjustmentFactor, currentTextInterval, currentMediaInterval, 
-                    currentSystemLoad, currentMemoryUsage, currentNetworkQuality, averageNetworkLatency));
+                    currentSystemLoad, currentMemoryUsage, averageNetworkLatency));
                 
                 // 更新日志输出记录
                 lastLogOutputTime = currentTime;
@@ -239,54 +233,34 @@ public class DelayConfig {
             factor *= (1.0 + memoryPressure * 0.8); // 内存压力影响相对较小
         }
         
-        // 3. 基于网络质量的调整
-        double networkFactor = getNetworkQualityMultiplier(currentNetworkQuality);
-        factor *= networkFactor;
-        
-        // 4. 基于历史调整效果的学习调整
+        // 3. 基于历史调整效果的学习调整
         double historyFactor = calculateHistoryBasedFactor();
         factor *= historyFactor;
         
-        // 5. 限制调整范围，避免极端值
+        // 4. 限制调整范围，避免极端值
         factor = Math.max(0.2, Math.min(1.5, factor));
         
         return factor;
     }
     
     /**
-     * 更新网络质量评估
+     * 动态调整重试参数
+     * @param systemLoad 系统负载
      */
-    private void updateNetworkQuality() {
-        try {
-            long currentTime = System.currentTimeMillis();
-            
-            // 简单的网络延迟检测（基于系统负载推断）
-            if (currentTime - lastNetworkCheckTime > 30000) { // 30秒检查一次
-                // 基于CPU和内存使用情况推断网络质量
-                if (currentSystemLoad < 0.3 && currentMemoryUsage < 0.5) {
-                    currentNetworkQuality = "EXCELLENT";
-                    averageNetworkLatency = 20.0;
-                } else if (currentSystemLoad < 0.5 && currentMemoryUsage < 0.7) {
-                    currentNetworkQuality = "GOOD";
-                    averageNetworkLatency = 50.0;
-                } else if (currentSystemLoad < 0.7 && currentMemoryUsage < 0.8) {
-                    currentNetworkQuality = "FAIR";
-                    averageNetworkLatency = 100.0;
-                } else if (currentSystemLoad < 0.85) {
-                    currentNetworkQuality = "POOR";
-                    averageNetworkLatency = 200.0;
-                } else {
-                    currentNetworkQuality = "VERY_POOR";
-                    averageNetworkLatency = 500.0;
-                }
-                
-                lastNetworkCheckTime = currentTime;
-            }
-        } catch (Exception e) {
-            logger.warn("DelayConfig", "网络质量评估失败: " + e.getMessage());
-            currentNetworkQuality = "FAIR";
-            averageNetworkLatency = 100.0;
+    public void adjustRetryParameters(double systemLoad) {
+        double systemMultiplier = 1.0;
+        
+        // 基于系统负载调整
+        if (systemLoad > 0.8) {
+            systemMultiplier = 1.5;
+        } else if (systemLoad > 0.6) {
+            systemMultiplier = 1.2;
         }
+        
+        // 调整重试参数
+        this.maxRetries = Math.max(1, Math.min(5, (int)(1 * systemMultiplier)));
+        this.retryBaseDelay = Math.max(0, Math.min(1000, (long)(0 * systemMultiplier)));
+        this.retryMaxDelay = Math.max(0, Math.min(5000, (long)(0 * systemMultiplier)));
     }
     
     /**
@@ -342,13 +316,11 @@ public class DelayConfig {
                 Math.abs((double)(currentTextInterval - lastLoggedTextInterval) / lastLoggedTextInterval) : 0;
             double mediaIntervalChange = lastLoggedMediaInterval > 0 ? 
                 Math.abs((double)(currentMediaInterval - lastLoggedMediaInterval) / lastLoggedMediaInterval) : 0;
-            boolean networkQualityChanged = !currentNetworkQuality.equals(lastLoggedNetworkQuality);
             
             // 只有在非常显著变化时才输出日志
             return factorChange > FACTOR_CHANGE_THRESHOLD || 
                    textIntervalChange > INTERVAL_CHANGE_THRESHOLD || 
-                   mediaIntervalChange > INTERVAL_CHANGE_THRESHOLD ||
-                   networkQualityChanged;
+                   mediaIntervalChange > INTERVAL_CHANGE_THRESHOLD;
         }
         
         // 时间间隔足够，且有明显调整时输出日志
@@ -360,7 +332,6 @@ public class DelayConfig {
             lastLoggedAdjustmentFactor = adjustmentFactor;
             lastLoggedTextInterval = currentTextInterval;
             lastLoggedMediaInterval = currentMediaInterval;
-            lastLoggedNetworkQuality = currentNetworkQuality;
         }
         
         return shouldLog;
@@ -540,12 +511,20 @@ public class DelayConfig {
         return messageGroupDelay;
     }
     
+    /**
+     * @deprecated 活跃度调整功能已被移除，此方法将始终返回1.0
+     */
+    @Deprecated
     public double getActiveMultiplier() {
-        return activeMultiplier;
+        return 1.0; // 固定返回1.0，不再进行活跃度调整
     }
-    
+
+    /**
+     * @deprecated 活跃度调整功能已被移除，此方法将始终返回1.0
+     */
+    @Deprecated
     public double getInactiveMultiplier() {
-        return inactiveMultiplier;
+        return 1.0; // 固定返回1.0，不再进行活跃度调整
     }
     
     public long getMinInterval() {
@@ -573,10 +552,6 @@ public class DelayConfig {
     }
     
     // 特性开关getter方法
-    public boolean isRateLimitingEnabled() {
-        return enableRateLimiting;
-    }
-    
     public boolean isAdaptiveAdjustmentEnabled() {
         return enableAdaptiveAdjustment;
     }
@@ -590,10 +565,6 @@ public class DelayConfig {
         this.enableMetricsCollection = enabled;
     }
     
-    public void setRateLimitingEnabled(boolean enabled) {
-        this.enableRateLimiting = enabled;
-    }
-    
     public void setAdaptiveAdjustmentEnabled(boolean enabled) {
         this.enableAdaptiveAdjustment = enabled;
         if (enabled && adaptiveScheduler.isShutdown()) {
@@ -601,23 +572,9 @@ public class DelayConfig {
         }
     }
     
-    // 网络质量调整倍数 - 优化后的最佳性能参数
-    private static final double EXCELLENT_NETWORK_MULTIPLIER = 0.3;
-    private static final double GOOD_NETWORK_MULTIPLIER = 0.5;
-    private static final double FAIR_NETWORK_MULTIPLIER = 0.8;
-    private static final double POOR_NETWORK_MULTIPLIER = 1.2;
-    private static final double VERY_POOR_NETWORK_MULTIPLIER = 1.8;
+
     
-    // 网络质量调整倍数的getter方法
-    public double getExcellentNetworkMultiplier() { return EXCELLENT_NETWORK_MULTIPLIER; }
-    public double getGoodNetworkMultiplier() { return GOOD_NETWORK_MULTIPLIER; }
-    public double getFairNetworkMultiplier() { return FAIR_NETWORK_MULTIPLIER; }
-    public double getPoorNetworkMultiplier() { return POOR_NETWORK_MULTIPLIER; }
-    public double getVeryPoorNetworkMultiplier() { return VERY_POOR_NETWORK_MULTIPLIER; }
-    
-    // 负载均衡和网络配置
-    public double getNetworkGoodMultiplier() { return GOOD_NETWORK_MULTIPLIER; }
-    public double getNetworkPoorMultiplier() { return POOR_NETWORK_MULTIPLIER; }
+    // 负载均衡配置
     public int getLoadBalanceThreshold() { return 100; } // 负载均衡阈值
     public double getHighLoadMultiplier() { return highLoadMultiplier; }
     
@@ -628,61 +585,21 @@ public class DelayConfig {
     public int getMaxHistoricalSnapshots() { return 60; } // 保留60个历史快照
     public boolean isAutoSaveReportsEnabled() { return false; } // 关闭自动保存以提升性能
     
-    /**
-     * 获取网络质量调整因子
-     * @param networkQuality 网络质量等级 (EXCELLENT, GOOD, FAIR, POOR, VERY_POOR)
-     * @return 调整因子
-     */
-    public double getNetworkQualityMultiplier(String networkQuality) {
-        if (networkQuality == null) return FAIR_NETWORK_MULTIPLIER;
-        
-        switch (networkQuality.toUpperCase()) {
-            case "EXCELLENT": return EXCELLENT_NETWORK_MULTIPLIER;
-            case "GOOD": return GOOD_NETWORK_MULTIPLIER;
-            case "FAIR": return FAIR_NETWORK_MULTIPLIER;
-            case "POOR": return POOR_NETWORK_MULTIPLIER;
-            case "VERY_POOR": return VERY_POOR_NETWORK_MULTIPLIER;
-            default: return FAIR_NETWORK_MULTIPLIER;
-        }
-    }
-    
-    /**
-     * 动态调整重试参数
-     * @param networkQuality 网络质量
-     * @param systemLoad 系统负载
-     */
-    public void adjustRetryParameters(String networkQuality, double systemLoad) {
-        double networkMultiplier = getNetworkQualityMultiplier(networkQuality);
-        double loadMultiplier = systemLoad > cpuThresholdHigh ? 1.5 : (systemLoad < cpuThresholdLow ? 0.8 : 1.0);
-        
-        // 动态调整重试延迟
-        long adjustedBaseDelay = Math.round(500 * networkMultiplier * loadMultiplier);
-        retryBaseDelay = Math.max(200, Math.min(2000, adjustedBaseDelay));
-        
-        // 动态调整最大重试次数
-        if (networkQuality != null && (networkQuality.equals("POOR") || networkQuality.equals("VERY_POOR"))) {
-            maxRetries = Math.max(1, maxRetries - 1); // 网络差时减少重试次数
-        } else if (networkQuality != null && networkQuality.equals("EXCELLENT")) {
-            maxRetries = Math.min(3, maxRetries + 1); // 网络好时可以增加重试次数
-        }
-    }
+
     
     @Override
     public String toString() {
         return String.format(
             "DelayConfig{" +
             "currentTextInterval=%d, currentMediaInterval=%d, groupDelay=%d, " +
-            "activeMultiplier=%.2f, inactiveMultiplier=%.2f, " +
             "minInterval=%d, maxInterval=%d, " +
             "maxRetries=%d, retryBaseDelay=%d, retryMaxDelay=%d, retryBackoffMultiplier=%.2f, " +
-            "enableRateLimiting=%s, enableAdaptiveAdjustment=%s, enableMetricsCollection=%s, " +
-            "currentSystemLoad=%.2f, currentMemoryUsage=%.2f}",
+            "systemLoad=%.2f, memoryUsage=%.2f, adaptiveEnabled=%s" +
+            "}",
             currentTextInterval, currentMediaInterval, messageGroupDelay,
-            activeMultiplier, inactiveMultiplier,
             minInterval, maxInterval,
             maxRetries, retryBaseDelay, retryMaxDelay, retryBackoffMultiplier,
-            enableRateLimiting, enableAdaptiveAdjustment, enableMetricsCollection,
-            currentSystemLoad, currentMemoryUsage
+            currentSystemLoad, currentMemoryUsage, enableAdaptiveAdjustment
         );
     }
 }

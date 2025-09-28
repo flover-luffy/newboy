@@ -1,8 +1,7 @@
 package net.luffy.util;
 
-import net.luffy.util.NetworkQualityMonitor.NetworkQuality;
-import net.luffy.util.NetworkQualityMonitor.NetworkQualityResult;
 import net.luffy.util.delay.DelayConfig;
+import net.luffy.util.UnifiedLogger;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicLong;
@@ -13,22 +12,16 @@ import net.luffy.util.UnifiedSchedulerManager;
 
 /**
  * 动态超时管理器
- * 根据网络质量自动调整超时时间和重试策略
+ * 提供基础的超时时间和重试策略管理
  */
 public class DynamicTimeoutManager {
     private static DynamicTimeoutManager instance;
     
-    private final NetworkQualityMonitor networkMonitor;
     private final MonitorConfig config;
     private final ScheduledExecutorService scheduler;
     
-    // 当前网络质量状态
-    private final AtomicReference<NetworkQuality> currentQuality = new AtomicReference<>(NetworkQuality.GOOD);
-    private final AtomicLong lastQualityCheck = new AtomicLong(0);
-    
-    // 质量检查间隔（毫秒）
-    private static final long QUALITY_CHECK_INTERVAL = 30000; // 30秒检查一次
-    private static final long FAST_CHECK_INTERVAL = 5000; // 快速检查间隔（网络质量差时）
+    // 当前网络质量状态 - 固定为良好状态
+    private static final String DEFAULT_QUALITY = "GOOD";
     
     // 重试统计和优化参数
     private final AtomicInteger totalRetries = new AtomicInteger(0);
@@ -46,12 +39,8 @@ public class DynamicTimeoutManager {
     // 超时调整配置已移至DelayConfig统一管理
     
     private DynamicTimeoutManager() {
-        this.networkMonitor = new NetworkQualityMonitor();
         this.config = MonitorConfig.getInstance();
         this.scheduler = UnifiedSchedulerManager.getInstance().getScheduledExecutor();
-        
-        // 启动定期网络质量检查
-        startQualityMonitoring();
     }
     
     /**
@@ -69,54 +58,20 @@ public class DynamicTimeoutManager {
     }
     
     /**
-     * 启动网络质量监控 - 已禁用
-     */
-    private void startQualityMonitoring() {
-        // 禁用网络质量监控，不再启动定期检查以减少系统开销
-        // scheduler.scheduleWithFixedDelay(this::checkNetworkQuality, 
-        //         0, QUALITY_CHECK_INTERVAL, TimeUnit.MILLISECONDS);
-    }
-    
-    /**
-     * 检查网络质量 - 已禁用
-     */
-    private void checkNetworkQuality() {
-        // 禁用网络质量检查，不再进行实际检测以减少系统开销
-        // 保持方法存在以避免编译错误，但不执行任何操作
-    }
-    
-    /**
-     * 安排快速检查（网络质量差时）- 已禁用
-     */
-    private void scheduleQuickCheck() {
-        // 禁用快速检查，不再安排额外的网络质量检测
-    }
-    
-    /**
-     * 获取当前网络质量 - 已禁用，始终返回优秀网络质量
-     */
-    public NetworkQuality getCurrentQuality() {
-        // 禁用网络质量检测，始终返回优秀网络质量以减少系统开销
-        return NetworkQuality.EXCELLENT;
-    }
-    
-    /**
-     * 获取动态调整后的连接超时时间 - 已禁用网络质量调整
+     * 获取动态调整后的连接超时时间
      * @param baseTimeout 基础超时时间
      * @return 调整后的超时时间
      */
     public int getDynamicConnectTimeout(int baseTimeout) {
-        // 禁用网络质量调整，直接返回基础超时时间
         return Math.max(500, Math.min(10000, baseTimeout));
     }
     
     /**
-     * 获取动态调整后的读取超时时间 - 已禁用网络质量调整
+     * 获取动态调整后的读取超时时间
      * @param baseTimeout 基础超时时间
      * @return 调整后的超时时间
      */
     public int getDynamicReadTimeout(int baseTimeout) {
-        // 禁用网络质量调整，直接返回基础超时时间
         return Math.max(1000, Math.min(15000, baseTimeout));
     }
     
@@ -139,120 +94,39 @@ public class DynamicTimeoutManager {
     }
     
     /**
-     * 根据网络质量和端点统计动态调整重试次数
+     * 根据端点统计动态调整重试次数
      */
-    private int getQualityAdjustedRetries(int baseRetries, NetworkQuality quality) {
-        // 基于网络质量的基础调整
-        int adjustedRetries = baseRetries;
-        
-        switch (quality) {
-            case EXCELLENT:
-                adjustedRetries = Math.max(1, baseRetries - 1); // 网络好时减少重试
-                break;
-            case GOOD:
-                adjustedRetries = baseRetries; // 保持默认
-                break;
-            case FAIR:
-                adjustedRetries = baseRetries + 1; // 网络一般时增加1次重试
-                break;
-            case POOR:
-                adjustedRetries = baseRetries + 2; // 网络差时增加2次重试
-                break;
-            case VERY_POOR:
-                adjustedRetries = baseRetries + 3; // 网络很差时增加3次重试
-                break;
-            default:
-                adjustedRetries = baseRetries;
-        }
-        
-        // 确保重试次数在合理范围内 (1-8次)
-        return Math.max(1, Math.min(8, adjustedRetries));
+    private int getQualityAdjustedRetries(int baseRetries) {
+        // 简化重试次数调整，不再依赖网络质量
+        return Math.max(1, Math.min(8, baseRetries));
     }
     
     /**
-     * 获取动态调整后的重试延迟 - 优化版本
-     * @param baseDelay 基础延迟时间
-     * @param retryAttempt 当前重试次数（从1开始）
-     * @param endpoint 端点标识
-     * @return 调整后的延迟时间
+     * 获取动态重试延迟
      */
-    public long getDynamicRetryDelay(long baseDelay, int retryAttempt, String endpoint) {
-        // 使用指数退避策略，但限制最大延迟
-        long delay = Math.min((long)(MIN_RETRY_DELAY * Math.pow(1.5, retryAttempt)), MAX_RETRY_DELAY);
-        
-        // 根据网络质量调整延迟
-        NetworkQuality quality = getCurrentQuality();
-        switch (quality) {
-            case EXCELLENT:
-                return (long)(delay * 0.5); // 网络优秀时减少延迟
-            case GOOD:
-                return delay;
-            case FAIR:
-                return (long)(delay * 1.2);
-            case POOR:
-                return (long)(delay * 1.5);
-            case VERY_POOR:
-                return MAX_RETRY_DELAY; // 网络很差时使用最大延迟
-            default:
-                return delay;
-        }
+    public long getDynamicRetryDelay(int retryCount, long baseDelay) {
+        // 简化延迟计算，使用指数退避
+        return Math.min(baseDelay * (1L << Math.min(retryCount, 6)), 30000);
     }
     
     /**
      * 兼容性方法：获取动态调整后的重试延迟
      */
     public long getDynamicRetryDelay(long baseDelay) {
-        return getDynamicRetryDelay(baseDelay, 1, "default");
+        return getDynamicRetryDelay(1, baseDelay);
     }
     
     /**
-     * 根据网络质量调整延迟 - 优化版本
+     * 强制进行质量检查 - 已禁用
      */
-    private long getQualityAdjustedDelay(long baseDelay, NetworkQuality quality, DelayConfig delayConfig) {
-        switch (quality) {
-            case EXCELLENT:
-                return (long) (baseDelay * delayConfig.getExcellentNetworkMultiplier());
-            case GOOD:
-                return (long) (baseDelay * delayConfig.getGoodNetworkMultiplier());
-            case FAIR:
-                return (long) (baseDelay * delayConfig.getFairNetworkMultiplier());
-            case POOR:
-                return (long) (baseDelay * delayConfig.getPoorNetworkMultiplier());
-            case VERY_POOR:
-                return (long) (baseDelay * delayConfig.getVeryPoorNetworkMultiplier());
-            default:
-                return baseDelay;
-        }
-    }
-    
-    /**
-     * 优化的网络质量延迟调整 - 在网络质量差时更激进
-     */
-    private long getOptimizedQualityAdjustedDelay(long baseDelay, NetworkQuality quality, DelayConfig delayConfig) {
-        switch (quality) {
-            case EXCELLENT:
-                // 网络优秀时，使用更小的延迟
-                return (long) (baseDelay * Math.min(delayConfig.getExcellentNetworkMultiplier(), 0.5));
-            case GOOD:
-                return (long) (baseDelay * Math.min(delayConfig.getGoodNetworkMultiplier(), 0.7));
-            case FAIR:
-                return (long) (baseDelay * Math.min(delayConfig.getFairNetworkMultiplier(), 1.0));
-            case POOR:
-                // 网络较差时，不增加太多延迟，准备快速失败
-                return (long) (baseDelay * Math.min(delayConfig.getPoorNetworkMultiplier(), 1.2));
-            case VERY_POOR:
-                // 网络很差时，使用最小延迟，快速失败
-                return Math.max(MIN_RETRY_DELAY, (long) (baseDelay * 0.8));
-            default:
-                return baseDelay;
-        }
+    public void forceQualityCheck() {
+        // 不再执行网络质量检查
     }
     
     /**
      * 获取口袋48 API的动态超时配置
      */
     public Pocket48TimeoutConfig getPocket48DynamicConfig() {
-        NetworkQuality quality = getCurrentQuality();
         String endpoint = "pocket48";
         
         // 如果启用了快速失败模式
@@ -260,7 +134,7 @@ public class DynamicTimeoutManager {
             int connectTimeout = getDynamicConnectTimeout(config.getPocket48ConnectTimeout());
             int readTimeout = getDynamicReadTimeout(config.getPocket48ReadTimeout());
             int maxRetries = getDynamicRetries(config.getPocket48MaxRetries(), endpoint);
-            long retryDelay = getDynamicRetryDelay(config.getPocket48RetryBaseDelay(), 1, endpoint);
+            long retryDelay = getDynamicRetryDelay(1, config.getPocket48RetryBaseDelay());
             
             return new Pocket48TimeoutConfig(connectTimeout, readTimeout, maxRetries, retryDelay, true);
         } else {
@@ -268,59 +142,10 @@ public class DynamicTimeoutManager {
             int connectTimeout = getDynamicConnectTimeout(config.getConnectTimeout());
             int readTimeout = getDynamicReadTimeout(config.getReadTimeout());
             int maxRetries = getDynamicRetries(config.getMaxRetries(), endpoint);
-            long retryDelay = getDynamicRetryDelay(config.getRetryBaseDelay(), 1, endpoint);
+            long retryDelay = getDynamicRetryDelay(1, config.getRetryBaseDelay());
             
             return new Pocket48TimeoutConfig(connectTimeout, readTimeout, maxRetries, retryDelay, false);
         }
-    }
-    
-    /**
-     * 根据网络质量获取超时倍数 - 原版本保留兼容性
-     */
-    private double getTimeoutMultiplier(NetworkQuality quality) {
-        DelayConfig delayConfig = DelayConfig.getInstance();
-        
-        switch (quality) {
-            case EXCELLENT:
-                return delayConfig.getExcellentNetworkMultiplier();
-            case GOOD:
-                return delayConfig.getGoodNetworkMultiplier();
-            case FAIR:
-                return delayConfig.getFairNetworkMultiplier();
-            case POOR:
-                return delayConfig.getPoorNetworkMultiplier();
-            case VERY_POOR:
-                return delayConfig.getVeryPoorNetworkMultiplier();
-            default:
-                return delayConfig.getFairNetworkMultiplier();
-        }
-    }
-    
-    /**
-     * 优化的超时倍数计算 - 更激进的超时策略
-     */
-    private double getOptimizedTimeoutMultiplier(NetworkQuality quality) {
-        switch (quality) {
-            case EXCELLENT:
-                return 0.6; // 网络优秀时，使用更短的超时
-            case GOOD:
-                return 0.8; // 网络良好时，适度减少超时
-            case FAIR:
-                return 1.0; // 网络一般时，使用基础超时
-            case POOR:
-                return 1.1; // 网络差时，略微增加超时，但不要太多
-            case VERY_POOR:
-                return 0.8; // 网络很差时，使用较短超时，快速失败
-            default:
-                return 1.0;
-        }
-    }
-    
-    /**
-     * 强制刷新网络质量检查 - 已禁用
-     */
-    public void forceQualityCheck() {
-        // 禁用强制网络质量检查，不再执行检测以减少系统开销
     }
     
     /**
@@ -372,26 +197,17 @@ public class DynamicTimeoutManager {
     }
     
     /**
-     * 检查是否应该快速失败 - 优化版本
-     * @return 如果网络质量很差且启用了快速失败，返回true
+     * 检查是否应该快速失败 - 简化版本
+     * @return 如果启用了快速失败，返回true
      */
     public boolean shouldFastFail() {
-        NetworkQuality quality = getCurrentQuality();
-        return config.isPocket48FastFailEnabled() && 
-               (quality == NetworkQuality.VERY_POOR || quality == NetworkQuality.POOR);
+        return config.isPocket48FastFailEnabled();
     }
     
     /**
-     * 智能判断是否应该快速失败（基于统计数据）- 优化版本
+     * 智能判断是否应该快速失败（基于统计数据）- 简化版本
      */
     public boolean shouldFastFail(String endpoint) {
-        NetworkQuality quality = getCurrentQuality();
-        
-        // 网络质量极差时，无论配置如何都建议快速失败
-        if (quality == NetworkQuality.VERY_POOR) {
-            return true;
-        }
-        
         // 检查配置的快速失败设置
         if (!shouldFastFail()) {
             // 即使配置未启用，但如果统计数据显示成功率极低，仍建议快速失败
@@ -419,7 +235,7 @@ public class DynamicTimeoutManager {
     }
     
     /**
-     * 预测是否值得重试 - 新增智能预测功能
+     * 预测是否值得重试 - 简化版本
      * @param endpoint 端点标识
      * @param currentAttempt 当前重试次数
      * @return 是否值得继续重试
@@ -427,18 +243,6 @@ public class DynamicTimeoutManager {
     public boolean isRetryWorthwhile(String endpoint, int currentAttempt) {
         // 超过4次重试通常不值得继续
         if (currentAttempt > 4) {
-            return false;
-        }
-        
-        NetworkQuality quality = getCurrentQuality();
-        
-        // 网络质量极差时，超过2次重试就不值得了
-        if (quality == NetworkQuality.VERY_POOR && currentAttempt > 2) {
-            return false;
-        }
-        
-        // 网络质量差时，超过3次重试就不值得了
-        if (quality == NetworkQuality.POOR && currentAttempt > 3) {
             return false;
         }
         
@@ -464,24 +268,10 @@ public class DynamicTimeoutManager {
     }
     
     /**
-     * 获取网络质量描述
+     * 获取网络质量描述 - 已禁用
      */
     public String getQualityDescription() {
-        NetworkQuality quality = getCurrentQuality();
-        switch (quality) {
-            case EXCELLENT:
-                return "优秀";
-            case GOOD:
-                return "良好";
-            case FAIR:
-                return "一般";
-            case POOR:
-                return "较差";
-            case VERY_POOR:
-                return "很差";
-            default:
-                return "未知";
-        }
+        return "良好";
     }
     
     /**
@@ -489,11 +279,6 @@ public class DynamicTimeoutManager {
      */
     public void shutdown() {
         // scheduler现在由UnifiedSchedulerManager管理，不需要显式关闭
-        
-        if (networkMonitor != null) {
-            networkMonitor.shutdown();
-        }
-        
         System.out.println("DynamicTimeoutManager已关闭，调度器由UnifiedSchedulerManager统一管理");
     }
     

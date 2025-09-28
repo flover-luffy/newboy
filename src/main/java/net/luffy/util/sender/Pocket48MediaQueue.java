@@ -6,6 +6,7 @@ import net.luffy.model.Pocket48SenderMessage;
 import net.luffy.util.Properties;
 import net.luffy.util.UnifiedLogger;
 import net.luffy.util.AdaptiveThreadPoolManager;
+import net.luffy.util.delay.DelayMetricsCollector;
 import net.mamoe.mirai.contact.Group;
 import net.mamoe.mirai.message.data.Message;
 
@@ -169,9 +170,16 @@ public class Pocket48MediaQueue {
         // 创建媒体任务
         MediaTask task = new MediaTask(message, String.valueOf(group.getId()));
         
+        // 记录队列状态（提交前）
+        int currentQueueSize = mediaQueue.size();
+        DelayMetricsCollector.getInstance().recordQueueStatus(currentQueueSize, 0);
+        
         // 尝试添加到主队列
         if (mediaQueue.offer(task)) {
             UnifiedLogger.getInstance().debug("Pocket48MediaQueue", "媒体任务已添加到主队列: " + message.getType());
+            
+            // 记录队列状态（提交后）
+            DelayMetricsCollector.getInstance().recordQueueStatus(mediaQueue.size(), 0);
         } else {
             // 主队列已满，添加到溢出队列
             handleQueueOverflow(task);
@@ -187,6 +195,13 @@ public class Pocket48MediaQueue {
             // 添加到内存溢出队列
             overflowQueue.offer(task);
             overflowCount.incrementAndGet();
+            
+            // 记录队列溢出
+            DelayMetricsCollector.getInstance().recordQueueOverflow();
+            
+            // 记录溢出队列状态
+            DelayMetricsCollector.getInstance().recordQueueStatus(
+                mediaQueue.size() + overflowQueue.size(), 0);
             
             // 持久化到磁盘
             persistOverflowTask(task);
@@ -381,6 +396,9 @@ public class Pocket48MediaQueue {
      * 处理媒体任务
      */
     private void processMediaTask(MediaTask task) {
+        long startTime = System.currentTimeMillis();
+        long waitTime = startTime - task.timestamp;
+        
         try {
             // 检查任务是否过期
             long ageMinutes = (System.currentTimeMillis() - task.timestamp) / (1000 * 60);
@@ -389,8 +407,12 @@ public class Pocket48MediaQueue {
                 return;
             }
             
+            // 记录队列等待时间
+            DelayMetricsCollector.getInstance().recordQueueStatus(mediaQueue.size(), waitTime);
+            
             // TODO: 当前MediaTask设计不完整，缺少sender和group信息
             // 这个方法需要重新设计或者MediaTask需要包含更多信息
+            
             // 暂时记录警告并标记为失败
             failedCount.incrementAndGet();
             UnifiedLogger.getInstance().warn("Pocket48MediaQueue", 

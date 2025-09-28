@@ -202,50 +202,6 @@ public class ConcurrencySafetyUtils {
     }
     
     /**
-     * 限流执行（带默认超时）
-     */
-    public <T> Optional<T> rateLimitedExecution(String semaphoreName, int permits, Supplier<T> operation) {
-        return rateLimitedExecutionWithTimeout(semaphoreName, permits, operation, 30, TimeUnit.SECONDS);
-    }
-    
-    /**
-     * 限流执行（兼容旧版本，已废弃）
-     * @deprecated 使用 rateLimitedExecutionWithTimeout 替代以避免无限期阻塞
-     */
-    @Deprecated
-    public <T> T rateLimitedExecutionBlocking(String semaphoreName, int permits, Supplier<T> operation) throws InterruptedException {
-        Semaphore semaphore = getNamedSemaphore(semaphoreName, permits);
-        
-        semaphore.acquire();
-        try {
-            return operation.get();
-        } finally {
-            semaphore.release();
-        }
-    }
-    
-    /**
-     * 带超时的限流执行
-     */
-    public <T> Optional<T> rateLimitedExecutionWithTimeout(String semaphoreName, int permits, 
-                                                          Supplier<T> operation, long timeout, TimeUnit unit) {
-        Semaphore semaphore = getNamedSemaphore(semaphoreName, permits);
-        
-        try {
-            if (semaphore.tryAcquire(timeout, unit)) {
-                try {
-                    return Optional.of(operation.get());
-                } finally {
-                    semaphore.release();
-                }
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-        return Optional.empty();
-    }
-    
-    /**
      * 创建线程安全的计数器
      */
     public ThreadSafeCounter createCounter(String name) {

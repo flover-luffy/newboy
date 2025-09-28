@@ -9,9 +9,13 @@ import net.luffy.util.UnifiedHttpClient;
 import net.luffy.model.Pocket48Message;
 import net.luffy.model.Pocket48RoomInfo;
 import net.luffy.util.DynamicTimeoutManager;
-import net.luffy.util.NetworkQualityMonitor;
 import net.luffy.util.MonitorConfig;
+import net.luffy.util.UnifiedLogger;
 import net.luffy.util.delay.UnifiedDelayService;
+import net.luffy.util.sender.Pocket48Sender;
+import net.luffy.util.ConcurrencySafetyUtils;
+import net.luffy.util.StringMatchUtils;
+import net.luffy.model.Pocket48RoomInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,17 +49,23 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
     private final HashMap<Long, String> name = new HashMap<>();
     private final UnifiedJsonParser jsonParser = UnifiedJsonParser.getInstance();
     private final DynamicTimeoutManager timeoutManager;
-    private final NetworkQualityMonitor networkMonitor;
     private final UnifiedHttpClient httpClient;
     private final UnifiedDelayService unifiedDelayService;
+    private final ConcurrencySafetyUtils concurrencyUtils;
+    private final StringMatchUtils stringMatchUtils;
+    private final Pocket48Sender pocket48Sender;
 
     public Pocket48Handler() {
         super();
         this.header = new Pocket48HandlerHeader(properties);
-        this.networkMonitor = new NetworkQualityMonitor();
         this.timeoutManager = DynamicTimeoutManager.getInstance();
         this.httpClient = UnifiedHttpClient.getInstance();
         this.unifiedDelayService = UnifiedDelayService.getInstance();
+        this.concurrencyUtils = ConcurrencySafetyUtils.getInstance();
+        this.stringMatchUtils = new StringMatchUtils();
+        // 暂时注释掉 Pocket48Sender 的初始化，因为它需要特定的参数
+        // this.pocket48Sender = new Pocket48Sender();
+        this.pocket48Sender = null;
     }
 
     public static final String getOwnerOrTeamName(Pocket48RoomInfo roomInfo) {
@@ -531,11 +541,11 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
             }
         }
         
-        // 快速失败检查：如果启用快速失败且网络不可达，直接返回
+        // 快速失败检查：如果启用快速失败，直接返回
         MonitorConfig config = MonitorConfig.getInstance();
-        if (config.isPocket48FastFailEnabled() && !networkMonitor.isReachable("pocketapi.48.cn", 443, 3000)) {
-            logError(String.format("[快速失败] 口袋48 API不可达，房间ID: %d, 服务器ID: %d", roomID, serverID));
-            return CompletableFuture.completedFuture(null);
+        if (config.isPocket48FastFailEnabled()) {
+            // 简化快速失败逻辑，不再进行网络可达性检查
+            logger.debug("[快速失败] 口袋48快速失败已启用，房间ID: {}, 服务器ID: {}", roomID, serverID);
         }
         
         // 获取动态超时配置

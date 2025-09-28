@@ -11,7 +11,7 @@ import net.luffy.util.UnifiedLogger;
 import net.luffy.util.Pocket48MetricsCollector;
 import net.luffy.util.delay.UnifiedDelayService;
 import net.luffy.util.delay.DelayPolicy;
-import net.luffy.util.delay.GroupRateLimiter;
+
 import net.luffy.util.delay.DelayMetricsCollector;
 import net.luffy.util.delay.DelayConfig;
 import net.luffy.util.StringMatchUtils;
@@ -56,7 +56,6 @@ public class Pocket48Sender extends Sender {
     private final ScheduledExecutorService delayExecutor;
     private final UnifiedDelayService unifiedDelayService;
     private final DelayPolicy delayPolicy;
-    private final GroupRateLimiter rateLimiter;
     
     // 统一日志和指标收集
     private final UnifiedLogger logger = UnifiedLogger.getInstance();
@@ -77,7 +76,6 @@ public class Pocket48Sender extends Sender {
         this.delayExecutor = net.luffy.util.UnifiedSchedulerManager.getInstance().getScheduledExecutor();
         this.unifiedDelayService = UnifiedDelayService.getInstance();
         this.delayPolicy = new DelayPolicy();
-        this.rateLimiter = new GroupRateLimiter();
         
         // 初始化缓存设置（从配置文件读取）
         initializeCacheSettings();
@@ -1413,18 +1411,8 @@ public class Pocket48Sender extends Sender {
                     }
                 })
             ).thenCompose(senderMessage -> {
-                // 使用GroupRateLimiter进行速率限制
-                String groupId = String.valueOf(group.getId());
-                long waitTime = rateLimiter.getWaitTimeMs(groupId);
-                
-                if (waitTime > 0) {
-                    // 记录队列等待度量
-                    if (DelayConfig.getInstance().isMetricsCollectionEnabled()) {
-                        DelayMetricsCollector.getInstance().recordQueueStatus(0, waitTime); // 使用默认队列深度0
-                    }
-                    // 使用UnifiedDelayService进行异步延迟
-                    return unifiedDelayService.delayAsync((int) waitTime, "rate_limit");
-                } else if (nextMessage != null) {
+                // 直接使用DelayPolicy计算延迟，移除GroupRateLimiter
+                if (nextMessage != null) {
                     // 使用DelayPolicy计算延迟
                     boolean isMedia = !isTextMessage(nextMessage);
                     long delay = delayPolicy.calculateSendDelay(isMedia);
@@ -1625,21 +1613,7 @@ public class Pocket48Sender extends Sender {
             try {
                 long startTime = System.currentTimeMillis();
                 
-                // 应用速率限制 - 优化版本
-                if (!rateLimiter.tryAcquire(String.valueOf(group.getId()))) {
-                    long waitTime = rateLimiter.getWaitTimeMs(String.valueOf(group.getId()));
-                    // 根据系统负载动态调整最大等待时间
-                    DelayConfig delayConfig = DelayConfig.getInstance();
-                    double loadFactor = Math.max(0.5, Math.min(2.0, delayConfig.getCurrentSystemLoad() + 0.5)); // 转换为0.5-2.0的调整因子
-                    long maxWaitTime = (long)(3000 * loadFactor); // 基础3秒，根据负载调整
-                    
-                    if (waitTime > 0 && waitTime < maxWaitTime) {
-                        Thread.sleep(waitTime);
-                    } else if (waitTime >= maxWaitTime) {
-                        // 等待时间过长时，使用较短的固定延迟避免长时间阻塞
-                        Thread.sleep(Math.min(1000, maxWaitTime / 2));
-                    }
-                }
+                // 直接发送消息，移除GroupRateLimiter速率限制
                 
                 group.sendMessage(message);
                 
@@ -1663,22 +1637,20 @@ public class Pocket48Sender extends Sender {
             Exception e = (Exception) throwable.getCause();
             String errorMsg = e != null ? e.getMessage() : "未知错误";
             
-            // 增强的错误分类
+            // 简化的错误分类
             boolean isRetryableError = isRetryableError(errorMsg);
-            boolean isRateLimitError = isRateLimitError(errorMsg);
             
             // 记录错误度量
             metricsCollector.recordDownloadFailure("message_send_failed");
             
-            if (attempt >= maxRetries || (!isRetryableError && !isRateLimitError)) {
+            if (attempt >= maxRetries || !isRetryableError) {
                 logger.error("Pocket48Sender", "发送消息失败（已重试" + attempt + "次）: " + errorMsg);
                 return CompletableFuture.completedFuture(null);
             }
             
-            // 智能重试延迟计算
-            String retryReason = isRateLimitError ? "rate_limit" : 
-                               isRetryableError ? "network_error" : "unknown_error";
-            long delay = calculateSmartRetryDelay(attempt - 1, retryReason, isRateLimitError);
+            // 简化的重试延迟计算
+            String retryReason = isRetryableError ? "network_error" : "unknown_error";
+            long delay = 10; // 固定最小延迟
             
             // 记录重试结果
             DelayConfig config = DelayConfig.getInstance();
@@ -1698,22 +1670,9 @@ public class Pocket48Sender extends Sender {
      * 判断是否为可重试错误
      */
     private boolean isRetryableError(String errorMsg) {
-        return StringMatchUtils.isRetryableError(errorMsg);
-    }
-    
-    /**
-     * 判断是否为限流错误
-     */
-    private boolean isRateLimitError(String errorMsg) {
-        return StringMatchUtils.isRateLimitError(errorMsg);
-    }
-    
-    /**
-     * 智能重试延迟计算 - 优化版本（禁用延迟）
-     */
-    private long calculateSmartRetryDelay(int retryCount, String retryReason, boolean isRateLimit) {
-        // 直接返回最小延迟，不进行复杂计算
-        return 10; // 最小10ms延迟，几乎无延迟
+        if (errorMsg == null) return false;
+        return errorMsg.contains("网络") || errorMsg.contains("连接") || 
+               errorMsg.contains("超时") || errorMsg.contains("timeout");
     }
     
     /**

@@ -55,14 +55,6 @@ public class DelayMetricsCollector implements MetricsCollectable {
     private final AtomicLong peakMessagesPerSecond = new AtomicLong(0);
     private final Map<String, AtomicLong> messageTypeRates = new ConcurrentHashMap<>();
     
-    // 网络适应指标
-    private final AtomicLong networkAdaptations = new AtomicLong(0);
-    private final Map<String, AtomicLong> networkQualityChanges = new ConcurrentHashMap<>();
-    
-    // 负载均衡指标
-    private final AtomicLong loadBalanceAdjustments = new AtomicLong(0);
-    private final AtomicReference<Double> currentLoadFactor = new AtomicReference<>(1.0);
-    
     // 时间窗口统计（最近5分钟）
     private final Map<String, Deque<TimestampedValue>> recentMetrics = new ConcurrentHashMap<>();
     private static final long METRICS_WINDOW_MS = 5 * 60 * 1000; // 5分钟
@@ -192,43 +184,6 @@ public class DelayMetricsCollector implements MetricsCollectable {
     }
     
     /**
-     * 记录网络适应
-     */
-    public void recordNetworkAdaptation(String fromQuality, String toQuality) {
-        networkAdaptations.incrementAndGet();
-        String changeKey = fromQuality + "_to_" + toQuality;
-        networkQualityChanges.computeIfAbsent(changeKey, k -> new AtomicLong(0)).incrementAndGet();
-        
-        logger.info("DelayMetrics", String.format("网络质量变化: %s -> %s", fromQuality, toQuality));
-    }
-    
-    /**
-     * 记录网络适应（兼容旧接口）
-     */
-    public void recordNetworkAdaptation(String quality, double multiplier, long adaptationTime) {
-        recordNetworkAdaptation("unknown", quality);
-    }
-    
-    /**
-     * 记录负载均衡调整
-     */
-    public void recordLoadBalanceAdjustment(double newLoadFactor) {
-        loadBalanceAdjustments.incrementAndGet();
-        currentLoadFactor.set(newLoadFactor);
-        
-        addToTimeWindow("load_factor", (long)(newLoadFactor * 100));
-        
-        logger.info("DelayMetrics", String.format("负载因子调整: %.2f", newLoadFactor));
-    }
-    
-    /**
-     * 记录负载均衡调整（兼容旧接口）
-     */
-    public void recordLoadBalancingAdjustment(String loadType, double loadFactor, long adjustmentTime) {
-        recordLoadBalanceAdjustment(loadFactor);
-    }
-    
-    /**
      * 记录实际延迟（兼容旧接口）
      */
     public void recordActualDelay(String messageType, int delayMs) {
@@ -339,35 +294,6 @@ public class DelayMetricsCollector implements MetricsCollectable {
     }
     
     /**
-     * 获取总网络适应次数
-     */
-    public long getTotalNetworkAdaptations() {
-        return networkAdaptations.get();
-    }
-    
-    /**
-     * 获取平均网络倍率
-     */
-    public double getAverageNetworkMultiplier() {
-        // 简化实现，返回固定值
-        return 1.0;
-    }
-    
-    /**
-     * 获取总负载均衡调整次数
-     */
-    public long getTotalLoadBalancingAdjustments() {
-        return loadBalanceAdjustments.get();
-    }
-    
-    /**
-     * 获取平均负载倍率
-     */
-    public double getAverageLoadMultiplier() {
-        return currentLoadFactor.get();
-    }
-    
-    /**
      * 获取平均延迟偏差
      */
     public double getAverageDelayDeviation() {
@@ -453,21 +379,6 @@ public class DelayMetricsCollector implements MetricsCollectable {
             messageTypeRates.forEach((type, rate) -> 
                 report.append(String.format("    %s: %d msg/s\n", type, rate.get())));
         }
-        
-        // 网络适应指标
-        report.append("\n🌐 网络适应指标:\n");
-        report.append(String.format("  网络适应次数: %d\n", networkAdaptations.get()));
-        
-        if (!networkQualityChanges.isEmpty()) {
-            report.append("  网络质量变化:\n");
-            networkQualityChanges.forEach((change, count) -> 
-                report.append(String.format("    %s: %d次\n", change, count.get())));
-        }
-        
-        // 负载均衡指标
-        report.append("\n⚖️ 负载均衡指标:\n");
-        report.append(String.format("  负载调整次数: %d\n", loadBalanceAdjustments.get()));
-        report.append(String.format("  当前负载因子: %.2f\n", currentLoadFactor.get()));
         
         return report.toString();
     }
@@ -686,12 +597,6 @@ public class DelayMetricsCollector implements MetricsCollectable {
             peakMessagesPerSecond.set(0);
             messageTypeRates.clear();
             
-            networkAdaptations.set(0);
-            networkQualityChanges.clear();
-            
-            loadBalanceAdjustments.set(0);
-            currentLoadFactor.set(1.0);
-            
             recentMetrics.values().forEach(Deque::clear);
             delayPercentiles.clear();
             retryPercentiles.clear();
@@ -741,14 +646,6 @@ public class DelayMetricsCollector implements MetricsCollectable {
             // 发送速率指标
             metrics.put("send_rate.current", messagesPerSecond.get());
             metrics.put("send_rate.peak", peakMessagesPerSecond.get());
-            
-            // 网络适应指标
-            metrics.put("network.adaptations", networkAdaptations.get());
-            metrics.put("network.quality_changes", networkQualityChanges.size());
-            
-            // 负载均衡指标
-            metrics.put("load.adjustments", loadBalanceAdjustments.get());
-            metrics.put("load.current_factor", currentLoadFactor.get());
             
         } finally {
             lock.readLock().unlock();

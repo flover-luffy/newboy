@@ -1,13 +1,8 @@
 package net.luffy.util.delay;
 
-import net.luffy.util.sender.Pocket48ActivityMonitor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import net.luffy.util.delay.DelayConfig;
-import java.time.LocalTime;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.Map;
 
 /**
  * 智能延迟策略
@@ -16,39 +11,22 @@ import java.util.Map;
 public class DelayPolicy {
     private static final Logger logger = LoggerFactory.getLogger(DelayPolicy.class);
     
-    // 优化后的默认延迟配置（毫秒）- 最佳性能参数
-    private static final long DEFAULT_TEXT_INTERVAL = 300;      // 文本消息基准间隔 300ms
-    private static final long DEFAULT_MEDIA_INTERVAL = 800;     // 媒体消息基准间隔 800ms
-    private static final double DEFAULT_ACTIVE_MULTIPLIER = 0.6; // 活跃时延迟倍率
-    private static final double DEFAULT_INACTIVE_MULTIPLIER = 1.1; // 非活跃时延迟倍率
-    private static final long DEFAULT_MIN_INTERVAL = 200;       // 最小间隔 200ms
-    private static final long DEFAULT_MAX_INTERVAL = 5000;      // 最大间隔 5秒
+    // 默认延迟配置（移除时间段和刷屏检测相关常量）
+    private static final long DEFAULT_TEXT_INTERVAL = 150;      // 文本消息基准间隔 150ms（优化：从300ms降低）
+    private static final long DEFAULT_MEDIA_INTERVAL = 400;     // 媒体消息基准间隔 400ms（优化：从800ms降低）
+    private static final long DEFAULT_MIN_INTERVAL = 100;       // 最小间隔 100ms（优化：从200ms降低）
+    private static final long DEFAULT_MAX_INTERVAL = 2000;      // 最大间隔 2秒（优化：从5秒降低）
     
-    // 智能调整参数
-    private static final long PEAK_HOUR_START = 9;              // 高峰期开始时间
-    private static final long PEAK_HOUR_END = 22;               // 高峰期结束时间
-    private static final double PEAK_HOUR_MULTIPLIER = 1.05;    // 高峰期延迟倍率
-    private static final double OFF_PEAK_MULTIPLIER = 0.8;      // 低峰期延迟倍率
-    private static final int FLOOD_DETECTION_WINDOW = 10000;    // 刷屏检测窗口（毫秒）
-    private static final int FLOOD_THRESHOLD = 5;               // 刷屏阈值（消息数）
-    private static final double FLOOD_PENALTY_MULTIPLIER = 1.8; // 刷屏惩罚倍率
-    
-    // 可配置参数
+    // 可配置参数（移除活跃度相关参数）
     private long textInterval = DEFAULT_TEXT_INTERVAL;
     private long mediaInterval = DEFAULT_MEDIA_INTERVAL;
-    private double activeMultiplier = DEFAULT_ACTIVE_MULTIPLIER;
-    private double inactiveMultiplier = DEFAULT_INACTIVE_MULTIPLIER;
     private long minInterval = DEFAULT_MIN_INTERVAL;
     private long maxInterval = DEFAULT_MAX_INTERVAL;
     
-    // 智能调整相关
-    private final Pocket48ActivityMonitor activityMonitor;
-    private final Map<String, AtomicLong> groupMessageCount = new ConcurrentHashMap<>();
-    private final Map<String, Long> groupLastMessageTime = new ConcurrentHashMap<>();
-    private final Map<String, Long> delayPredictionHistory = new ConcurrentHashMap<>();
+    // 智能调整相关（移除群组活跃度和刷屏检测相关数据结构）
     
     public DelayPolicy() {
-        this.activityMonitor = Pocket48ActivityMonitor.getInstance();
+        // 简化构造函数
     }
     
     /**
@@ -63,7 +41,7 @@ public class DelayPolicy {
     /**
      * 简化版发送延迟计算（向后兼容）
      * @param isMediaMessage 是否为媒体消息
-     * @param isActive 是否为活跃时段
+     * @param isActive 是否为活跃时段（已废弃，不再使用）
      * @return 延迟毫秒数
      */
     public long calculateSendDelay(boolean isMediaMessage, boolean isActive) {
@@ -82,40 +60,24 @@ public class DelayPolicy {
         // 1. 基础间隔
         long baseInterval = isMediaMessage ? mediaInterval : textInterval;
         
-        // 2. 活跃度调整
-        boolean isActive = activityMonitor.isGlobalActive();
-        double multiplier = isActive ? activeMultiplier : inactiveMultiplier;
-        
-        // 3. 基于内容长度的智能调整
+        // 2. 基于内容长度的智能调整
         double contentMultiplier = calculateContentLengthMultiplier(contentLength, isMediaMessage);
         
-        // 4. 基于时间段的动态调整
-        double timeMultiplier = calculateTimeBasedMultiplier();
-        
-        // 5. 基于群组活跃度的调整
-        double groupMultiplier = calculateGroupActivityMultiplier(groupId);
-        
-        // 6. 连续消息检测（防刷屏）
-        double floodMultiplier = detectAndPenalizeFlooding(groupId);
-        
-        // 7. 综合计算最终延迟
-        double finalMultiplier = multiplier * contentMultiplier * timeMultiplier * groupMultiplier * floodMultiplier;
+        // 3. 简化计算最终延迟（移除时间段、群组活跃度、刷屏检测调整）
+        double finalMultiplier = contentMultiplier;
         long delay = Math.round(baseInterval * finalMultiplier);
         
-        // 8. 应用最小/最大限制
+        // 4. 应用最小/最大限制
         delay = Math.max(minInterval, Math.min(maxInterval, delay));
         
-        // 9. 更新延迟预测历史
-        updateDelayPrediction(groupId, delay);
-        
-        // 10. 记录度量
+        // 5. 记录度量
         if (DelayConfig.getInstance().isMetricsCollectionEnabled()) {
             String messageType = isMediaMessage ? "media" : "text";
-            DelayMetricsCollector.getInstance().recordDelayCalculation(messageType, delay, isActive);
+            DelayMetricsCollector.getInstance().recordDelayCalculation(messageType, delay, false);
         }
         
-        logger.debug("智能延迟计算: {}ms (基础={}, 媒体={}, 活跃={}, 内容={}x, 时间={}x, 群组={}x, 防刷={}x)", 
-                    delay, baseInterval, isMediaMessage, isActive, contentMultiplier, timeMultiplier, groupMultiplier, floodMultiplier);
+        logger.debug("简化延迟计算: {}ms (基础={}, 媒体={}, 内容={}x)", 
+                    delay, baseInterval, isMediaMessage, contentMultiplier);
         
         return delay;
     }
@@ -145,132 +107,21 @@ public class DelayPolicy {
         }
     }
     
-    /**
-     * 基于时间段计算调整倍率
-     * @return 调整倍率
-     */
-    private double calculateTimeBasedMultiplier() {
-        LocalTime now = LocalTime.now();
-        int hour = now.getHour();
-        
-        // 高峰期（9:00-22:00）适当增加延迟
-        if (hour >= PEAK_HOUR_START && hour <= PEAK_HOUR_END) {
-            return PEAK_HOUR_MULTIPLIER;
-        } else {
-            // 低峰期可以减少延迟
-            return OFF_PEAK_MULTIPLIER;
-        }
-    }
+
+    
+
+    
+
+    
+
     
     /**
-     * 基于群组活跃度计算调整倍率
-     * @param groupId 群组ID
-     * @return 调整倍率
-     */
-    private double calculateGroupActivityMultiplier(String groupId) {
-        if (groupId == null) return 1.0;
-        
-        try {
-            // 检查群组最近的消息频率
-            AtomicLong messageCount = groupMessageCount.get(groupId);
-            Long lastMessageTime = groupLastMessageTime.get(groupId);
-            long currentTime = System.currentTimeMillis();
-            
-            if (messageCount != null && lastMessageTime != null) {
-                long timeDiff = currentTime - lastMessageTime;
-                long count = messageCount.get();
-                
-                // 如果群组很活跃（最近有很多消息），增加延迟
-                if (timeDiff < 60000 && count > 10) {  // 1分钟内超过10条消息
-                    return 1.2;
-                } else if (timeDiff < 300000 && count > 20) {  // 5分钟内超过20条消息
-                    return 1.1;
-                } else if (timeDiff > 3600000) {  // 超过1小时没有消息，可以加速
-                    return 0.7;
-                }
-            }
-            
-            return 1.0;
-        } catch (Exception e) {
-            logger.warn("群组活跃度计算失败: {}", e.getMessage());
-            return 1.0;
-        }
-    }
-    
-    /**
-     * 检测并惩罚刷屏行为
-     * @param groupId 群组ID
-     * @return 调整倍率
-     */
-    private double detectAndPenalizeFlooding(String groupId) {
-        if (groupId == null) return 1.0;
-        
-        try {
-            long currentTime = System.currentTimeMillis();
-            AtomicLong messageCount = groupMessageCount.computeIfAbsent(groupId, k -> new AtomicLong(0));
-            Long lastTime = groupLastMessageTime.get(groupId);
-            
-            // 更新消息计数和时间
-            if (lastTime == null || currentTime - lastTime > FLOOD_DETECTION_WINDOW) {
-                // 重置计数窗口
-                messageCount.set(1);
-                groupLastMessageTime.put(groupId, currentTime);
-                return 1.0;
-            } else {
-                // 在检测窗口内，增加计数
-                long count = messageCount.incrementAndGet();
-                groupLastMessageTime.put(groupId, currentTime);
-                
-                // 如果超过刷屏阈值，应用惩罚
-                if (count > FLOOD_THRESHOLD) {
-                    double penalty = Math.min(FLOOD_PENALTY_MULTIPLIER, 1.0 + (count - FLOOD_THRESHOLD) * 0.3);
-                    logger.info("检测到群组 {} 可能的刷屏行为，消息数: {}, 应用延迟惩罚: {}x", groupId, count, penalty);
-                    return penalty;
-                }
-                
-                return 1.0;
-            }
-        } catch (Exception e) {
-            logger.warn("刷屏检测失败: {}", e.getMessage());
-            return 1.0;
-        }
-    }
-    
-    /**
-     * 更新延迟预测历史
-     * @param groupId 群组ID
-     * @param delay 实际延迟
-     */
-    private void updateDelayPrediction(String groupId, long delay) {
-        if (groupId != null) {
-            delayPredictionHistory.put(groupId, delay);
-            
-            // 清理过期的历史记录（保留最近100个群组的记录）
-            if (delayPredictionHistory.size() > 100) {
-                delayPredictionHistory.entrySet().removeIf(entry -> 
-                    System.currentTimeMillis() - entry.getValue() > 3600000); // 1小时过期
-            }
-        }
-    }
-    
-    /**
-     * 预测最优延迟（基于历史数据）
+     * 预测最优延迟（简化版）
      * @param groupId 群组ID
      * @param isMediaMessage 是否为媒体消息
      * @return 预测的最优延迟
      */
     public long predictOptimalDelay(String groupId, boolean isMediaMessage) {
-        if (groupId == null) {
-            return isMediaMessage ? mediaInterval : textInterval;
-        }
-        
-        Long historicalDelay = delayPredictionHistory.get(groupId);
-        if (historicalDelay != null) {
-            // 基于历史延迟进行微调
-            double adjustmentFactor = calculateTimeBasedMultiplier() * calculateGroupActivityMultiplier(groupId);
-            return Math.round(historicalDelay * adjustmentFactor);
-        }
-        
         return isMediaMessage ? mediaInterval : textInterval;
     }
     
@@ -304,9 +155,6 @@ public class DelayPolicy {
         
         long delay = Math.round(baseDelay * Math.pow(smoothBackoff, retryCount) * (1 + jitterFactor));
         
-        // 应用时间段调整
-        delay = Math.round(delay * calculateTimeBasedMultiplier());
-        
         // 确保不超过最大延迟
         delay = Math.min(delay, maxDelay);
         
@@ -332,25 +180,19 @@ public class DelayPolicy {
     
     // 配置更新方法
     public void updateConfig(long textInterval, long mediaInterval, 
-                           double activeMultiplier, double inactiveMultiplier,
                            long minInterval, long maxInterval) {
         this.textInterval = Math.max(0, textInterval);
         this.mediaInterval = Math.max(0, mediaInterval);
-        this.activeMultiplier = Math.max(0.1, activeMultiplier);
-        this.inactiveMultiplier = Math.max(0.1, inactiveMultiplier);
         this.minInterval = Math.max(0, minInterval);
         this.maxInterval = Math.max(minInterval, maxInterval);
         
-        logger.info("DelayPolicy config updated: text={}ms, media={}ms, active={}x, inactive={}x, min={}ms, max={}ms",
-                   this.textInterval, this.mediaInterval, this.activeMultiplier, 
-                   this.inactiveMultiplier, this.minInterval, this.maxInterval);
+        logger.info("DelayPolicy config updated: text={}ms, media={}ms, min={}ms, max={}ms",
+                   this.textInterval, this.mediaInterval, this.minInterval, this.maxInterval);
     }
     
-    // Getter方法
+    // Getter方法（移除活跃度相关）
     public long getTextInterval() { return textInterval; }
     public long getMediaInterval() { return mediaInterval; }
-    public double getActiveMultiplier() { return activeMultiplier; }
-    public double getInactiveMultiplier() { return inactiveMultiplier; }
     public long getMinInterval() { return minInterval; }
     public long getMaxInterval() { return maxInterval; }
 }

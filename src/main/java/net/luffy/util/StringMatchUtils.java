@@ -39,13 +39,6 @@ public class StringMatchUtils {
         "network"
     );
     
-    private static final Set<String> RATE_LIMIT_ERROR_PATTERNS = Set.of(
-        "rate limit",
-        "too many requests",
-        "频率限制",
-        "请求过于频繁"
-    );
-    
     // HTTP状态码错误匹配
     private static final Set<String> CLIENT_ERROR_PATTERNS = Set.of(
         "400", "401", "403", "404",
@@ -122,20 +115,6 @@ public class StringMatchUtils {
         
         String lowerMessage = errorMessage.toLowerCase();
         return RETRYABLE_ERROR_PATTERNS.stream().anyMatch(lowerMessage::contains);
-    }
-    
-    /**
-     * 检查错误消息是否为频率限制错误
-     * @param errorMessage 错误消息
-     * @return 是否为频率限制错误
-     */
-    public static boolean isRateLimitError(String errorMessage) {
-        if (errorMessage == null || errorMessage.isEmpty()) {
-            return false;
-        }
-        
-        String lowerMessage = errorMessage.toLowerCase();
-        return RATE_LIMIT_ERROR_PATTERNS.stream().anyMatch(lowerMessage::contains);
     }
     
     /**

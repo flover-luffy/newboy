@@ -43,10 +43,6 @@ public class DouyinMonitorService {
     private final UnifiedDelayService unifiedDelayService;
     // 移除了DouyinHandler依赖，现在使用内置的签名生成器
     
-    // 限流相关
-    private final AtomicLong lastRequestTime = new AtomicLong(0);
-    private static final long MIN_REQUEST_INTERVAL = 2000; // 2秒最小间隔
-    
     // 调试模式
     private static final boolean DEBUG_MODE = Boolean.getBoolean("douyin.debug") || 
         System.getProperty("http.debug", "false").equals("true");
@@ -270,8 +266,6 @@ public class DouyinMonitorService {
             
             try {
                 checkUserUpdate(userInfo);
-                // 限流等待
-                waitForRateLimit();
             } catch (Exception e) {
                 userInfo.failureCount++;
                 // 检查用户更新失败，记录错误
@@ -654,27 +648,6 @@ public class DouyinMonitorService {
         }
         
         return null;
-    }
-    
-    /**
-     * 限流等待 - 异步实现
-     */
-    private void waitForRateLimit() {
-        long currentTime = System.currentTimeMillis();
-        long lastTime = lastRequestTime.get();
-        long elapsed = currentTime - lastTime;
-        
-        if (elapsed < MIN_REQUEST_INTERVAL) {
-            long delayMs = MIN_REQUEST_INTERVAL - elapsed;
-            try {
-                // 使用统一延迟服务替代CompletableFuture.delayedExecutor
-                unifiedDelayService.delayAsync((int)delayMs).join();
-            } catch (Exception e) {
-                // 延迟被中断，继续执行
-            }
-        }
-        
-        lastRequestTime.set(System.currentTimeMillis());
     }
     
     /**

@@ -46,8 +46,7 @@ public class WeidianItemSender extends SyncSender {
                 group.getOwner().sendMessage(errorMsg);
                 cookie.invalid = true;
             } else {
-                // 即使已标记为invalid，也要记录调试信息
-                Newboy.INSTANCE.getLogger().info("[微店调试] Cookie已标记为失效，但仍在尝试获取商品列表");
+                // Cookie已标记为失效，跳过处理
             }
             return;
         }
