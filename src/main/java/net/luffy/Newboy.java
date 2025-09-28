@@ -111,6 +111,14 @@ public final class Newboy extends JavaPlugin {
             String firstAdmin = properties.admins[0];
             PerformanceMonitor.getInstance().enablePeriodicReporting(firstAdmin, 1440); // 24小时间隔
         }
+        
+        // 初始化每日总结系统
+        try {
+            net.luffy.util.summary.DailySummaryIntegration.getInstance().initialize();
+            getLogger().info("每日总结系统初始化完成");
+        } catch (Exception e) {
+            getLogger().error("每日总结系统初始化失败: " + e.getMessage(), e);
+        }
     }
 
     private void initProperties() {

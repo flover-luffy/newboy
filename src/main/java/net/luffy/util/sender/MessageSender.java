@@ -10,6 +10,7 @@ import net.mamoe.mirai.message.data.MessageChainBuilder;
 import net.mamoe.mirai.utils.ExternalResource;
 // 移除Spring相关导入
 
+import java.io.File;
 import java.io.InputStream;
 import java.net.URL;
 import java.net.URLConnection;
@@ -215,6 +216,101 @@ public class MessageSender {
             }
         } catch (Exception e) {
             System.err.println("发送群组消息（文本+图片）失败: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * 发送群组本地图片文件
+     * @param groupId 群组ID字符串
+     * @param imageFilePath 本地图片文件路径
+     */
+    public void sendGroupLocalImage(String groupId, String imageFilePath) {
+        try {
+            Bot bot = Newboy.getBot();
+            if (bot != null && imageFilePath != null && !imageFilePath.isEmpty()) {
+                long groupIdLong = Long.parseLong(groupId);
+                Group group = bot.getGroup(groupIdLong);
+                if (group != null) {
+                    File imageFile = new File(imageFilePath);
+                    if (imageFile.exists() && imageFile.isFile()) {
+                        try (ExternalResource resource = ExternalResource.create(imageFile)) {
+                            Image image = group.uploadImage(resource);
+                            group.sendMessage(image);
+                        }
+                    } else {
+                        System.err.println("图片文件不存在或不是文件: " + imageFilePath);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("发送群组本地图片失败: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * 发送群组消息（文本+本地图片文件）
+     * @param groupId 群组ID字符串
+     * @param messageText 消息文本
+     * @param imageFilePath 本地图片文件路径（可选）
+     */
+    public void sendGroupMessageWithLocalImage(String groupId, String messageText, String imageFilePath) {
+        sendGroupMessageWithLocalImage(groupId, messageText, imageFilePath, false);
+    }
+    
+    /**
+     * 发送群组消息（文本+本地图片文件），支持@全体成员
+     * @param groupId 群组ID字符串
+     * @param messageText 消息文本
+     * @param imageFilePath 本地图片文件路径（可选）
+     * @param atAll 是否@全体成员
+     */
+    public void sendGroupMessageWithLocalImage(String groupId, String messageText, String imageFilePath, boolean atAll) {
+        try {
+            Bot bot = Newboy.getBot();
+            if (bot != null) {
+                long groupIdLong = Long.parseLong(groupId);
+                Group group = bot.getGroup(groupIdLong);
+                if (group != null) {
+                    MessageChainBuilder builder = new MessageChainBuilder();
+                    
+                    // 添加文本消息
+                    if (messageText != null && !messageText.isEmpty()) {
+                        builder.append(messageText);
+                    }
+                    
+                    // 如果有本地图片文件，添加图片到消息链的最后
+                    if (imageFilePath != null && !imageFilePath.isEmpty()) {
+                        try {
+                            File imageFile = new File(imageFilePath);
+                            if (imageFile.exists() && imageFile.isFile()) {
+                                try (ExternalResource resource = ExternalResource.create(imageFile)) {
+                                    Image image = group.uploadImage(resource);
+                                    builder.append(image);
+                                }
+                            } else {
+                                System.err.println("图片文件不存在或不是文件: " + imageFilePath);
+                            }
+                        } catch (Exception imageException) {
+                            System.err.println("处理本地图片失败，仅发送文本: " + imageException.getMessage());
+                        }
+                    }
+                    
+                    // 发送组合消息
+                    MessageChain messageChain = builder.build();
+                    
+                    // 如果需要@全体成员，使用toNotification包装消息
+                    if (atAll) {
+                        // 创建一个Sender实例来使用toNotification方法
+                        Sender sender = new Sender(bot, groupIdLong);
+                        Message finalMessage = sender.toNotification(messageChain);
+                        group.sendMessage(finalMessage);
+                    } else {
+                        group.sendMessage(messageChain);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("发送群组消息（文本+本地图片）失败: " + e.getMessage());
         }
     }
 }

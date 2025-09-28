@@ -15,6 +15,7 @@ import net.luffy.util.delay.DelayPolicy;
 import net.luffy.util.delay.DelayMetricsCollector;
 import net.luffy.util.delay.DelayConfig;
 import net.luffy.util.StringMatchUtils;
+import net.luffy.util.summary.DailySummaryIntegration;
 
 import net.luffy.model.*;
 import net.mamoe.mirai.Bot;
@@ -60,6 +61,7 @@ public class Pocket48Sender extends Sender {
     // 统一日志和指标收集
     private final UnifiedLogger logger = UnifiedLogger.getInstance();
     private final Pocket48MetricsCollector metricsCollector = Pocket48MetricsCollector.getInstance();
+    private final DailySummaryIntegration dailySummaryIntegration = DailySummaryIntegration.getInstance();
 
     public Pocket48Sender(Bot bot, long group, HashMap<Long, Long> endTime, HashMap<Long, List<Long>> voiceStatus, HashMap<Long, Pocket48SenderCache> cache) {
         super(bot, group);
@@ -185,6 +187,16 @@ public class Pocket48Sender extends Sender {
                     if (a.length > 0) {
                         // 记录消息活跃度
                         activityMonitor.recordBatchMessageActivity(roomID, java.util.Arrays.asList(a));
+                        
+                        // 记录每日总结统计数据
+                        for (Pocket48Message message : a) {
+                            try {
+                                dailySummaryIntegration.recordMessage(message);
+                            } catch (Exception e) {
+                                logger.debug("Pocket48Sender", "记录每日总结数据失败: " + e.getMessage());
+                            }
+                        }
+                        
                         totalMessages.add(a);
                     }
                 }
