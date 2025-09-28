@@ -134,7 +134,9 @@ public class CommandOperator extends AsyncWebHandlerBase {
                                         // 自动发送生成的图片
                                         try {
                                             net.luffy.util.sender.MessageSender messageSender = new net.luffy.util.sender.MessageSender();
-                                            String imagePath = "data/daily_images/test_image.png";
+                                            // 使用实际生成的文件名格式
+                                            String today = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+                                            String imagePath = "data/daily_images/daily_content_summary_" + today + ".png";
                                             messageSender.sendGroupLocalImage(String.valueOf(g.getId()), imagePath);
                                         } catch (Exception imageException) {
                                             g.sendMessage("图片发送失败: " + imageException.getMessage());
