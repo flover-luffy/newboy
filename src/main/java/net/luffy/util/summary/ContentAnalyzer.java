@@ -1,6 +1,8 @@
 package net.luffy.util.summary;
 
 import net.luffy.util.UnifiedLogger;
+import net.luffy.util.summary.nlp.TfIdfAnalyzer;
+import net.luffy.util.summary.nlp.EnhancedSentimentAnalyzer;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 
@@ -27,6 +29,10 @@ public class ContentAnalyzer {
     
     private final UnifiedLogger logger = UnifiedLogger.getInstance();
     
+    // NLP组件
+    private final TfIdfAnalyzer tfIdfAnalyzer;
+    private final EnhancedSentimentAnalyzer sentimentAnalyzer;
+    
     // 中文停用词列表
     private static final Set<String> STOP_WORDS = Set.of(
         "的", "了", "在", "是", "我", "有", "和", "就", "不", "人", "都", "一", "个", "上", "也", "很", "到", "说", "要", "去", "你", "会", "着", "没有", "看", "好", "自己", "这", "那", "什么", "可以", "这个", "还", "比", "啊", "哈", "呢", "吧", "哦", "嗯", "额", "呃", "诶", "咦", "哇", "哎", "唉", "嘿", "喂", "嗨", "哟", "咯", "呀", "嘛", "呗", "喔", "哼", "嘻", "咳", "嗯嗯", "哈哈", "呵呵", "嘿嘿", "嘻嘻", "哎呀", "哎哟", "哇塞", "哇哦", "哇咔", "哇靠", "哇噻", "哇哈", "哇啦", "哇呀", "哇嘎", "哇哇", "哇喔", "哇哇哇"
@@ -49,46 +55,9 @@ public class ContentAnalyzer {
         "今天", "昨天", "明天", "现在", "刚才", "一会", "等会", "晚上", "早上", "中午", "下午", "傍晚", "深夜", "凌晨"
     );
     
-    // 情感词汇
-    private static final Map<String, Integer> EMOTION_WORDS;
-    
-    static {
-        Map<String, Integer> emotionMap = new HashMap<>();
-        // 正面情感
-        emotionMap.put("开心", 2);
-        emotionMap.put("高兴", 2);
-        emotionMap.put("快乐", 2);
-        emotionMap.put("兴奋", 2);
-        emotionMap.put("激动", 2);
-        emotionMap.put("喜欢", 1);
-        emotionMap.put("爱", 2);
-        emotionMap.put("棒", 1);
-        emotionMap.put("好", 1);
-        emotionMap.put("赞", 1);
-        emotionMap.put("厉害", 1);
-        emotionMap.put("优秀", 1);
-        emotionMap.put("完美", 2);
-        emotionMap.put("满意", 1);
-        emotionMap.put("感谢", 1);
-        emotionMap.put("谢谢", 1);
-        // 负面情感
-        emotionMap.put("难过", -2);
-        emotionMap.put("伤心", -2);
-        emotionMap.put("生气", -2);
-        emotionMap.put("愤怒", -2);
-        emotionMap.put("讨厌", -2);
-        emotionMap.put("恨", -2);
-        emotionMap.put("烦", -1);
-        emotionMap.put("累", -1);
-        emotionMap.put("困", -1);
-        emotionMap.put("无聊", -1);
-        emotionMap.put("失望", -2);
-        emotionMap.put("沮丧", -2);
-        emotionMap.put("郁闷", -1);
-        emotionMap.put("不爽", -1);
-        emotionMap.put("糟糕", -1);
-        emotionMap.put("差", -1);
-        EMOTION_WORDS = Collections.unmodifiableMap(emotionMap);
+    public ContentAnalyzer() {
+        this.tfIdfAnalyzer = new TfIdfAnalyzer(STOP_WORDS);
+        this.sentimentAnalyzer = new EnhancedSentimentAnalyzer();
     }
     
     /**
@@ -136,29 +105,26 @@ public class ContentAnalyzer {
     /**
      * 提取关键词
      */
+    /**
+     * 使用TF-IDF算法提取关键词
+     */
     private List<KeywordInfo> extractKeywords(List<String> texts) {
-        Map<String, Integer> wordCount = new HashMap<>();
+        // 清空之前的文档
+        tfIdfAnalyzer.clear();
         
-        for (String text : texts) {
-            // 清理文本
-            String cleanText = cleanText(text);
-            
-            // 简单的中文分词（基于标点符号和空格）
-            String[] words = cleanText.split("[\\s\\p{Punct}]+");
-            
-            for (String word : words) {
-                word = word.trim();
-                if (word.length() >= 2 && !STOP_WORDS.contains(word) && isValidKeyword(word)) {
-                    wordCount.merge(word, 1, Integer::sum);
-                }
-            }
+        // 添加文档到TF-IDF分析器
+        Map<String, String> documents = new HashMap<>();
+        for (int i = 0; i < texts.size(); i++) {
+            documents.put("doc_" + i, texts.get(i));
         }
+        tfIdfAnalyzer.addDocuments(documents);
         
-        // 排序并返回前20个关键词
-        return wordCount.entrySet().stream()
-                .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
-                .limit(20)
-                .map(entry -> new KeywordInfo(entry.getKey(), entry.getValue()))
+        // 获取关键词
+        List<TfIdfAnalyzer.KeywordScore> keywordScores = tfIdfAnalyzer.getTopKeywords(20);
+        
+        // 转换为KeywordInfo格式
+        return keywordScores.stream()
+                .map(score -> new KeywordInfo(score.keyword, (int)(score.score * 100))) // 将得分转换为整数
                 .collect(Collectors.toList());
     }
     
@@ -200,22 +166,20 @@ public class ContentAnalyzer {
     }
     
     /**
-     * 计算情感得分
+     * 使用增强情感分析器计算情感得分
      */
     private double calculateEmotionScore(List<String> texts) {
-        int totalScore = 0;
-        int count = 0;
-        
-        for (String text : texts) {
-            for (Map.Entry<String, Integer> entry : EMOTION_WORDS.entrySet()) {
-                if (text.contains(entry.getKey())) {
-                    totalScore += entry.getValue();
-                    count++;
-                }
-            }
+        if (texts.isEmpty()) {
+            return 0.0;
         }
         
-        return count > 0 ? (double) totalScore / count : 0.0;
+        // 合并所有文本进行整体分析
+        String combinedText = String.join(" ", texts);
+        
+        // 使用增强情感分析器
+        EnhancedSentimentAnalyzer.SentimentResult result = sentimentAnalyzer.analyzeSentiment(combinedText);
+        
+        return result.sentimentScore;
     }
     
     /**
@@ -281,9 +245,22 @@ public class ContentAnalyzer {
             analysis.topKeywords = extractKeywords(allTexts);
             List<String> topics = extractTopics(allTexts);
             analysis.mentionedUsers = extractMentions(allTexts);
-            analysis.sentimentScore = calculateEmotionScore(allTexts);
-            analysis.dominantSentiment = analysis.sentimentScore > 0.5 ? "积极" : 
-                                       analysis.sentimentScore < -0.5 ? "消极" : "中性";
+            
+            // 使用增强情感分析器
+            String combinedText = String.join(" ", allTexts);
+            EnhancedSentimentAnalyzer.SentimentResult sentimentResult = sentimentAnalyzer.analyzeSentiment(combinedText);
+            
+            analysis.sentimentScore = sentimentResult.sentimentScore;
+            analysis.dominantSentiment = sentimentResult.sentimentType.getDescription();
+            
+            // 记录详细的情感分析信息
+            logger.debug("ContentAnalyzer", String.format(
+                "房间 %s 情感分析结果: %s, 得分: %.2f, 强度: %.2f", 
+                roomData.getRoomId(), 
+                sentimentResult.sentimentType.getDescription(),
+                sentimentResult.sentimentScore,
+                sentimentResult.intensity
+            ));
         }
     }
     
