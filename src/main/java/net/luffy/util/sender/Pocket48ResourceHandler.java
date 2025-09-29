@@ -110,6 +110,12 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
      * 获取口袋48资源的输入流（带缓存支持）
      * 添加必要的请求头以确保资源能够正常访问
      * 
+     * 重要提示：调用者必须负责关闭返回的InputStream以避免文件句柄泄漏！
+     * 建议使用try-with-resources语句：
+     * try (InputStream stream = getPocket48InputStream(url)) {
+     *     // 使用stream
+     * }
+     * 
      * @param url 资源URL
      * @return 资源输入流
      * @throws RuntimeException 当请求失败时抛出
@@ -137,6 +143,12 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
     /**
      * 获取口袋48资源的输入流（带重试机制）
      * 
+     * 重要提示：调用者必须负责关闭返回的InputStream以避免文件句柄泄漏！
+     * 建议使用try-with-resources语句：
+     * try (InputStream stream = getPocket48InputStreamWithRetry(url, maxRetries)) {
+     *     // 使用stream
+     * }
+     * 
      * @param url 资源URL
      * @param maxRetries 最大重试次数
      * @return 资源输入流
@@ -155,13 +167,13 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
                     throw new RuntimeException("获取口袋48资源流失败，已达到最大重试次数: " + e.getMessage(), e);
                 }
                 
-                // 指数退避重试
+                // 指数退避重试 - 使用异步延迟替代Thread.sleep避免阻塞
                 long delayMs = 1000 * (long)Math.pow(2, retries - 1);
                 logger.warn("Pocket48ResourceHandler", "获取资源流失败，将在" + delayMs + "ms后重试(" + retries + "/" + maxRetries + "): " + url);
                 
                 try {
-                    Thread.sleep(delayMs);
-                } catch (InterruptedException ie) {
+                    unifiedDelayService.delayAsync(delayMs).join();
+                } catch (Exception ie) {
                     Thread.currentThread().interrupt();
                     throw new RuntimeException("获取口袋48资源流被中断", ie);
                 }
@@ -577,13 +589,13 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
                       return null;
                   }
                   
-                  // 指数退避重试
+                  // 指数退避重试 - 使用异步延迟替代Thread.sleep避免阻塞
                   long delayMs = 1000 * (long)Math.pow(2, retries - 1);
                   logger.warn("Pocket48ResourceHandler", "下载失败，将在" + delayMs + "ms后重试(" + retries + "/" + maxRetries + "): " + url);
                   
                   try {
-                      Thread.sleep(delayMs);
-                  } catch (InterruptedException ie) {
+                      unifiedDelayService.delayAsync(delayMs).join();
+                  } catch (Exception ie) {
                       Thread.currentThread().interrupt();
                       return null;
                   }

@@ -4,6 +4,7 @@ import net.luffy.model.Pocket48Message;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * 消息完整性检查器
@@ -154,20 +155,20 @@ public class MessageIntegrityChecker {
     public static boolean checkTimeContinuity(long roomId, Pocket48Message message) {
         long currentTimestamp = message.getTime();
         
-        // 获取或创建时间戳历史
+        // 获取或创建时间戳历史 - 使用ConcurrentLinkedDeque提高并发性能
         List<Long> timestampHistory = roomTimestampHistory.computeIfAbsent(roomId, k -> 
-            Collections.synchronizedList(new ArrayList<>()));
+            new CopyOnWriteArrayList<>());
         
         boolean isAnomalous = false;
         
-        synchronized (timestampHistory) {
-            if (!timestampHistory.isEmpty()) {
-                // 检查与最近几条消息的时间间隔
-                long lastTimestamp = timestampHistory.get(timestampHistory.size() - 1);
-                long timeGap = Math.abs(currentTimestamp - lastTimestamp);
-                
-                // 只有当时间间隔超过阈值且不是正常的时间跳跃时才报告异常
-                if (timeGap > TIME_GAP_THRESHOLD) {
+        // 使用CopyOnWriteArrayList的线程安全特性，无需额外同步
+        if (!timestampHistory.isEmpty()) {
+            // 检查与最近几条消息的时间间隔
+            long lastTimestamp = timestampHistory.get(timestampHistory.size() - 1);
+            long timeGap = Math.abs(currentTimestamp - lastTimestamp);
+            
+            // 只有当时间间隔超过阈值且不是正常的时间跳跃时才报告异常
+            if (timeGap > TIME_GAP_THRESHOLD) {
                     // 检查是否是系统重启或长时间离线后的正常恢复
                     boolean isNormalRecovery = isNormalTimeRecovery(timestampHistory, currentTimestamp);
                     
@@ -188,7 +189,6 @@ public class MessageIntegrityChecker {
             if (timestampHistory.size() > MAX_TIMESTAMP_HISTORY) {
                 timestampHistory.remove(0);
             }
-        }
         
         // 更新最后消息时间戳
         lastMessageTimestamp.put(roomId, currentTimestamp);

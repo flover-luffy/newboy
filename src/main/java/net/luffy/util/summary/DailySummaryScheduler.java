@@ -1,6 +1,7 @@
 package net.luffy.util.summary;
 
 import net.luffy.util.UnifiedLogger;
+import net.luffy.util.ErrorHandlingManager;
 
 import java.io.File;
 import java.io.FileWriter;
@@ -27,6 +28,7 @@ import java.util.concurrent.TimeUnit;
 public class DailySummaryScheduler {
     
     private final UnifiedLogger logger = UnifiedLogger.getInstance();
+    private final ErrorHandlingManager errorManager = ErrorHandlingManager.getInstance();
     private final DailySummaryDataCollector dataCollector;
     private final DailySummaryImageGenerator imageGenerator;
     private final ContentAnalyzer contentAnalyzer;
@@ -121,7 +123,7 @@ public class DailySummaryScheduler {
      * 生成每日总结
      */
     private void generateDailySummary() {
-        try {
+        errorManager.executeWithRecovery("生成每日总结", () -> {
             LocalDate yesterday = LocalDate.now().minusDays(1);
             logger.info("DailySummary", "开始生成每日内容总结: " + yesterday);
             
@@ -130,7 +132,7 @@ public class DailySummaryScheduler {
             
             if (activeRoomIds.isEmpty()) {
                 logger.info("DailySummary", "没有活跃房间数据，跳过总结生成");
-                return;
+                return null;
             }
             
             logger.info("DailySummary", "发现 " + activeRoomIds.size() + " 个活跃房间");
@@ -138,21 +140,16 @@ public class DailySummaryScheduler {
             // 为每个房间独立生成总结
             int successCount = 0;
             for (String roomId : activeRoomIds) {
-                try {
-                    boolean success = generateRoomSummaryForDate(roomId, yesterday);
-                    if (success) {
-                        successCount++;
-                    }
-                } catch (Exception e) {
-                    logger.error("DailySummary", "生成房间 " + roomId + " 总结失败: " + e.getMessage());
+                boolean success = errorManager.executeWithRecovery("生成房间总结-" + roomId, 
+                    () -> generateRoomSummaryForDate(roomId, yesterday), false);
+                if (success) {
+                    successCount++;
                 }
             }
             
             logger.info("DailySummary", "每日总结生成完成，成功: " + successCount + "/" + activeRoomIds.size());
-            
-        } catch (Exception e) {
-            logger.error("DailySummary", "生成每日总结时发生错误: " + e.getMessage());
-        }
+            return null;
+        }, null);
     }
     
     /**
@@ -494,9 +491,10 @@ public class DailySummaryScheduler {
             
             // 如果有图片，发送文本+图片；否则只发送文本
             if (imagePath != null && new java.io.File(imagePath).exists()) {
-                // 将本地图片路径转换为可访问的URL或直接发送文件
+                // 发送带图片的消息
+                // 注意：当前实现可能需要根据具体的图片发送需求进行调整
+                // 可以考虑上传到图床或使用本地文件发送
                 messageSender.sendGroupMessageWithImage(groupId.toString(), message, null);
-                // TODO: 实现图片发送逻辑，可能需要上传到图床或直接发送本地文件
             } else {
                 messageSender.sendGroupMessage(groupId.toString(), message);
             }

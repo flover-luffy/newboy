@@ -133,28 +133,21 @@ public class ImageContentProcessor {
      * 下载图片
      */
     private byte[] downloadImage(String imageUrl) {
+        HttpURLConnection connection = null;
         try {
             URL url = new URL(imageUrl);
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("GET");
             connection.setConnectTimeout(10000);
             connection.setReadTimeout(30000);
-            connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+            connection.setRequestProperty("User-Agent", "Mozilla/5.0");
             
             int responseCode = connection.getResponseCode();
             if (responseCode != HttpURLConnection.HTTP_OK) {
-                logger.warn("ImageContentProcessor", "下载图片失败，HTTP状态码: " + responseCode + ", URL: " + imageUrl);
+                logger.warn("ImageContentProcessor", "下载图片失败，响应码: " + responseCode + ", URL: " + imageUrl);
                 return null;
             }
             
-            // 检查内容长度
-            int contentLength = connection.getContentLength();
-            if (contentLength > MAX_DOWNLOAD_SIZE) {
-                logger.warn("ImageContentProcessor", "图片文件过大: " + contentLength + " bytes, URL: " + imageUrl);
-                return null;
-            }
-            
-            // 读取图片数据
             try (InputStream inputStream = connection.getInputStream();
                  ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
                 
@@ -163,12 +156,12 @@ public class ImageContentProcessor {
                 int totalBytes = 0;
                 
                 while ((bytesRead = inputStream.read(buffer)) != -1) {
-                    totalBytes += bytesRead;
-                    if (totalBytes > MAX_DOWNLOAD_SIZE) {
-                        logger.warn("ImageContentProcessor", "图片下载超过大小限制: " + imageUrl);
+                    if (totalBytes + bytesRead > MAX_DOWNLOAD_SIZE) {
+                        logger.warn("ImageContentProcessor", "图片文件过大，跳过下载: " + imageUrl);
                         return null;
                     }
                     outputStream.write(buffer, 0, bytesRead);
+                    totalBytes += bytesRead;
                 }
                 
                 return outputStream.toByteArray();
@@ -177,6 +170,10 @@ public class ImageContentProcessor {
         } catch (Exception e) {
             logger.error("ImageContentProcessor", "下载图片异常: " + imageUrl + ", " + e.getMessage());
             return null;
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
         }
     }
     
@@ -485,7 +482,15 @@ public class ImageContentProcessor {
      * 关闭处理器
      */
     public void shutdown() {
-        downloadExecutor.shutdown();
+        try {
+            downloadExecutor.shutdown();
+            if (!downloadExecutor.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS)) {
+                downloadExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            downloadExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
         logger.info("ImageContentProcessor", "图片处理器已关闭");
     }
     

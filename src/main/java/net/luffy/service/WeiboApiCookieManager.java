@@ -7,6 +7,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import net.luffy.util.UnifiedLogger;
 
 /**
  * 微博API Cookie管理器
@@ -62,7 +63,8 @@ public class WeiboApiCookieManager {
             }
             return formatCookiesForRequest();
         } catch (Exception e) {
-            System.err.println("[ERROR] 获取Cookie失败: " + e.getMessage());
+            UnifiedLogger.getInstance().error("WeiboApiCookieManager", 
+                "获取Cookie失败: " + e.getMessage(), e);
             return getDefaultCookies();
         }
     }
@@ -106,7 +108,8 @@ public class WeiboApiCookieManager {
             }
             
         } catch (Exception e) {
-            System.err.println("[ERROR] 刷新Cookie失败: " + e.getMessage());
+            UnifiedLogger.getInstance().error("WeiboApiCookieManager", 
+                "刷新Cookie失败: " + e.getMessage(), e);
             // 如果刷新失败，使用默认Cookie
             setDefaultCookies();
         }

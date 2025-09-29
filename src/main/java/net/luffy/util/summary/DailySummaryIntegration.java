@@ -1,6 +1,7 @@
 package net.luffy.util.summary;
 
 import net.luffy.util.UnifiedLogger;
+import net.luffy.util.ErrorHandlingManager;
 import net.luffy.model.Pocket48Message;
 
 import java.time.LocalDate;
@@ -17,6 +18,7 @@ public class DailySummaryIntegration {
     
     private static DailySummaryIntegration instance;
     private final UnifiedLogger logger = UnifiedLogger.getInstance();
+    private final ErrorHandlingManager errorManager = ErrorHandlingManager.getInstance();
     
     private final DailySummaryDataCollector dataCollector;
     private final DailySummaryScheduler scheduler;
@@ -44,7 +46,7 @@ public class DailySummaryIntegration {
         if (initialized.compareAndSet(false, true)) {
             logger.info("DailySummary", "初始化每日总结系统");
             
-            try {
+            errorManager.executeWithRecovery("初始化每日总结系统", () -> {
                 // 启动定时调度器
                 scheduler.start();
                 
@@ -53,11 +55,13 @@ public class DailySummaryIntegration {
                 
                 logger.info("DailySummary", "每日总结系统初始化完成");
                 logger.info("DailySummary", scheduler.getConfigInfo());
-                
-            } catch (Exception e) {
-                logger.error("DailySummary", "初始化每日总结系统失败: " + e.getMessage());
+                return null;
+            }, () -> {
+                // 初始化失败时的恢复逻辑
                 initialized.set(false);
-            }
+                logger.error("DailySummary", "每日总结系统初始化失败，已重置状态");
+                return null;
+            });
         } else {
             logger.warn("DailySummary", "每日总结系统已经初始化");
         }
@@ -93,11 +97,10 @@ public class DailySummaryIntegration {
             return;
         }
         
-        try {
+        errorManager.executeWithRecovery("记录消息", () -> {
             dataCollector.recordMessage(message);
-        } catch (Exception e) {
-            logger.error("DailySummary", "记录消息时发生错误: " + e.getMessage());
-        }
+            return null;
+        }, null);
     }
     
     /**

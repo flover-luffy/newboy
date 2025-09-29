@@ -112,9 +112,58 @@ public class DailySummaryDataCollector {
             String key = roomId + "_" + date.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
             roomDataCache.put(key, roomData);
             
-            // 异步保存到文件
-            // 这里可以实现文件保存逻辑
-            logger.debug("DailySummaryDataCollector", "房间数据已缓存: " + roomId);
+            // 实际保存到文件
+            String dateStr = date.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+            String filename = DATA_DIR + dateStr + ".json";
+            
+            // 确保目录存在
+            File dataDir = new File(DATA_DIR);
+            if (!dataDir.exists()) {
+                dataDir.mkdirs();
+            }
+            
+            // 读取现有文件或创建新的JSON结构
+            JSONObject dayData;
+            File file = new File(filename);
+            if (file.exists()) {
+                String existingContent = Files.readString(Paths.get(filename));
+                dayData = JSONUtil.parseObj(existingContent);
+            } else {
+                dayData = new JSONObject();
+                dayData.put("date", dateStr);
+                dayData.put("rooms", new JSONObject());
+            }
+            
+            // 更新房间数据
+            JSONObject roomsData = dayData.getJSONObject("rooms");
+            if (roomsData == null) {
+                roomsData = new JSONObject();
+                dayData.put("rooms", roomsData);
+            }
+            
+            // 将房间数据转换为JSON
+            JSONObject roomJson = new JSONObject();
+            roomJson.put("roomId", roomData.getRoomId());
+            roomJson.put("roomName", roomData.getRoomName());
+            roomJson.put("lastUpdated", LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+            
+            // 添加消息统计
+            JSONObject summary = new JSONObject();
+            summary.put("totalMessageCount", getTotalMessageCount(roomData));
+            summary.put("textMessageCount", roomData.getTextMessages().size());
+            summary.put("imageMessageCount", roomData.getImageMessages().size());
+            summary.put("audioMessageCount", roomData.getAudioMessages().size());
+            summary.put("videoMessageCount", roomData.getVideoMessages().size());
+            summary.put("liveMessageCount", roomData.getLiveMessages().size());
+            summary.put("otherMessageCount", roomData.getOtherMessages().size());
+            roomJson.put("summary", summary);
+            
+            roomsData.put(roomId, roomJson);
+            
+            // 写入文件
+            Files.writeString(Paths.get(filename), JSONUtil.toJsonPrettyStr(dayData));
+            
+            logger.debug("DailySummaryDataCollector", "房间数据已保存到文件: " + roomId + " -> " + filename);
         } catch (Exception e) {
             logger.error("DailySummaryDataCollector", "保存房间数据失败: " + e.getMessage());
         }
@@ -533,13 +582,53 @@ public class DailySummaryDataCollector {
         try {
             String roomId = json.getStr("roomId");
             String roomName = json.getStr("roomName");
-            LocalDateTime date = LocalDateTime.parse(json.getStr("date"), 
-                    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+            
+            // 尝试解析日期，如果没有则使用当前日期
+            LocalDateTime date;
+            String dateStr = json.getStr("date");
+            if (dateStr != null) {
+                date = LocalDateTime.parse(dateStr, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+            } else {
+                date = LocalDateTime.now();
+            }
             
             RoomContentData roomData = new RoomContentData(roomId, roomName, date);
             
-            // 这里可以根据需要解析更多详细数据
-            // 目前只解析摘要信息以节省内存
+            // 解析统计信息
+            JSONObject summary = json.getJSONObject("summary");
+            if (summary != null) {
+                // 根据统计信息创建对应数量的消息记录
+                int textCount = summary.getInt("textMessageCount", 0);
+                int imageCount = summary.getInt("imageMessageCount", 0);
+                int audioCount = summary.getInt("audioMessageCount", 0);
+                int videoCount = summary.getInt("videoMessageCount", 0);
+                int liveCount = summary.getInt("liveMessageCount", 0);
+                int otherCount = summary.getInt("otherMessageCount", 0);
+                
+                // 为了保持统计数据的一致性，我们创建占位符消息
+                // 这样getTotalMessageCount()等方法就能返回正确的数值
+                for (int i = 0; i < textCount; i++) {
+                    roomData.recordMessage("", "", Pocket48MessageType.TEXT, "", null, System.currentTimeMillis());
+                }
+                for (int i = 0; i < imageCount; i++) {
+                    roomData.recordMessage("", "", Pocket48MessageType.IMAGE, "", null, System.currentTimeMillis());
+                }
+                for (int i = 0; i < audioCount; i++) {
+                    roomData.recordMessage("", "", Pocket48MessageType.AUDIO, "", null, System.currentTimeMillis());
+                }
+                for (int i = 0; i < videoCount; i++) {
+                    roomData.recordMessage("", "", Pocket48MessageType.VIDEO, "", null, System.currentTimeMillis());
+                }
+                for (int i = 0; i < liveCount; i++) {
+                     roomData.recordMessage("", "", Pocket48MessageType.LIVEPUSH, "", null, System.currentTimeMillis());
+                 }
+                for (int i = 0; i < otherCount; i++) {
+                    roomData.recordMessage("", "", Pocket48MessageType.UNKNOWN, "", null, System.currentTimeMillis());
+                }
+                
+                logger.debug("DailySummaryDataCollector", 
+                    "解析房间数据: " + roomId + ", 总消息数: " + (textCount + imageCount + audioCount + videoCount + liveCount + otherCount));
+            }
             
             return roomData;
         } catch (Exception e) {
@@ -562,10 +651,36 @@ public class DailySummaryDataCollector {
                     .filter(path -> {
                         try {
                             String filename = path.getFileName().toString();
-                            String dateStr = filename.substring(filename.lastIndexOf('_') + 1, filename.lastIndexOf('.'));
-                            LocalDate fileDate = LocalDate.parse(dateStr, DateTimeFormatter.ofPattern("yyyy-MM-dd"));
-                            return fileDate.isBefore(cutoffDate);
+                            String dateStr = null;
+                            
+                            // 处理不同的文件名格式
+                            if (filename.contains("_")) {
+                                // 格式: yyyy-MM-dd_roomId.json 或其他包含下划线的格式
+                                if (filename.matches("\\d{4}-\\d{2}-\\d{2}_.*\\.json")) {
+                                    // 房间数据文件格式: yyyy-MM-dd_roomId.json
+                                    dateStr = filename.substring(0, filename.indexOf('_'));
+                                } else {
+                                    // 其他格式，尝试从最后一个下划线后提取日期
+                                    String afterLastUnderscore = filename.substring(filename.lastIndexOf('_') + 1, filename.lastIndexOf('.'));
+                                    if (afterLastUnderscore.matches("\\d{4}-\\d{2}-\\d{2}")) {
+                                        dateStr = afterLastUnderscore;
+                                    }
+                                }
+                            } else {
+                                // 格式: yyyy-MM-dd.json (每日汇总文件)
+                                if (filename.matches("\\d{4}-\\d{2}-\\d{2}\\.json")) {
+                                    dateStr = filename.substring(0, filename.lastIndexOf('.'));
+                                }
+                            }
+                            
+                            if (dateStr != null && dateStr.matches("\\d{4}-\\d{2}-\\d{2}")) {
+                                LocalDate fileDate = LocalDate.parse(dateStr, DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+                                return fileDate.isBefore(cutoffDate);
+                            }
+                            
+                            return false;
                         } catch (Exception e) {
+                            logger.debug("DailySummaryDataCollector", "解析文件日期失败: " + path.getFileName() + ", " + e.getMessage());
                             return false;
                         }
                     })

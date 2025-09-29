@@ -261,6 +261,9 @@ public final class Newboy extends JavaPlugin {
      */
     private void shutdownPocket48Components() {
         try {
+            // 关闭每日总结系统
+            net.luffy.util.summary.DailySummaryIntegration.getInstance().shutdown();
+            
             // 关闭Pocket48统一资源管理器
             net.luffy.util.sender.Pocket48UnifiedResourceManager.getInstance().shutdown();
             

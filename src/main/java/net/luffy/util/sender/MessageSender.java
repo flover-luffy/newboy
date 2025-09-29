@@ -8,7 +8,7 @@ import net.mamoe.mirai.message.data.Message;
 import net.mamoe.mirai.message.data.MessageChain;
 import net.mamoe.mirai.message.data.MessageChainBuilder;
 import net.mamoe.mirai.utils.ExternalResource;
-// 移除Spring相关导入
+import net.mamoe.mirai.message.data.PlainText;
 
 import java.io.File;
 import java.io.InputStream;
@@ -16,6 +16,7 @@ import java.net.URL;
 import java.net.URLConnection;
 
 import net.luffy.util.sender.Sender;
+import net.luffy.util.UnifiedLogger;
 
 /**
  * 消息发送器服务类
@@ -38,7 +39,8 @@ public class MessageSender {
                 }
             }
         } catch (Exception e) {
-            System.err.println("发送消息失败: " + e.getMessage());
+            UnifiedLogger.getInstance().error("MessageSender", 
+                "发送消息失败: " + e.getMessage(), e);
         }
     }
     
@@ -53,7 +55,8 @@ public class MessageSender {
                 group.sendMessage(message);
             }
         } catch (Exception e) {
-            System.err.println("发送消息失败: " + e.getMessage());
+            UnifiedLogger.getInstance().error("MessageSender", 
+                "发送消息失败: " + e.getMessage(), e);
         }
     }
     
@@ -87,7 +90,8 @@ public class MessageSender {
                 group.sendMessage(text);
             }
         } catch (Exception e) {
-            System.err.println("发送文本消息失败: " + e.getMessage());
+            UnifiedLogger.getInstance().error("MessageSender", 
+                "发送文本消息失败: " + e.getMessage(), e);
         }
     }
     
@@ -107,7 +111,8 @@ public class MessageSender {
                 }
             }
         } catch (Exception e) {
-            System.err.println("发送群组消息失败: " + e.getMessage());
+            UnifiedLogger.getInstance().error("MessageSender", 
+                "发送群组消息失败: " + e.getMessage(), e);
         }
     }
     
@@ -142,7 +147,8 @@ public class MessageSender {
                 }
             }
         } catch (Exception e) {
-            System.err.println("发送群组图片失败: " + e.getMessage());
+            UnifiedLogger.getInstance().error("MessageSender", 
+                "发送群组图片失败: " + e.getMessage(), e);
         }
     }
     
@@ -196,7 +202,8 @@ public class MessageSender {
                                 builder.append(image);
                             }
                         } catch (Exception imageException) {
-                            System.err.println("处理图片失败，仅发送文本: " + imageException.getMessage());
+                            UnifiedLogger.getInstance().warn("MessageSender", 
+                                "处理图片失败，仅发送文本: " + imageException.getMessage());
                         }
                     }
                     
@@ -215,7 +222,8 @@ public class MessageSender {
                 }
             }
         } catch (Exception e) {
-            System.err.println("发送群组消息（文本+图片）失败: " + e.getMessage());
+            UnifiedLogger.getInstance().error("MessageSender", 
+                "发送群组消息（文本+图片）失败: " + e.getMessage(), e);
         }
     }
     
@@ -238,12 +246,14 @@ public class MessageSender {
                             group.sendMessage(image);
                         }
                     } else {
-                        System.err.println("图片文件不存在或不是文件: " + imageFilePath);
+                        UnifiedLogger.getInstance().error("MessageSender", 
+                            "图片文件不存在或不是文件: " + imageFilePath);
                     }
                 }
             }
         } catch (Exception e) {
-            System.err.println("发送群组本地图片失败: " + e.getMessage());
+            UnifiedLogger.getInstance().error("MessageSender", 
+                "发送群组本地图片失败: " + e.getMessage(), e);
         }
     }
     
@@ -288,10 +298,12 @@ public class MessageSender {
                                     builder.append(image);
                                 }
                             } else {
-                                System.err.println("图片文件不存在或不是文件: " + imageFilePath);
+                                UnifiedLogger.getInstance().error("MessageSender", 
+                                    "图片文件不存在或不是文件: " + imageFilePath);
                             }
                         } catch (Exception imageException) {
-                            System.err.println("处理本地图片失败，仅发送文本: " + imageException.getMessage());
+                            UnifiedLogger.getInstance().warn("MessageSender", 
+                                "处理本地图片失败，仅发送文本: " + imageException.getMessage());
                         }
                     }
                     
@@ -310,7 +322,8 @@ public class MessageSender {
                 }
             }
         } catch (Exception e) {
-            System.err.println("发送群组消息（文本+本地图片）失败: " + e.getMessage());
+            UnifiedLogger.getInstance().error("MessageSender", 
+                "发送群组消息（文本+本地图片）失败: " + e.getMessage(), e);
         }
     }
 }

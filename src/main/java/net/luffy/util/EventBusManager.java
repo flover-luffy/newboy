@@ -7,6 +7,7 @@ import java.util.*;
 import java.util.function.Consumer;
 import net.luffy.Newboy;
 import net.luffy.util.AdaptiveThreadPoolManager;
+import net.luffy.util.UnifiedLogger;
 
 /**
  * 事件驱动模型管理器
@@ -73,9 +74,15 @@ public class EventBusManager {
                         break;
                     } catch (Exception e) {
                         failedEvents.incrementAndGet();
-                        // 避免在静态初始化时访问Newboy.INSTANCE
-                        System.err.println("[事件总线] 处理事件时发生错误: " + e.getMessage());
-                        e.printStackTrace();
+                        // 使用统一日志记录器，避免直接使用System.err
+                        try {
+                            UnifiedLogger.getInstance().error("EventBusManager", 
+                                "处理事件时发生错误: " + e.getMessage(), e);
+                        } catch (Exception logError) {
+                            // 如果日志记录器也失败，则回退到System.err
+                            System.err.println("[事件总线] 处理事件时发生错误: " + e.getMessage());
+                            e.printStackTrace();
+                        }
                     }
                 }
             });
@@ -105,7 +112,8 @@ public class EventBusManager {
                 queueSize.incrementAndGet();
             } else {
                 failedEvents.incrementAndGet();
-                System.err.println("[事件总线] 事件队列已满，丢弃事件: " + event.getClass().getSimpleName());
+                UnifiedLogger.getInstance().warn("EventBusManager", 
+                    "事件队列已满，丢弃事件: " + event.getClass().getSimpleName());
             }
             return offered;
         } catch (InterruptedException e) {
@@ -137,16 +145,16 @@ public class EventBusManager {
                     try {
                         ((EventHandler<Object>) handler).handle(event.getData());
                     } catch (Exception e) {
-                        System.err.println("[事件总线] 处理器执行失败: " + event.getType().getSimpleName() + ", 错误: " + e.getMessage());
-                        e.printStackTrace();
+                        UnifiedLogger.getInstance().error("EventBusManager", 
+                            "处理器执行失败: " + event.getType().getSimpleName() + ", 错误: " + e.getMessage(), e);
                     }
                 }
             }
             processedEvents.incrementAndGet();
         } catch (Exception e) {
             failedEvents.incrementAndGet();
-            System.err.println("[事件总线] 事件处理失败: " + e.getMessage());
-            e.printStackTrace();
+            UnifiedLogger.getInstance().error("EventBusManager", 
+                "事件处理失败: " + e.getMessage(), e);
         }
     }
     
