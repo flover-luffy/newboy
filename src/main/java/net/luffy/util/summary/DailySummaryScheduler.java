@@ -141,7 +141,7 @@ public class DailySummaryScheduler {
             int successCount = 0;
             for (String roomId : activeRoomIds) {
                 boolean success = errorManager.executeWithRecovery("生成房间总结-" + roomId, 
-                    () -> generateRoomSummaryForDate(roomId, yesterday), false);
+                    () -> generateRoomSummaryForDate(roomId, yesterday), Exception.class);
                 if (success) {
                     successCount++;
                 }

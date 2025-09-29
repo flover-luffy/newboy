@@ -2,6 +2,7 @@ package net.luffy.util.sender;
 
 import net.luffy.Newboy;
 import net.luffy.model.Pocket48Message;
+import net.luffy.model.Pocket48MessageType;
 import net.luffy.model.Pocket48SenderMessage;
 import net.luffy.util.Properties;
 import net.luffy.util.UnifiedLogger;
@@ -532,17 +533,17 @@ public class Pocket48MediaQueue {
                 "开始处理媒体任务: " + task.getTaskDescription());
             
             // 根据消息类型进行相应处理
-            String messageType = task.originalMessage.getType();
+            Pocket48MessageType messageType = task.originalMessage.getType();
             switch (messageType) {
-                case "image":
+                case IMAGE:
                     // 处理图片消息
                     processImageMessage(task);
                     break;
-                case "audio":
+                case AUDIO:
                     // 处理音频消息
                     processAudioMessage(task);
                     break;
-                case "video":
+                case VIDEO:
                     // 处理视频消息
                     processVideoMessage(task);
                     break;

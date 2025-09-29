@@ -55,13 +55,8 @@ public class DailySummaryIntegration {
                 
                 logger.info("DailySummary", "每日总结系统初始化完成");
                 logger.info("DailySummary", scheduler.getConfigInfo());
-                return null;
-            }, () -> {
-                // 初始化失败时的恢复逻辑
-                initialized.set(false);
-                logger.error("DailySummary", "每日总结系统初始化失败，已重置状态");
-                return null;
-            });
+                return null; // 返回值
+            }, Exception.class);
         } else {
             logger.warn("DailySummary", "每日总结系统已经初始化");
         }
