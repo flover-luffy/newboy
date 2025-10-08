@@ -1,0 +1,488 @@
+{
+  "teamId_userId_mapping": {
+    "1001": {
+      "teamName": "TEAM SII",
+      "groupName": "SNH48",
+      "members": [
+        {"userId": 4344250371, "ownerName": "陈雨孜"},
+        {"userId": 63554, "ownerName": "段艺璇"},
+        {"userId": 149356882, "ownerName": "蒋夏羽"},
+        {"userId": 64487703, "ownerName": "芦馨怡"},
+        {"userId": 63566, "ownerName": "刘增艳"},
+        {"userId": 4998561802, "ownerName": "宁轲"},
+        {"userId": 149356896, "ownerName": "盛乐"},
+        {"userId": 538697, "ownerName": "沈小爱"},
+        {"userId": 63571, "ownerName": "田姝丽"},
+        {"userId": 5602541574, "ownerName": "由淼"},
+        {"userId": 6745, "ownerName": "闫明筠"},
+        {"userId": 103679171, "ownerName": "杨心渝"},
+        {"userId": 135463898, "ownerName": "张雷雷"},
+        {"userId": 113575106, "ownerName": "张倩"},
+        {"userId": 103679173, "ownerName": "周童玥"},
+        {"userId": 609002, "ownerName": "赵天杨"}
+      ]
+    },
+    "1002": {
+      "teamName": "TEAM NII",
+      "groupName": "SNH48",
+      "members": [
+        {"userId": 63559, "ownerName": "胡晓慧"},
+        {"userId": 63567, "ownerName": "潘瑛琪"},
+        {"userId": 327581, "ownerName": "青钰雯"},
+        {"userId": 149356903, "ownerName": "谢珊珊"},
+        {"userId": 327598, "ownerName": "张笑盈"},
+        {"userId": 868352, "ownerName": "刘洁"},
+        {"userId": 113575089, "ownerName": "唐程成"},
+        {"userId": 459991, "ownerName": "卢天惠"},
+        {"userId": 459999, "ownerName": "韩家乐"},
+        {"userId": 149356907, "ownerName": "钟亚男"},
+        {"userId": 538735, "ownerName": "金莹玥"},
+        {"userId": 614528, "ownerName": "柏欣妤"},
+        {"userId": 711746, "ownerName": "周湘"},
+        {"userId": 677404, "ownerName": "周诗雨"},
+        {"userId": 711741, "ownerName": "杨宇馨"},
+        {"userId": 113575101, "ownerName": "叶凡"},
+        {"userId": 149356880, "ownerName": "黄紫怡"},
+        {"userId": 135463889, "ownerName": "肖彦竹"}
+      ]
+    },
+    "1003": {
+      "teamName": "TEAM HII",
+      "groupName": "SNH48",
+      "members": [
+        {"userId": 2508, "ownerName": "张昕"},
+        {"userId": 5566, "ownerName": "许杨玉琢"},
+        {"userId": 63561, "ownerName": "蒋舒婷"},
+        {"userId": 286977, "ownerName": "孙珍妮"},
+        {"userId": 286983, "ownerName": "李佳恩"},
+        {"userId": 327587, "ownerName": "冯思佳"},
+        {"userId": 149356883, "ownerName": "康楚翊"},
+        {"userId": 113575079, "ownerName": "梁怀方"},
+        {"userId": 149356878, "ownerName": "龚晨美"},
+        {"userId": 614756, "ownerName": "林舒晴"},
+        {"userId": 149356891, "ownerName": "阙佳慧"},
+        {"userId": 407121, "ownerName": "孙语姗"},
+        {"userId": 149356897, "ownerName": "覃柯蒙"},
+        {"userId": 124584289, "ownerName": "陈真允一"},
+        {"userId": 103679163, "ownerName": "温若其"},
+        {"userId": 4528799751, "ownerName": "张智杰"},
+        {"userId": 103679169, "ownerName": "尤可莹"}
+      ]
+    },
+    "1004": {
+      "teamName": "TEAM X",
+      "groupName": "SNH48",
+      "members": [
+        {"userId": 6431, "ownerName": "陈琳"},
+        {"userId": 6738, "ownerName": "宋昕冉"},
+        {"userId": 6744, "ownerName": "杨冰怡"},
+        {"userId": 407126, "ownerName": "杨晔"},
+        {"userId": 135463881, "ownerName": "杨秋野"},
+        {"userId": 530390, "ownerName": "王睿琦"},
+        {"userId": 42402741, "ownerName": "闫娜"},
+        {"userId": 54526093, "ownerName": "林佳怡"},
+        {"userId": 54526095, "ownerName": "武博涵"},
+        {"userId": 54526097, "ownerName": "禹佳蔚"},
+        {"userId": 64422010, "ownerName": "熊紫轶"},
+        {"userId": 64422016, "ownerName": "王依柳"},
+        {"userId": 87622891, "ownerName": "刘小涵"},
+        {"userId": 135463855, "ownerName": "金泓言"},
+        {"userId": 135463871, "ownerName": "李妍"},
+        {"userId": 135463877, "ownerName": "李子忻"}
+      ]
+    },
+    "1101": {
+      "teamName": "TEAM B",
+      "groupName": "BEJ48",
+      "members": [
+        {"userId": 327580, "ownerName": "张梦慧"},
+        {"userId": 45285669, "ownerName": "陈蓁蓁"},
+        {"userId": 45285682, "ownerName": "黄怡慈"},
+        {"userId": 45285685, "ownerName": "黄宣绮"},
+        {"userId": 45285698, "ownerName": "张宸祎"},
+        {"userId": 83099892, "ownerName": "吴睿莎"},
+        {"userId": 95552291, "ownerName": "郑照暄"},
+        {"userId": 100073654, "ownerName": "聂渝景"},
+        {"userId": 103350420, "ownerName": "朱一柠"},
+        {"userId": 112525388, "ownerName": "王祉依"},
+        {"userId": 126681220, "ownerName": "陈艺"},
+        {"userId": 134480598, "ownerName": "包楹"},
+        {"userId": 134480623, "ownerName": "金宛莹"},
+        {"userId": 134480638, "ownerName": "单子涵"},
+        {"userId": 134480650, "ownerName": "王佳琪"}
+      ]
+    },
+    "1102": {
+      "teamName": "TEAM E",
+      "groupName": "BEJ48",
+      "members": [
+        {"userId": 480665, "ownerName": "高志娴"},
+        {"userId": 528329, "ownerName": "孙晓艳"},
+        {"userId": 711746, "ownerName": "周湘"},
+        {"userId": 70385972, "ownerName": "郭晓盈"},
+        {"userId": 70385989, "ownerName": "王思奕"},
+        {"userId": 70385998, "ownerName": "朱虹蓉"},
+        {"userId": 95552277, "ownerName": "马欣宇"},
+        {"userId": 100073656, "ownerName": "庄雅雯"},
+        {"userId": 103350419, "ownerName": "李歆乐"},
+        {"userId": 112525372, "ownerName": "阿丽米热"},
+        {"userId": 112525375, "ownerName": "陈枳霏"},
+        {"userId": 112525376, "ownerName": "刁昕妤"},
+        {"userId": 112525384, "ownerName": "孙嘉馥"},
+        {"userId": 112525391, "ownerName": "袁涵"},
+        {"userId": 118423773, "ownerName": "丁子钦"},
+        {"userId": 134480629, "ownerName": "马明萱"},
+        {"userId": 134480654, "ownerName": "王苏南"},
+        {"userId": 134480674, "ownerName": "朱玥彤"},
+        {"userId": 138608878, "ownerName": "郭依晨"}
+      ]
+    },
+    "1104": {
+      "teamName": "预备生",
+      "groupName": "BEJ48",
+      "members": [
+        {"userId": 134480605, "ownerName": "谷雨馨"},
+        {"userId": 134480670, "ownerName": "张颂宁"},
+        {"userId": 147783848, "ownerName": "乔诗然"}
+      ]
+    },
+    "1105": {
+      "teamName": "BEJ48",
+      "groupName": "BEJ48",
+      "members": [
+        {"userId": 45285691, "ownerName": "唐晨葳"},
+        {"userId": 70385975, "ownerName": "韩雪"},
+        {"userId": 70385982, "ownerName": "李思奥"},
+        {"userId": 100073653, "ownerName": "高梓萌"},
+        {"userId": 7984906291, "ownerName": "王若诗蓝"}
+      ]
+    },
+    "1201": {
+      "teamName": "TEAM G",
+      "groupName": "GNZ48",
+      "members": [
+        {"userId": 63577, "ownerName": "曾艾佳"},
+        {"userId": 327560, "ownerName": "张琼予"},
+        {"userId": 417329, "ownerName": "王秭歆"},
+        {"userId": 417330, "ownerName": "杨可璐"},
+        {"userId": 607513, "ownerName": "符冰冰"},
+        {"userId": 607515, "ownerName": "黄楚茵"},
+        {"userId": 607521, "ownerName": "罗可嘉"},
+        {"userId": 607591, "ownerName": "吴羽霏"},
+        {"userId": 614727, "ownerName": "李姗姗"},
+        {"userId": 722780, "ownerName": "梁娇"},
+        {"userId": 867891, "ownerName": "方琪"},
+        {"userId": 57737429, "ownerName": "陈泓宇"},
+        {"userId": 71500018, "ownerName": "林恩同"},
+        {"userId": 89653427, "ownerName": "陈淑钰"},
+        {"userId": 89653441, "ownerName": "刘欣媛"},
+        {"userId": 89653445, "ownerName": "林奕希"},
+        {"userId": 113443132, "ownerName": "林家谊"},
+        {"userId": 128581633, "ownerName": "孔渊"},
+        {"userId": 136446098, "ownerName": "鲍雨欣"},
+        {"userId": 136446099, "ownerName": "雷瑞妍"},
+        {"userId": 136446105, "ownerName": "唐果"},
+        {"userId": 8957984818, "ownerName": "杨若惜"}
+      ]
+    },
+    "1202": {
+      "teamName": "TEAM NIII",
+      "groupName": "GNZ48",
+      "members": [
+        {"userId": 327566, "ownerName": "洪静雯"},
+        {"userId": 327567, "ownerName": "刘力菲"},
+        {"userId": 327569, "ownerName": "卢静"},
+        {"userId": 327571, "ownerName": "唐莉佳"},
+        {"userId": 327572, "ownerName": "冼燊楠"},
+        {"userId": 327575, "ownerName": "郑丹妮"},
+        {"userId": 417324, "ownerName": "王芊诺"},
+        {"userId": 614741, "ownerName": "曾佳"},
+        {"userId": 874701, "ownerName": "张润"},
+        {"userId": 874723, "ownerName": "王梓"},
+        {"userId": 52494485, "ownerName": "吕思琪"},
+        {"userId": 57737478, "ownerName": "项宇婧"},
+        {"userId": 71500014, "ownerName": "黄汝彤"},
+        {"userId": 83231314, "ownerName": "陆靖婷"},
+        {"userId": 89653517, "ownerName": "王语晨"},
+        {"userId": 113443135, "ownerName": "王珺"},
+        {"userId": 113443136, "ownerName": "谢晓倩"},
+        {"userId": 118489334, "ownerName": "李咏薇"},
+        {"userId": 128581635, "ownerName": "许涵婧"},
+        {"userId": 128581637, "ownerName": "赵文凤"},
+        {"userId": 136446097, "ownerName": "白佳媛"},
+        {"userId": 136446107, "ownerName": "王阙蝶舞"},
+        {"userId": 136446110, "ownerName": "徐郑子滢"},
+        {"userId": 8957984817, "ownerName": "石竹君"}
+      ]
+    },
+    "1203": {
+      "teamName": "TEAM Z",
+      "groupName": "GNZ48",
+      "members": [
+        {"userId": 327558, "ownerName": "罗寒月"},
+        {"userId": 417311, "ownerName": "陈桂君"},
+        {"userId": 417320, "ownerName": "龙亦瑞"},
+        {"userId": 417326, "ownerName": "王偲越"},
+        {"userId": 417331, "ownerName": "杨媛媛"},
+        {"userId": 480680, "ownerName": "张幼柠"},
+        {"userId": 530452, "ownerName": "朱怡欣"},
+        {"userId": 601302, "ownerName": "梁婉琳"},
+        {"userId": 607511, "ownerName": "邓惠恩"},
+        {"userId": 607523, "ownerName": "林芝"},
+        {"userId": 618319, "ownerName": "程戈"},
+        {"userId": 707371, "ownerName": "徐楚雯"},
+        {"userId": 711726, "ownerName": "高蔚然"},
+        {"userId": 722781, "ownerName": "梁乔"},
+        {"userId": 722784, "ownerName": "谢菲菲"},
+        {"userId": 874696, "ownerName": "叶舒淇"},
+        {"userId": 57737430, "ownerName": "周培溪"},
+        {"userId": 89653527, "ownerName": "叶溁语"},
+        {"userId": 103940353, "ownerName": "陈珊玲"},
+        {"userId": 113443103, "ownerName": "丁嘉欣"},
+        {"userId": 118489333, "ownerName": "焦玥"},
+        {"userId": 136446108, "ownerName": "许泳怡"},
+        {"userId": 6827278358, "ownerName": "马昕玥"},
+        {"userId": 8957984819, "ownerName": "张书瑀"}
+      ]
+    },
+    "1204": {
+      "teamName": "荣誉毕业生",
+      "groupName": "GNZ48",
+      "members": [
+        {"userId": 63548, "ownerName": "陈珂"},
+        {"userId": 327563, "ownerName": "陈楠茜"},
+        {"userId": 327568, "ownerName": "刘倩倩"},
+        {"userId": 417321, "ownerName": "农燕萍"}
+      ]
+    },
+    "1207": {
+      "teamName": "预备生",
+      "groupName": "GNZ48",
+      "members": [
+        {"userId": 71500016, "ownerName": "惠煜轩"},
+        {"userId": 71500020, "ownerName": "雷淑怡"},
+        {"userId": 103940355, "ownerName": "荣子彤"},
+        {"userId": 103940359, "ownerName": "陶慧"},
+        {"userId": 113443134, "ownerName": "孙毓园"},
+        {"userId": 128581634, "ownerName": "梁子瑄"},
+        {"userId": 136446104, "ownerName": "林仪"},
+        {"userId": 143261831, "ownerName": "陈诗莹"},
+        {"userId": 143261836, "ownerName": "和丹丹"},
+        {"userId": 143261838, "ownerName": "万芳源"},
+        {"userId": 143261839, "ownerName": "张佳仪"},
+        {"userId": 143524105, "ownerName": "谢林容"},
+        {"userId": 143524107, "ownerName": "朱丽娜"}
+      ]
+    },
+    "1401": {
+      "teamName": "TEAM C",
+      "groupName": "CKG48",
+      "members": [
+        {"userId": 530439, "ownerName": "高雪逸"},
+        {"userId": 614728, "ownerName": "雷宇霄"},
+        {"userId": 614773, "ownerName": "赵泽慧"},
+        {"userId": 679464, "ownerName": "王嘉瑜"},
+        {"userId": 867895, "ownerName": "彭榆涵"},
+        {"userId": 69861644, "ownerName": "朱瑞缘"},
+        {"userId": 69861654, "ownerName": "骆羽庭"},
+        {"userId": 69861666, "ownerName": "付美善"},
+        {"userId": 113443137, "ownerName": "石梦湲"},
+        {"userId": 113443141, "ownerName": "谭景文"},
+        {"userId": 113443142, "ownerName": "王思予"},
+        {"userId": 115343491, "ownerName": "陈萧扬"},
+        {"userId": 115343493, "ownerName": "林丹蕾"},
+        {"userId": 127533256, "ownerName": "姚锦杰"},
+        {"userId": 135987436, "ownerName": "朱文露"},
+        {"userId": 135987437, "ownerName": "郝茹馨"},
+        {"userId": 141033582, "ownerName": "徐沁楠"},
+        {"userId": 9276751977, "ownerName": "梁晶金"}
+      ]
+    },
+    "1402": {
+      "teamName": "TEAM K",
+      "groupName": "CKG48",
+      "members": [
+        {"userId": 105710061, "ownerName": "陈韵佳"},
+        {"userId": 105710067, "ownerName": "胡丹"},
+        {"userId": 105710072, "ownerName": "何馨曼"},
+        {"userId": 105710077, "ownerName": "姬梦真"},
+        {"userId": 105710082, "ownerName": "卢美廷"},
+        {"userId": 105710086, "ownerName": "刘星雨"},
+        {"userId": 105710089, "ownerName": "马星月"},
+        {"userId": 105710098, "ownerName": "吴志越"},
+        {"userId": 105710107, "ownerName": "杨添淩"},
+        {"userId": 105710113, "ownerName": "张莉莉"},
+        {"userId": 105710121, "ownerName": "张思妍"},
+        {"userId": 105710127, "ownerName": "张伟依"},
+        {"userId": 105710135, "ownerName": "张咏烨"},
+        {"userId": 105710390, "ownerName": "张钰叶"},
+        {"userId": 115343492, "ownerName": "胡思颖"},
+        {"userId": 127533255, "ownerName": "袁希璨"}
+      ]
+    },
+    "1404": {
+      "teamName": "CKG48",
+      "groupName": "CKG48",
+      "members": [
+        {"userId": 460004, "ownerName": "杨允涵"},
+        {"userId": 480675, "ownerName": "张爱静"},
+        {"userId": 614761, "ownerName": "吴学雨"},
+        {"userId": 39911923, "ownerName": "潘颖"},
+        {"userId": 69861648, "ownerName": "陈颍琳"},
+        {"userId": 69861660, "ownerName": "张帆"},
+        {"userId": 81199151, "ownerName": "彭含灵"}
+      ]
+    },
+    "1405": {
+      "teamName": "预备生",
+      "groupName": "CKG48",
+      "members": [
+        {"userId": 115343494, "ownerName": "申家璐"},
+        {"userId": 141033581, "ownerName": "刘思田"},
+        {"userId": 141033583, "ownerName": "卓思佳"},
+        {"userId": 143130754, "ownerName": "10咪"},
+        {"userId": 143130756, "ownerName": "小云"},
+        {"userId": 143130759, "ownerName": "橙子"},
+        {"userId": 143130760, "ownerName": "奈甜"},
+        {"userId": 143130762, "ownerName": "小樱"},
+        {"userId": 143130773, "ownerName": "桢桢"}
+      ]
+    },
+    "1501": {
+      "teamName": "IDFT",
+      "groupName": "IDFT",
+      "members": [
+        {"userId": 63576, "ownerName": "阳青颖"},
+        {"userId": 63580, "ownerName": "张凯祺"},
+        {"userId": 286979, "ownerName": "张嘉予"},
+        {"userId": 327574, "ownerName": "熊心瑶"},
+        {"userId": 399662, "ownerName": "江真仪"},
+        {"userId": 407108, "ownerName": "李泓瑶"},
+        {"userId": 407130, "ownerName": "张韩紫陌"},
+        {"userId": 417336, "ownerName": "赵翊民"},
+        {"userId": 459997, "ownerName": "朱燕"},
+        {"userId": 480666, "ownerName": "寇承希"},
+        {"userId": 530383, "ownerName": "郑诗琪"},
+        {"userId": 614739, "ownerName": "王梦竹"},
+        {"userId": 614755, "ownerName": "黄琬璎"},
+        {"userId": 677400, "ownerName": "王欣颜甜甜"},
+        {"userId": 679462, "ownerName": "李苏洪"},
+        {"userId": 707369, "ownerName": "魏小燕"},
+        {"userId": 707374, "ownerName": "邹冰清"},
+        {"userId": 711725, "ownerName": "付奕萱"},
+        {"userId": 867896, "ownerName": "田密"},
+        {"userId": 874497, "ownerName": "卞佳宁"},
+        {"userId": 874500, "ownerName": "冯嘉宝"},
+        {"userId": 874505, "ownerName": "刘宇晴"},
+        {"userId": 874698, "ownerName": "鄢羽蝶"},
+        {"userId": 52494479, "ownerName": "姜欣瑶"},
+        {"userId": 52494482, "ownerName": "江雨航"},
+        {"userId": 105710094, "ownerName": "彭夕株"},
+        {"userId": 118489336, "ownerName": "兰雅心"},
+        {"userId": 124518603, "ownerName": "马丹旎"},
+        {"userId": 128581636, "ownerName": "杨雅雯"},
+        {"userId": 4528799751, "ownerName": "张智杰"},
+        {"userId": 6827278357, "ownerName": "吴思琪"},
+        {"userId": 9276751976, "ownerName": "余芸萱"}
+      ]
+    },
+    "2001": {
+      "teamName": "丝芭影视",
+      "groupName": "丝芭影视",
+      "members": [
+        {"userId": 58785983, "ownerName": "陆婷玉"}
+      ]
+    },
+    "2101": {
+      "teamName": "TEAM CII",
+      "groupName": "CGT48",
+      "members": [
+        {"userId": 874502, "ownerName": "黄逸"},
+        {"userId": 874720, "ownerName": "王永祺"},
+        {"userId": 89653428, "ownerName": "郭兆媛"},
+        {"userId": 89653435, "ownerName": "何林燕"},
+        {"userId": 89653437, "ownerName": "黄艺暄"},
+        {"userId": 89653450, "ownerName": "马可悦"},
+        {"userId": 89653453, "ownerName": "蒙晓丽"},
+        {"userId": 89653457, "ownerName": "秦露丹"},
+        {"userId": 89653461, "ownerName": "邱刘佳"},
+        {"userId": 89653462, "ownerName": "宋筱璐"},
+        {"userId": 89653465, "ownerName": "申雨鑫"},
+        {"userId": 89653513, "ownerName": "谭思慧"},
+        {"userId": 89653520, "ownerName": "夏莹"},
+        {"userId": 89653525, "ownerName": "许雅兰"},
+        {"userId": 89653528, "ownerName": "钟洁玟"},
+        {"userId": 89653530, "ownerName": "周是汝"},
+        {"userId": 118489338, "ownerName": "梅思华"},
+        {"userId": 118489339, "ownerName": "徐钰清"},
+        {"userId": 118489340, "ownerName": "张羽多"}
+      ]
+    },
+    "2102": {
+      "teamName": "TEAM GII",
+      "groupName": "CGT48",
+      "members": [
+        {"userId": 105709986, "ownerName": "程妤涵"},
+        {"userId": 105709987, "ownerName": "何蔡娴"},
+        {"userId": 105709989, "ownerName": "何梦迪"},
+        {"userId": 105709993, "ownerName": "何渝欣"},
+        {"userId": 105709997, "ownerName": "林海盈"},
+        {"userId": 105710002, "ownerName": "雷相菊"},
+        {"userId": 105710010, "ownerName": "雷薪梦"},
+        {"userId": 105710012, "ownerName": "袁艺洁"},
+        {"userId": 105710014, "ownerName": "徐钰涵"},
+        {"userId": 105710015, "ownerName": "王艺霖"},
+        {"userId": 105710019, "ownerName": "齐灵泉"},
+        {"userId": 105710021, "ownerName": "王依"},
+        {"userId": 105710022, "ownerName": "任烨彦"},
+        {"userId": 105710026, "ownerName": "谭勇航"},
+        {"userId": 105710357, "ownerName": "程宝玉"},
+        {"userId": 105710368, "ownerName": "吴云"},
+        {"userId": 129564674, "ownerName": "李秋月"}
+      ]
+    },
+    "2103": {
+      "teamName": "预备生",
+      "groupName": "CGT48",
+      "members": [
+        {"userId": 89653537, "ownerName": "张芷欣"},
+        {"userId": 118489341, "ownerName": "张咏琪"},
+        {"userId": 129564673, "ownerName": "郭琬苏"},
+        {"userId": 129564675, "ownerName": "王宇清"},
+        {"userId": 129564676, "ownerName": "杨子涵"},
+        {"userId": 129564677, "ownerName": "张沁芝"}
+      ]
+    },
+    "8001": {
+      "teamName": "燃烧吧团魂",
+      "groupName": "燃烧吧团魂",
+      "members": [
+        {"userId": 140509404, "ownerName": "Magic"},
+        {"userId": 140509406, "ownerName": "NaVI"},
+        {"userId": 140509407, "ownerName": "大家一起喜洋洋"},
+        {"userId": 140509409, "ownerName": "对对队"},
+        {"userId": 140509410, "ownerName": "多干几票就润"},
+        {"userId": 140509411, "ownerName": "星云少女"},
+        {"userId": 140509412, "ownerName": "这就是街舞"},
+        {"userId": 140509416, "ownerName": "猪突猛进"},
+        {"userId": 140509417, "ownerName": "最美啦芭"},
+        {"userId": 140509418, "ownerName": "并夕夕"},
+        {"userId": 140509419, "ownerName": "成都第一天团"},
+        {"userId": 140509420, "ownerName": "第六人格"},
+        {"userId": 140509423, "ownerName": "和一姐一起拿第一队"},
+        {"userId": 140574885, "ownerName": "E起来耍"},
+        {"userId": 140574886, "ownerName": "TEAM-BB"},
+        {"userId": 140574887, "ownerName": "夜莺"},
+        {"userId": 140574888, "ownerName": "5IRE"},
+        {"userId": 140574889, "ownerName": "不如跳5"},
+        {"userId": 140574890, "ownerName": "课间进行曲"},
+        {"userId": 140574891, "ownerName": "麻辣女bang"},
+        {"userId": 140574892, "ownerName": "美少女先疯队"},
+        {"userId": 140574893, "ownerName": "末路狂花"},
+        {"userId": 140574894, "ownerName": "丝禧丸子"},
+        {"userId": 140574895, "ownerName": "我说的都队"},
+        {"userId": 141623681, "ownerName": "复活者联盟"}
+      ]
+    }
+  }
+}

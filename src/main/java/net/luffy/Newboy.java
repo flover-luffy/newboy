@@ -111,14 +111,6 @@ public final class Newboy extends JavaPlugin {
             String firstAdmin = properties.admins[0];
             PerformanceMonitor.getInstance().enablePeriodicReporting(firstAdmin, 1440); // 24小时间隔
         }
-        
-        // 初始化每日总结系统
-        try {
-            net.luffy.util.summary.DailySummaryIntegration.getInstance().initialize();
-            getLogger().info("每日总结系统初始化完成");
-        } catch (Exception e) {
-            getLogger().error("每日总结系统初始化失败: " + e.getMessage(), e);
-        }
     }
 
     private void initProperties() {
@@ -261,9 +253,6 @@ public final class Newboy extends JavaPlugin {
      */
     private void shutdownPocket48Components() {
         try {
-            // 关闭每日总结系统
-            net.luffy.util.summary.DailySummaryIntegration.getInstance().shutdown();
-            
             // 关闭Pocket48统一资源管理器
             net.luffy.util.sender.Pocket48UnifiedResourceManager.getInstance().shutdown();
             
