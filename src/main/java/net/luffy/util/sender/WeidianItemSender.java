@@ -27,7 +27,10 @@ public class WeidianItemSender extends SyncSender {
         WeidianCookie cookie = Newboy.INSTANCE.getProperties().weidian_cookie.get(group_id);
         
         if (cookie == null) {
-            // 没有配置cookie，静默返回
+            return;
+        }
+
+        if (cookie.invalid) {
             return;
         }
 
@@ -43,29 +46,49 @@ public class WeidianItemSender extends SyncSender {
                         "2. 按F12打开开发者工具\n" +
                         "3. 在Network标签页找到请求头中的Cookie\n" +
                         "4. 复制完整的Cookie值";
-                group.getOwner().sendMessage(errorMsg);
+                try {
+                    group.getOwner().sendMessage(errorMsg);
+                } catch (Exception e) {
+                    // 静默处理异常
+                }
                 cookie.invalid = true;
-            } else {
-                // Cookie已标记为失效，跳过处理
             }
             return;
         }
 
         if (cookie.invalid) {
-            group.getOwner().sendMessage("✅ 微店Cookie已恢复正常，无需更换");
+            try {
+                group.getOwner().sendMessage("✅ 微店Cookie已恢复正常，无需更换");
+            } catch (Exception e) {
+                // 静默处理异常
+            }
             cookie.invalid = false;
         }
+
+        int highlightItemCount = 0;
+        int processedItemCount = 0;
 
         //合并发送（仅特殊链）
         List<Message> messages = new ArrayList<>();
         for (WeidianItem item : items) {
-            if (cookie.highlightItem.contains(item.id) && !cookie.shieldedItem.contains(item.id)) {
-                messages.add(handler.executeItemMessages(item, group, 10).getMessage());
+            if (cookie.highlightItem.contains(item.id)) {
+                // 使用新的方法签名发送单个商品
+                handler.executeItemMessages(new WeidianItem[]{item}, cookie, group_id);
+                highlightItemCount++;
+            }
+            processedItemCount++;
+        }
+
+        if (!messages.isEmpty()) {
+            Message combinedMessage = combine(messages);
+            if (combinedMessage != null) {
+                try {
+                    group.sendMessage(combinedMessage);
+                } catch (Exception e) {
+                    // 静默处理异常
+                }
             }
         }
-        Message t = combine(messages);
-        if (t != null)
-            group.sendMessage(t);
     }
 
 }

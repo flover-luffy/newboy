@@ -15,7 +15,7 @@ public class DelayPolicy {
     private static final long DEFAULT_TEXT_INTERVAL = 150;      // 文本消息基准间隔 150ms（优化：从300ms降低）
     private static final long DEFAULT_MEDIA_INTERVAL = 400;     // 媒体消息基准间隔 400ms（优化：从800ms降低）
     private static final long DEFAULT_MIN_INTERVAL = 100;       // 最小间隔 100ms（优化：从200ms降低）
-    private static final long DEFAULT_MAX_INTERVAL = 2000;      // 最大间隔 2秒（优化：从5秒降低）
+    private static final long DEFAULT_MAX_INTERVAL = 5000;      // 最大间隔 5秒（限制最大延迟）
     
     // 可配置参数（移除活跃度相关参数）
     private long textInterval = DEFAULT_TEXT_INTERVAL;
@@ -146,7 +146,7 @@ public class DelayPolicy {
         // 基础延迟计算
         long baseDelay = config.getRetryBaseDelay();
         double backoffMultiplier = config.getRetryBackoffMultiplier();
-        long maxDelay = config.getRetryMaxDelay();
+        long maxDelay = Math.min(config.getRetryMaxDelay(), 5000); // 强制限制最大延迟为5秒
         
         // 优化的平滑退避策略：使用更温和的指数增长
         // 添加随机抖动以避免雷群效应

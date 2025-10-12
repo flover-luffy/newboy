@@ -371,48 +371,95 @@ public final class Newboy extends JavaPlugin {
         }
 
         // 微店订单播报
-        scheduler.schedule(properties.weidian_pattern_order, new Runnable() {
+        handlerWeidian.setCronScheduleID(scheduler.schedule(properties.weidian_pattern_order, new Runnable() {
             @Override
             public void run() {
-
                 HashMap<WeidianCookie, WeidianOrder[]> cache = new HashMap<>();
                 Set<Long> processedGroups = new HashSet<>();
+                
+                // 检查配置状态
+                int totalConfiguredGroups = properties.weidian_cookie.size();
+                
+                if (totalConfiguredGroups == 0) {
+                    return;
+                }
+
+                int activeBotsCount = Bot.getInstances().size();
+                
+                if (activeBotsCount == 0) {
+                    return;
+                }
+
+                int broadcastTaskCount = 0;
+                int deliverOnlyTaskCount = 0;
+                int skippedGroupCount = 0;
 
                 for (Bot b : Bot.getInstances()) {
                     for (long group : properties.weidian_cookie.keySet()) {
                         WeidianCookie cookie = properties.weidian_cookie.get(group);
-                        if (cookie == null)
+                        if (cookie == null) {
+                            skippedGroupCount++;
                             continue;
+                        }
 
-                        if (!weidianEndTime.containsKey(group))
+                        if (!weidianEndTime.containsKey(group)) {
                             weidianEndTime.put(group, new EndTime());
+                        }
 
                         // 如果需要播报且机器人在群中
                         if (cookie.doBroadcast && b.getGroup(group) != null) {
                             AdaptiveThreadPoolManager.getInstance().execute(new WeidianOrderSender(b, group, weidianEndTime.get(group), handlerWeidianSender, cache));
                             processedGroups.add(group);
+                            broadcastTaskCount++;
                         }
                         // 如果只需要自动发货且还未处理过
                         else if (cookie.autoDeliver && !processedGroups.contains(group)) {
                             AdaptiveThreadPoolManager.getInstance().execute(new WeidianOrderSender(null, group, weidianEndTime.get(group), handlerWeidianSender, cache));
                             processedGroups.add(group);
+                            deliverOnlyTaskCount++;
+                        }
+                        else {
+                            skippedGroupCount++;
                         }
                     }
                 }
             }
-        });
+        }));
 
         // 微店商品播报
         handlerWeidian.setCronScheduleID(scheduler.schedule(properties.weidian_pattern_item, new Runnable() {
             @Override
             public void run() {
+                int totalConfiguredGroups = properties.weidian_cookie.size();
+                
+                if (totalConfiguredGroups == 0) {
+                    return;
+                }
+
+                int activeBotsCount = Bot.getInstances().size();
+                
+                if (activeBotsCount == 0) {
+                    return;
+                }
+
+                int itemBroadcastTaskCount = 0;
+                int skippedGroupCount = 0;
+
                 for (Bot b : Bot.getInstances()) {
                     for (long group : properties.weidian_cookie.keySet()) {
                         WeidianCookie cookie = properties.weidian_cookie.get(group);
-                        if (cookie == null || b.getGroup(group) == null)
+                        if (cookie == null) {
+                            skippedGroupCount++;
                             continue;
+                        }
+                        
+                        if (b.getGroup(group) == null) {
+                            skippedGroupCount++;
+                            continue;
+                        }
 
                         AdaptiveThreadPoolManager.getInstance().execute(new WeidianItemSender(b, group, handlerWeidianSender));
+                        itemBroadcastTaskCount++;
                     }
                 }
             }

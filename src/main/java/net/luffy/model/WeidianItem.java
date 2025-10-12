@@ -7,12 +7,27 @@ public class WeidianItem {
     public final long id;
     public final String name;
     public final String pic;
+    public final double price;
+    public final String itemImg;
+    public final boolean highlighted;
     public List<WeidianItemSku> skus;
 
     public WeidianItem(long id, String name, String pic) {
         this.id = id;
         this.name = name;
-        this.pic = pic;
+        this.pic = pic != null ? pic : "";
+        this.price = 0.0;
+        this.itemImg = null;
+        this.highlighted = false;
+    }
+
+    public WeidianItem(long id, String name, double price, String itemImg, boolean highlighted) {
+        this.id = id;
+        this.name = name;
+        this.pic = itemImg != null ? itemImg : "";  // pic字段用于图片URL
+        this.price = price;
+        this.itemImg = itemImg;  // 保持itemImg字段用于兼容性
+        this.highlighted = highlighted;
     }
 
     public WeidianItem addSkus(long id, String name, String pic) {

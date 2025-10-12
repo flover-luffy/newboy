@@ -257,10 +257,10 @@ public class DelayConfig {
             systemMultiplier = 1.2;
         }
         
-        // 调整重试参数
+        // 调整重试参数，确保不超过5秒限制
         this.maxRetries = Math.max(1, Math.min(5, (int)(1 * systemMultiplier)));
         this.retryBaseDelay = Math.max(0, Math.min(1000, (long)(0 * systemMultiplier)));
-        this.retryMaxDelay = Math.max(0, Math.min(5000, (long)(0 * systemMultiplier)));
+        this.retryMaxDelay = Math.max(0, Math.min(5000, (long)(5000 * systemMultiplier))); // 限制最大延迟为5秒
     }
     
     /**
@@ -452,10 +452,10 @@ public class DelayConfig {
          activeMultiplier = 0.8;
          inactiveMultiplier = 1.1;
          minInterval = 20;
-         maxInterval = 2000;
+         maxInterval = 5000; // 限制最大延迟为5秒
          maxRetries = 2;
          retryBaseDelay = 500;
-         retryMaxDelay = 3000;
+         retryMaxDelay = 5000; // 限制重试最大延迟为5秒
          retryBackoffMultiplier = 1.5;
      }
     

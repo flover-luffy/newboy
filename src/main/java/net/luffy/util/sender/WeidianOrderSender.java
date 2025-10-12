@@ -35,53 +35,70 @@ public class WeidianOrderSender extends SyncSender {
     public void run() {
         WeidianHandler weidian = Newboy.INSTANCE.getHandlerWeidian();
         WeidianCookie cookie = Newboy.INSTANCE.getProperties().weidian_cookie.get(group_id);
-        
-        // Newboy.INSTANCE.getLogger().info("[微店订单播报] 群组 " + group_id + " 开始检查订单");
 
-        if (!cache.containsKey(cookie)) {
-            cache.put(cookie, weidian.getOrderList(cookie, endTime));
+        if (cookie == null) {
+            return;
         }
 
-        WeidianOrder[] orders = cache.get(cookie);
+        if (cookie.invalid) {
+            return;
+        }
+
+        // 每次都重新获取订单，确保能检测到新订单
+        WeidianOrder[] orders = weidian.getOrderList(cookie, endTime);
+        if (orders != null) {
+            cache.put(cookie, orders);
+        } else {
+            // 如果获取失败，尝试使用缓存的订单
+            orders = cache.get(cookie);
+        }
         if (orders == null) {
-            // Newboy.INSTANCE.getLogger().warning("[微店订单播报] 群组 " + group_id + " 获取订单失败");
-            return;
-        }
-        if (bot == null) {
-            // Newboy.INSTANCE.getLogger().info("[微店订单播报] 群组 " + group_id + " 仅执行自动发货，不播报消息");
             return;
         }
         
-        // Newboy.INSTANCE.getLogger().info("[微店订单播报] 群组 " + group_id + " 获取到 " + orders.length + " 个订单");
+        if (bot == null) {
+            return;
+        }
 
         List<WeidianMessage> messages = new ArrayList<>();
         List<Long> itemIDs = new ArrayList<>();
+        int processedOrderCount = 0;
+        int shieldedOrderCount = 0;
+
+        // 添加调试日志
+        if (orders.length > 0) {
+            System.out.println("[微店订单播报] 检测到 " + orders.length + " 个订单，群组: " + group_id);
+        }
 
         for (int i = orders.length - 1; i >= 0; i--) {
             long id = orders[i].itemID;
             if (cookie.shieldedItem.contains(id)) {
+                shieldedOrderCount++;
                 continue;
             }
 
             if (!itemIDs.contains(id))
                 itemIDs.add(id);
-            //订单信息
-            messages.add(handler.executeOrderMessage(orders[i], group));
+            //订单信息 - 创建订单消息并添加到列表中
+            WeidianOrderMessage orderMessage = WeidianOrderMessage.construct(orders[i]);
+            messages.add(orderMessage);
+            processedOrderCount++;
         }
 
         //处理排名
-
         HashMap<Long, WeidianBuyer[]> itemBuyers = new HashMap<>();
         WeidianItem[] items = weidian.getItems(cookie);
+        
         for (Long id : itemIDs) {
             WeidianItem item = search(items, id);
             if (item != null) {
                 if (cookie.highlightItem.contains(id)) {//特殊链
                     itemBuyers.put(id, weidian.getItemBuyer(cookie, id));
                 } else { //普链
-                    WeidianItemMessage itemMessage = handler.executeItemMessages(item, group); //内包含weidian.getItemBuyer(cookie, id)
-                    messages.add(itemMessage); //普链商品信息附在最后
-                    itemBuyers.put(id, itemMessage.buyers);
+                    // 使用新的方法签名发送单个商品
+                    handler.executeItemMessages(new WeidianItem[]{item}, cookie, group_id);
+                    // 获取商品买家信息
+                    itemBuyers.put(id, weidian.getItemBuyer(cookie, id));
                 }
             }
         }
@@ -98,10 +115,15 @@ public class WeidianOrderSender extends SyncSender {
 
         Message t = combine(messages1);
         if (t != null) {
-            group.sendMessage(t);
-            // Newboy.INSTANCE.getLogger().info("[微店订单播报] 群组 " + group_id + " 成功发送播报消息，包含 " + messages1.size() + " 条消息");
+            System.out.println("[微店订单播报] 准备发送消息到群组: " + group_id + ", 消息数量: " + messages1.size());
+            try {
+                group.sendMessage(t);
+                System.out.println("[微店订单播报] 消息发送成功到群组: " + group_id);
+            } catch (Exception e) {
+                System.out.println("[微店订单播报] 消息发送失败到群组: " + group_id + ", 错误: " + e.getMessage());
+            }
         } else {
-            // Newboy.INSTANCE.getLogger().info("[微店订单播报] 群组 " + group_id + " 没有新订单需要播报");
+            System.out.println("[微店订单播报] 没有消息需要发送到群组: " + group_id);
         }
     }
 

@@ -1079,7 +1079,7 @@ public class CommandOperator extends AsyncWebHandlerBase {
                                         Message itemMessage = new PlainText(item.name + "\n");
                                         
                                         // 尝试加载并嵌入商品图片
-                                        if (!item.pic.equals("")) {
+                                        if (item.pic != null && !item.pic.equals("")) {
                                             try {
                                                 WeidianSenderHandler handler = Newboy.INSTANCE.getHandlerWeidianSender();
                                                 try (InputStream imageStream = handler.getRes(item.pic)) {

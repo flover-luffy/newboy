@@ -18,7 +18,7 @@ public class WeiboApiCookieManager {
     // 使用System.out替代日志记录
     
     // 微博相关URL
-    private static final String WEIBO_HOMEPAGE = "https://m.weibo.cn/";
+    private static final String WEIBO_HOMEPAGE = "https://weibo.cn/pub/";
     private static final String WEIBO_API_BASE = "https://m.weibo.cn/api/";
     
     // Cookie存储
@@ -139,7 +139,9 @@ public class WeiboApiCookieManager {
             
             if (setCookieHeaders != null) {
                 for (String setCookieHeader : setCookieHeaders) {
+                    int beforeSize = cookies.size();
                     parseCookieHeader(setCookieHeader, cookies);
+                    int afterSize = cookies.size();
                 }
             }
             

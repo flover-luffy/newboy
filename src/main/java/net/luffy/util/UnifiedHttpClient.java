@@ -1138,27 +1138,27 @@ public class UnifiedHttpClient {
             // 对于HTTP 503错误（服务不可用），使用较短的重试间隔
             if (responseCode == 503) {
                 // 对503错误使用较短的基础延迟（1秒）和较小的指数因子（1.5）
-                long delay = Math.min((long)(1000 * Math.pow(1.5, retryCount)), 8000); // 最大8秒
+                long delay = Math.min((long)(1000 * Math.pow(1.5, retryCount)), 5000); // 最大5秒
                 return delay;
             }
             
             // 对于HTTP 432错误（微博API认证失败），使用更长的延迟
             if (responseCode == 432) {
-                // 对432错误使用更长的基础延迟（5秒）和更大的指数因子（2.0）
-                long delay = Math.min((long)(5000 * Math.pow(2.0, retryCount)), 60000); // 最大60秒
+                // 对432错误使用更长的基础延迟（2秒）和更大的指数因子（1.8）
+                long delay = Math.min((long)(2000 * Math.pow(1.8, retryCount)), 5000); // 最大5秒
                 return delay;
             }
             
             // 其他5xx服务器错误使用中等延迟
             if (responseCode >= 500 && responseCode < 600) {
-                // 对其他5xx错误使用中等延迟（2秒基础）
-                long delay = Math.min((long)(2000 * Math.pow(1.8, retryCount)), 15000); // 最大15秒
+                // 对其他5xx错误使用中等延迟（1.5秒基础）
+                long delay = Math.min((long)(1500 * Math.pow(1.6, retryCount)), 5000); // 最大5秒
                 return delay;
             }
             
             // 其他错误使用标准指数退避策略：baseDelay * (backoffMultiplier^retryCount)，最大延迟由配置决定
             double backoffMultiplier = delayConfig.getRetryBackoffMultiplier();
-            long maxDelay = delayConfig.getRetryMaxDelay();
+            long maxDelay = Math.min(delayConfig.getRetryMaxDelay(), 5000); // 强制限制最大延迟为5秒
             return Math.min((long)(baseDelayMs * Math.pow(backoffMultiplier, retryCount)), maxDelay);
         }
     }

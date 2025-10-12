@@ -90,10 +90,11 @@ tasks.register<JavaExec>("runVideoTest") {
     jvmArgs = listOf("-Dfile.encoding=UTF-8")
 }
 
-tasks.register<JavaExec>("runMessageIdTest") {
+// 添加运行微店API测试的任务
+tasks.register<JavaExec>("runWeidianApiTest") {
     group = "application"
-    description = "Run MessageIntegrityChecker ID generation test"
+    description = "Run Weidian API test"
     classpath = sourceSets["main"].runtimeClasspath
-    mainClass.set("net.luffy.test.MessageIntegrityCheckerTest")
+    mainClass.set("weidian_api_test")
     jvmArgs = listOf("-Dfile.encoding=UTF-8")
 }
