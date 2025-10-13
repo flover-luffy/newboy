@@ -5,6 +5,7 @@ import net.luffy.handler.WeidianHandler;
 import net.luffy.handler.WeidianSenderHandler;
 import net.luffy.model.WeidianCookie;
 import net.luffy.model.WeidianItem;
+import net.luffy.model.WeidianItemMessage;
 import net.mamoe.mirai.Bot;
 import net.mamoe.mirai.message.data.Message;
 
@@ -72,8 +73,11 @@ public class WeidianItemSender extends SyncSender {
         List<Message> messages = new ArrayList<>();
         for (WeidianItem item : items) {
             if (cookie.highlightItem.contains(item.id)) {
-                // 使用新的方法签名发送单个商品
-                handler.executeItemMessages(new WeidianItem[]{item}, cookie, group_id);
+                // 使用单个商品的方法来正确处理图片
+                WeidianItemMessage itemMessage = handler.executeItemMessages(item, group, 5);
+                if (itemMessage != null) {
+                    messages.add(itemMessage.getMessage());
+                }
                 highlightItemCount++;
             }
             processedItemCount++;

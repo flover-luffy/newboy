@@ -35,7 +35,7 @@ public class WeidianOrderMessage implements WeidianMessage {
     }
 
     public WeidianOrderMessage generateMessage() {
-        return this.setMessage(new PlainText("感谢" + name_buyer + "在" + name_item + "中支持了" + price + "！"));
+        return this.setMessage(new PlainText("感谢" + name_buyer + "在" + name_item + "中支持了¥" + String.format("%.2f", price) + "！"));
     }
 
     @Override
@@ -65,8 +65,8 @@ public class WeidianOrderMessage implements WeidianMessage {
                     }
                 }
 
-                return this.message.plus("\n共" + (buyers[i].contribution / 100.0) + " 排名" + (tied ? "并列" : "") + (j + 2)
-                        + (i == 0 ? "" : " 距离上一名" + (buyers[j].contribution - buyers[j + 1].contribution) / 100.0)
+                return this.message.plus("\n共¥" + String.format("%.2f", buyers[i].contribution / 100.0) + " 排名" + (tied ? "并列" : "") + (j + 2)
+                        + (i == 0 ? "" : " 距离上一名¥" + String.format("%.2f", (buyers[j].contribution - buyers[j + 1].contribution) / 100.0))
                         + "\n" + payTime);
             }
         }

@@ -65,10 +65,7 @@ public class WeidianOrderSender extends SyncSender {
         int processedOrderCount = 0;
         int shieldedOrderCount = 0;
 
-        // 添加调试日志
-        if (orders.length > 0) {
-            System.out.println("[微店订单播报] 检测到 " + orders.length + " 个订单，群组: " + group_id);
-        }
+
 
         for (int i = orders.length - 1; i >= 0; i--) {
             long id = orders[i].itemID;
@@ -95,8 +92,11 @@ public class WeidianOrderSender extends SyncSender {
                 if (cookie.highlightItem.contains(id)) {//特殊链
                     itemBuyers.put(id, weidian.getItemBuyer(cookie, id));
                 } else { //普链
-                    // 使用新的方法签名发送单个商品
-                    handler.executeItemMessages(new WeidianItem[]{item}, cookie, group_id);
+                    // 使用单个商品的方法来正确处理图片
+                    WeidianItemMessage itemMessage = handler.executeItemMessages(item, group, 5);
+                    if (itemMessage != null) {
+                        messages.add(itemMessage);
+                    }
                     // 获取商品买家信息
                     itemBuyers.put(id, weidian.getItemBuyer(cookie, id));
                 }
@@ -115,15 +115,11 @@ public class WeidianOrderSender extends SyncSender {
 
         Message t = combine(messages1);
         if (t != null) {
-            System.out.println("[微店订单播报] 准备发送消息到群组: " + group_id + ", 消息数量: " + messages1.size());
             try {
                 group.sendMessage(t);
-                System.out.println("[微店订单播报] 消息发送成功到群组: " + group_id);
             } catch (Exception e) {
-                System.out.println("[微店订单播报] 消息发送失败到群组: " + group_id + ", 错误: " + e.getMessage());
+                // 静默处理异常
             }
-        } else {
-            System.out.println("[微店订单播报] 没有消息需要发送到群组: " + group_id);
         }
     }
 

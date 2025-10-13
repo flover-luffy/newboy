@@ -54,7 +54,7 @@ public class WeidianItemMessage implements WeidianMessage {
         String out = "";
         for (int i = 0; i < amount; i++) {
             if (buyers.length >= i + 1) {
-                out += "\n" + (i + 1) + ". (" + new BigDecimal(buyers[i].contribution).divide(new BigDecimal("100.0")).toPlainString() + ")" + buyers[i].name;
+                out += "\n" + (i + 1) + ". (¥" + String.format("%.2f", buyers[i].contribution / 100.0) + ")" + buyers[i].name;
             } else
                 break;
         }
@@ -68,12 +68,12 @@ public class WeidianItemMessage implements WeidianMessage {
         }
 
         if (amountTotal == 0) {
-            return this.setMessage(m.plus("人数：0\n进度：0" +
+            return this.setMessage(m.plus("人数：0\n进度：¥0.00" +
                     "\n" + DateTime.now()));
         } else {
             return this.setMessage(m.plus("人数：" + number +
-                    "\n进度：" + new BigDecimal(amountTotal).divide(new BigDecimal("100.0")).toPlainString() +
-                    "\n人均：" + new BigDecimal(amountAverage).divide(new BigDecimal("100.0")).toPlainString() +
+                    "\n进度：¥" + String.format("%.2f", amountTotal / 100.0) +
+                    "\n人均：¥" + String.format("%.2f", amountAverage / 100.0) +
                     "\n" + DateTime.now() +
                     "\n---------" + pickBuyer(buyers, pickAmount)));
         }

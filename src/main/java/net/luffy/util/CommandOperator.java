@@ -28,6 +28,7 @@ import net.luffy.model.Pocket48RoomInfo;
 import net.luffy.model.WeidianBuyer;
 import net.luffy.model.WeidianCookie;
 import net.luffy.model.WeidianItem;
+import net.luffy.model.WeidianItemMessage;
 import net.luffy.model.WeidianOrder;
 import net.mamoe.mirai.Bot;
 import net.mamoe.mirai.contact.Group;
@@ -1072,45 +1073,23 @@ public class CommandOperator extends AsyncWebHandlerBase {
                                     if (item == null) {
                                         return new PlainText("❌ 未找到商品ID: " + id + "\n可能原因：\n1. 商品ID不存在\n2. Cookie已失效\n3. 网络连接问题");
                                     } else {
-                                        // 获取购买者信息和统计数据
+                                        // 使用WeidianSenderHandler来处理图片显示
+                                        WeidianSenderHandler handler = new WeidianSenderHandler();
+                                        Bot bot = event.getBot();
+                                        Group group = bot.getGroup(groupId);
+                                        if (group != null) {
+                                            // 使用executeItemMessages方法来生成包含图片的消息
+                                            WeidianItemMessage itemMessage = handler.executeItemMessages(item, group, Integer.MAX_VALUE);
+                                            if (itemMessage != null) {
+                                                return itemMessage.getMessage();
+                                            }
+                                        }
+                                        
+                                        // 如果无法获取群组或生成消息失败，回退到纯文本模式
                                         WeidianBuyer[] buyers = weidian.getItemBuyer(cookie, id);
                                         
-                                        // 构建消息，包含图片
-                                        Message itemMessage = new PlainText(item.name + "\n");
-                                        
-                                        // 尝试加载并嵌入商品图片
-                                        if (item.pic != null && !item.pic.equals("")) {
-                                            try {
-                                                WeidianSenderHandler handler = Newboy.INSTANCE.getHandlerWeidianSender();
-                                                try (InputStream imageStream = handler.getRes(item.pic)) {
-                                                    if (imageStream != null) {
-                                                        // 无论群聊还是私聊都嵌入图片
-                                                        if (event.getSubject() instanceof Group) {
-                                                            Group group = (Group) event.getSubject();
-                                                            try (ExternalResource imageResource = ExternalResource.create(imageStream)) {
-                                                                Image image = group.uploadImage(imageResource);
-                                                                itemMessage = itemMessage.plus(image);
-                                                            }
-                                                        } else {
-                                                            // 私聊中也嵌入图片
-                                                            try (ExternalResource imageResource = ExternalResource.create(imageStream)) {
-                                                                Image image = event.getSubject().uploadImage(imageResource);
-                                                                itemMessage = itemMessage.plus(image);
-                                                            }
-                                                        }
-                                                    } else {
-                                                        itemMessage = itemMessage.plus(new PlainText("[商品图片无法获取]\n"));
-                                                        // Newboy.INSTANCE.getLogger().warning("[微店查询] 商品ID " + id + " 图片数据为空，URL: " + item.pic);
-                                                    }
-                                                }
-                                            } catch (Exception e) {
-                                                // 图片加载失败时显示提示，不再显示URL链接
-                                                itemMessage = itemMessage.plus(new PlainText("[图片加载失败: " + e.getMessage() + "]\n"));
-                                                // Newboy.INSTANCE.getLogger().warning("[微店查询] 商品ID " + id + " 图片加载失败: " + e.getMessage());
-                                            }
-                                        } else {
-                                            itemMessage = itemMessage.plus(new PlainText("[暂无商品图片]\n"));
-                                        }
+                                        StringBuilder result = new StringBuilder();
+                                        result.append(item.name).append("\n");
                                         
                                         // 显示购买统计信息
                                         if (buyers != null && buyers.length > 0) {
@@ -1119,23 +1098,29 @@ public class CommandOperator extends AsyncWebHandlerBase {
                                                 totalAmount += buyer.contribution;
                                             }
                                             
-                                            itemMessage = itemMessage.plus(new PlainText("人数：" + buyers.length + "\n"));
-                                            itemMessage = itemMessage.plus(new PlainText("进度：¥" + String.format("%.2f", totalAmount / 100.0) + "\n"));
-                                            itemMessage = itemMessage.plus(new PlainText("人均：¥" + String.format("%.2f", totalAmount / 100.0 / buyers.length) + "\n"));
-                                            itemMessage = itemMessage.plus(new PlainText(cn.hutool.core.date.DateTime.now() + "\n"));
-                                            itemMessage = itemMessage.plus(new PlainText("──────────────────────\n"));
-                                            itemMessage = itemMessage.plus(new PlainText("购买者列表:\n"));
+                                            double totalAmountYuan = totalAmount / 100.0;
+                                            double avgAmountYuan = totalAmountYuan / buyers.length;
+                                            
+                                            result.append("人数：").append(buyers.length).append(" 人\n");
+                                            result.append("总额：¥").append(String.format("%.2f", totalAmountYuan)).append("\n");
+                                            result.append("人均：¥").append(String.format("%.2f", avgAmountYuan)).append("\n");
+                                            result.append("时间：").append(cn.hutool.core.date.DateTime.now().toString("MM-dd HH:mm")).append("\n");
+                                            result.append("──────────────────\n");
+                                            
+                                            // 显示所有购买者
                                             for (int i = 0; i < buyers.length; i++) {
-                                                itemMessage = itemMessage.plus(new PlainText((i + 1) + ". ¥" + String.format("%.2f", buyers[i].contribution / 100.0) + " " + buyers[i].name + "\n"));
+                                                result.append(i + 1).append(". ").append(buyers[i].name)
+                                                      .append(" ¥").append(String.format("%.2f", buyers[i].contribution / 100.0)).append("\n");
                                             }
                                         } else {
-                                            itemMessage = itemMessage.plus(new PlainText("人数：0\n"));
-                                            itemMessage = itemMessage.plus(new PlainText("进度：¥0.00\n"));
-                                            itemMessage = itemMessage.plus(new PlainText(cn.hutool.core.date.DateTime.now() + "\n"));
-                                            itemMessage = itemMessage.plus(new PlainText("暂无购买记录\n"));
+                                            result.append("人数：0 人\n");
+                                            result.append("总额：¥0.00\n");
+                                            result.append("时间：").append(cn.hutool.core.date.DateTime.now().toString("MM-dd HH:mm")).append("\n");
+                                            result.append("──────────────────\n");
+                                            result.append("暂无购买记录\n");
                                         }
                                         
-                                        return itemMessage;
+                                        return new PlainText(result.toString());
                                     }
                                 }
                                 default:

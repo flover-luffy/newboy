@@ -158,10 +158,38 @@ public class StringMatchUtils {
         String trimmed = content.trim();
         String lower = trimmed.toLowerCase();
         
-        return lower.startsWith("<html>") || 
-               lower.startsWith("<!doctype") || 
-               lower.contains("login") || 
-               lower.contains("登录");
+        // 首先检查明确的HTML标识符
+        if (lower.startsWith("<html>") || 
+            lower.startsWith("<!doctype") ||
+            lower.startsWith("<html ")) {
+            return true;
+        }
+        
+        // 如果内容看起来像JSON格式，则不应该被判定为HTML
+        // 即使包含login关键字也是如此
+        if (isLikelyJson(trimmed)) {
+            return false;
+        }
+        
+        // 只有在不是JSON格式的情况下，才检查login关键字
+        return lower.contains("login") || lower.contains("登录");
+    }
+    
+    /**
+     * 检查内容是否可能是JSON格式
+     * @param content 待检查的内容
+     * @return 是否可能是JSON
+     */
+    private static boolean isLikelyJson(String content) {
+        if (content == null || content.isEmpty()) {
+            return false;
+        }
+        
+        String trimmed = content.trim();
+        
+        // 检查是否以JSON对象或数组开始和结束
+        return (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+               (trimmed.startsWith("[") && trimmed.endsWith("]"));
     }
     
     /**
