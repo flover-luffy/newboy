@@ -6,7 +6,6 @@ import cn.hutool.json.JSONUtil;
 import net.luffy.Newboy;
 import net.luffy.util.UnifiedJsonParser;
 import net.luffy.util.UnifiedHttpClient;
-import net.luffy.util.delay.UnifiedDelayService;
 // 移除了对旧DouyinHandler的依赖
 import net.mamoe.mirai.Bot;
 import net.mamoe.mirai.contact.Group;
@@ -40,7 +39,7 @@ public class DouyinMonitorService {
     private final ScheduledExecutorService scheduler;
     private final Map<String, UserMonitorInfo> monitoredUsers;
     private final AtomicBoolean isRunning;
-    private final UnifiedDelayService unifiedDelayService;
+    // 延迟服务已移除
     // 移除了DouyinHandler依赖，现在使用内置的签名生成器
     
     // 调试模式
@@ -73,7 +72,7 @@ public class DouyinMonitorService {
         this.scheduler = UnifiedSchedulerManager.getInstance().getScheduledExecutor();
         this.monitoredUsers = new ConcurrentHashMap<>();
         this.isRunning = new AtomicBoolean(false);
-        this.unifiedDelayService = UnifiedDelayService.getInstance();
+        // 延迟服务已移除，使用直接延迟
         // 不再依赖旧的DouyinHandler
     }
     
@@ -464,9 +463,10 @@ public class DouyinMonitorService {
                     );
                     
                     try {
-                        // 使用统一延迟服务替代CompletableFuture.delayedExecutor
-                        unifiedDelayService.delayAsync((int)delayMs).join();
-                    } catch (Exception e) {
+                        // 使用直接延迟替代统一延迟服务
+                        Thread.sleep(delayMs);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
                         throw new RuntimeException("重试被中断", e);
                     }
                 }
@@ -656,7 +656,13 @@ public class DouyinMonitorService {
      * @return CompletableFuture
      */
     private CompletableFuture<Void> delayAsync(long delayMs) {
-        return unifiedDelayService.delayAsync((int)delayMs);
+        return CompletableFuture.runAsync(() -> {
+            try {
+                Thread.sleep(delayMs);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
     }
     
     /**

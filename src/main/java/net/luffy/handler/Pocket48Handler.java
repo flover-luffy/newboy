@@ -11,7 +11,6 @@ import net.luffy.model.Pocket48RoomInfo;
 import net.luffy.util.DynamicTimeoutManager;
 import net.luffy.util.MonitorConfig;
 import net.luffy.util.UnifiedLogger;
-import net.luffy.util.delay.UnifiedDelayService;
 import net.luffy.util.sender.Pocket48Sender;
 import net.luffy.util.ConcurrencySafetyUtils;
 import net.luffy.util.StringMatchUtils;
@@ -50,7 +49,7 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
     private final UnifiedJsonParser jsonParser = UnifiedJsonParser.getInstance();
     private final DynamicTimeoutManager timeoutManager;
     private final UnifiedHttpClient httpClient;
-    private final UnifiedDelayService unifiedDelayService;
+    // 延迟服务已移除
     private final ConcurrencySafetyUtils concurrencyUtils;
     private final StringMatchUtils stringMatchUtils;
     private final Pocket48Sender pocket48Sender;
@@ -60,7 +59,7 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
         this.header = new Pocket48HandlerHeader(properties);
         this.timeoutManager = DynamicTimeoutManager.getInstance();
         this.httpClient = UnifiedHttpClient.getInstance();
-        this.unifiedDelayService = UnifiedDelayService.getInstance();
+        // 延迟服务已移除
         this.concurrencyUtils = ConcurrencySafetyUtils.getInstance();
         this.stringMatchUtils = new StringMatchUtils();
         // 暂时注释掉 Pocket48Sender 的初始化，因为它需要特定的参数
@@ -607,8 +606,13 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
                         } else {
                             logger.warn("{} - 准备重试", errorMsg);
                             // 异步延迟重试
-                            return unifiedDelayService.delayAsync((int)(baseDelay * (attempt + 1)))
-                                .thenCompose(v -> attemptRequestAsync(roomID, serverID, timeoutConfig, attempt + 1, maxRetries, baseDelay, startTime));
+                            return CompletableFuture.runAsync(() -> {
+                                try {
+                                    Thread.sleep((long)(baseDelay * (attempt + 1)));
+                                } catch (InterruptedException e) {
+                                    Thread.currentThread().interrupt();
+                                }
+                            }).thenCompose(v -> attemptRequestAsync(roomID, serverID, timeoutConfig, attempt + 1, maxRetries, baseDelay, startTime));
                         }
                     }
                 } catch (Exception e) {
@@ -621,8 +625,13 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
                     } else {
                         logger.warn("{} - 准备重试", errorMsg);
                         // 异步延迟重试
-                        return unifiedDelayService.delayAsync((int)(baseDelay * (attempt + 1)))
-                            .thenCompose(v -> attemptRequestAsync(roomID, serverID, timeoutConfig, attempt + 1, maxRetries, baseDelay, startTime));
+                        return CompletableFuture.runAsync(() -> {
+                            try {
+                                Thread.sleep((long)(baseDelay * (attempt + 1)));
+                            } catch (InterruptedException ex) {
+                                Thread.currentThread().interrupt();
+                            }
+                        }).thenCompose(v -> attemptRequestAsync(roomID, serverID, timeoutConfig, attempt + 1, maxRetries, baseDelay, startTime));
                     }
                 }
             })
@@ -640,10 +649,15 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
                     logger.warn("{} - 准备重试", errorMsg);
                     // 异步延迟重试
                     try {
-                        return unifiedDelayService.delayAsync((int)(baseDelay * (attempt + 1)))
-                            .thenCompose(v -> attemptRequestAsync(roomID, serverID, timeoutConfig, attempt + 1, maxRetries, baseDelay, startTime))
+                        return CompletableFuture.runAsync(() -> {
+                            try {
+                                Thread.sleep((long)(baseDelay * (attempt + 1)));
+                            } catch (InterruptedException ex) {
+                                Thread.currentThread().interrupt();
+                            }
+                        }).thenCompose(v -> attemptRequestAsync(roomID, serverID, timeoutConfig, attempt + 1, maxRetries, baseDelay, startTime))
                             .join();
-                    } catch (Exception e) {
+                    } catch (Exception ex) {
                         return null;
                     }
                 }

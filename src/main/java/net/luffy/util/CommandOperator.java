@@ -2158,14 +2158,12 @@ public class CommandOperator extends AsyncWebHandlerBase {
         try {
             DouyinMonitorService monitorService = DouyinMonitorService.getInstance();
             monitorService.stopMonitoring();
-            // 使用异步延迟替代Thread.sleep，避免阻塞
-            delayAsync(1000).thenRun(() -> {
-                try {
-                    monitorService.startMonitoring(10); // 默认10分钟检查间隔
-                } catch (Exception e) {
-                    logger.error("启动抖音监控服务失败: {}", e.getMessage());
-                }
-            });
+            // 延迟已移除，直接执行
+            try {
+                monitorService.startMonitoring(10); // 默认10分钟检查间隔
+            } catch (Exception e) {
+                logger.error("启动抖音监控服务失败: {}", e.getMessage());
+            }
             return new PlainText("✅ 抖音监控服务重启中...");
         } catch (Exception e) {
             return new PlainText("❌ 重启抖音监控服务失败: " + e.getMessage());
@@ -2427,8 +2425,15 @@ public class CommandOperator extends AsyncWebHandlerBase {
      * @param delayMs 延迟毫秒数
      * @return CompletableFuture<Void>
      */
-    private CompletableFuture<Void> delayAsync(int delayMs) {
-        return net.luffy.util.delay.UnifiedDelayService.getInstance().delayAsync(delayMs);
-    }
+    // 延迟方法已移除
+    // private CompletableFuture<Void> delayAsync(int delayMs) {
+    //     return CompletableFuture.runAsync(() -> {
+    //         try {
+    //             Thread.sleep(delayMs);
+    //         } catch (InterruptedException e) {
+    //             Thread.currentThread().interrupt();
+    //         }
+    //     });
+    // }
 
 }

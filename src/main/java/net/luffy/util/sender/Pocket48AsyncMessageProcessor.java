@@ -7,9 +7,7 @@ import net.luffy.util.AdaptiveThreadPoolManager;
 import net.luffy.util.CpuLoadBalancer;
 import net.luffy.util.EventBusManager;
 import net.luffy.util.MonitorConfig;
-import net.luffy.util.delay.UnifiedDelayService;
-import net.luffy.util.delay.DelayPolicy;
-import net.luffy.util.delay.DelayConfig;
+
 import net.luffy.Newboy;
 
 import net.mamoe.mirai.contact.Group;
@@ -37,8 +35,6 @@ public class Pocket48AsyncMessageProcessor {
     private final MonitorConfig config;
 
     private final ScheduledExecutorService delayExecutor;
-    private final UnifiedDelayService unifiedDelayService;
-    private final DelayPolicy delayPolicy;
     
     // 文本消息处理线程池：专门处理文本消息等轻量级任务
     private static final int CPU_CORES;
@@ -73,8 +69,6 @@ public class Pocket48AsyncMessageProcessor {
         
         // 使用统一调度管理器替代自建延迟执行器
         this.delayExecutor = net.luffy.util.UnifiedSchedulerManager.getInstance().getScheduledExecutor();
-        this.unifiedDelayService = UnifiedDelayService.getInstance();
-        this.delayPolicy = new DelayPolicy();
         
         // 注册事件处理器
         registerEventHandlers();
@@ -240,13 +234,20 @@ public class Pocket48AsyncMessageProcessor {
      * @param group 目标群组
      * @param timeoutSeconds 超时时间（秒）
      */
+    /**
+     * 等待并发送消息 - 简化版本：移除延迟等待
+     * @param futures 处理结果的Future列表
+     * @param group 目标群组
+     * @param timeoutSeconds 超时时间（秒）
+     */
     public void waitAndSendMessages(List<CompletableFuture<Pocket48SenderMessage>> futures, 
                                    Group group, int timeoutSeconds) {
+        // 直接处理，不等待延迟
         waitAndSendMessagesWithSmartTimeout(futures, group, timeoutSeconds, timeoutSeconds);
     }
     
     /**
-     * 智能超时处理：真正异步处理，不阻塞等待
+     * 智能超时处理：真正异步处理，不阻塞等待 - 简化版本：移除延迟调度
      * @param futures 处理结果的Future列表
      * @param group 目标群组
      * @param textTimeoutSeconds 文本消息超时时间（秒）
@@ -255,7 +256,7 @@ public class Pocket48AsyncMessageProcessor {
     public void waitAndSendMessagesWithSmartTimeout(List<CompletableFuture<Pocket48SenderMessage>> futures, 
                                                    Group group, int textTimeoutSeconds, int mediaTimeoutSeconds) {
         
-        // 真正异步处理：为每个Future设置异步回调
+        // 真正异步处理：为每个Future设置异步回调，移除延迟调度
         for (CompletableFuture<Pocket48SenderMessage> future : futures) {
             // 设置异步回调，避免阻塞等待
             future.whenComplete((result, throwable) -> {
@@ -269,13 +270,11 @@ public class Pocket48AsyncMessageProcessor {
                 }
             });
             
-            // 设置超时处理 - 使用配置的协程超时时间
+            // 移除超时处理的延迟调度，直接取消超时的Future
             long timeoutMs = config.getCoroutineTimeout();
-            delayExecutor.schedule(() -> {
-                if (!future.isDone()) {
-                    future.cancel(true);
-                }
-            }, timeoutMs, TimeUnit.MILLISECONDS);
+            if (!future.isDone() && timeoutMs > 0) {
+                future.cancel(true);
+            }
         }
     }
     
@@ -294,8 +293,8 @@ public class Pocket48AsyncMessageProcessor {
         for (Pocket48SenderMessage message : messages) {
             try {
                 sendMessage(message, group);
-                // 移除延迟配置
-                // 无延迟发送
+                // 移除延迟配置，立即发送
+        // 立即发送，无延迟
             } catch (Exception e) {
                 // 静默处理发送错误
             }
@@ -317,14 +316,9 @@ public class Pocket48AsyncMessageProcessor {
                     sendMessageWithRetry(message, group, 3);
                 }
                 
-                // 消息组间延迟 - 改为异步非阻塞
+                // 消息组间延迟 - 移除延迟，立即执行
                 if (i < messageGroup.size() - 1) {
-                    long groupDelay = delayPolicy.getMessageGroupDelay();
-                    unifiedDelayService.delayAsync(groupDelay)
-                        .exceptionally(throwable -> {
-                            // 静默处理延迟异常
-                            return null;
-                        });
+                    // 立即执行下一个消息组
                 }
             }
         } catch (Exception e) {
@@ -344,10 +338,9 @@ public class Pocket48AsyncMessageProcessor {
         for (int i = 0; i < messages.size(); i++) {
             try {
                 sendMessage(messages.get(i), group);
-                // 高优先级消息（文本消息）间无延迟，低优先级消息使用最小延迟
+                // 高优先级消息（文本消息）立即发送，无延迟
                 if (i < messages.size() - 1) {
-                    // 移除延迟配置，所有消息无延迟发送
-                    // 无延迟发送
+                    // 立即发送，无延迟
                 }
             } catch (Exception e) {
                 // 静默处理发送错误
@@ -523,11 +516,10 @@ public class Pocket48AsyncMessageProcessor {
             System.out.println(String.format("[警告] 消息发送失败，准备重试 %d/%d, 错误: %s", 
                 attempt, maxRetries, e.getMessage()));
             
-            // 异步指数退避重试 - 使用DelayConfig配置
-            DelayConfig delayConfig = DelayConfig.getInstance();
-            long baseDelay = delayConfig.getRetryBaseDelay();
-            double backoffMultiplier = delayConfig.getRetryBackoffMultiplier();
-            long maxDelay = delayConfig.getRetryMaxDelay();
+            // 异步指数退避重试 - 使用默认配置（延迟配置已移除）
+            long baseDelay = 1000L; // 默认基础延迟1秒
+            double backoffMultiplier = 2.0; // 默认退避倍数
+            long maxDelay = 30000L; // 默认最大延迟30秒
             long finalDelay = Math.min((long)(baseDelay * Math.pow(backoffMultiplier, attempt - 1)), maxDelay);
             
             delayExecutor.schedule(() -> {
@@ -619,15 +611,12 @@ public class Pocket48AsyncMessageProcessor {
 
     
     /**
-     * 同步延迟方法（已弃用 - 避免阻塞调用）
-     * @param delayMs 延迟时间（毫秒）
-     * @deprecated 使用 delayAsync 替代，避免同步阻塞
+     * 已弃用的同步延迟方法 - 已移除
+     * @deprecated 此方法已被移除，不再使用延迟
      */
     @Deprecated
     private void delaySynchronous(int delayMs) {
-        // 记录警告并改为异步执行
-        System.err.println("[警告] 检测到同步延迟调用，建议改为异步实现");
-        unifiedDelayService.delayAsync(delayMs); // 不再阻塞等待
+        // 移除延迟逻辑，直接返回
     }
 
     /**

@@ -14,7 +14,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import net.luffy.util.delay.UnifiedDelayService;
+
 
 /**
  * 错误处理与恢复管理器
@@ -109,8 +109,13 @@ public class ErrorHandlingManager {
                         operationName, attempt + 1, delay));
                 
                 // 异步延迟后重试
-                return UnifiedDelayService.getInstance().delayAsync(delay)
-                    .thenCompose(v -> executeWithRetryAsyncInternal(
+                return CompletableFuture.runAsync(() -> {
+                    try {
+                        Thread.sleep(delay);
+                    } catch (InterruptedException ex) {
+                        Thread.currentThread().interrupt();
+                    }
+                }).thenCompose(v -> executeWithRetryAsyncInternal(
                         operationName, operation, maxRetries, retryDelayMs, attempt + 1, e));
             } else {
                 // 所有重试都失败了
@@ -343,8 +348,13 @@ public class ErrorHandlingManager {
         // 网络连接异常恢复策略（异步版本）
         registerAsyncRecoveryStrategy(java.net.ConnectException.class, (exception) -> {
             // 尝试重新建立网络连接
-            return UnifiedDelayService.getInstance().delayAsync(2000) // 异步等待2秒
-                .thenApply(v -> true)
+            return CompletableFuture.runAsync(() -> {
+                try {
+                    Thread.sleep(2000); // 异步等待2秒
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }).thenApply(v -> true)
                 .exceptionally(e -> false);
         });
         
@@ -357,8 +367,13 @@ public class ErrorHandlingManager {
                     SmartCacheManager.getInstance().performMemoryPressureCleanup();
                     System.gc();
                     // 异步等待1秒
-                    return UnifiedDelayService.getInstance().delayAsync(1000)
-                        .thenApply(v -> true)
+                    return CompletableFuture.runAsync(() -> {
+                        try {
+                            Thread.sleep(1000);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }).thenApply(v -> true)
                         .exceptionally(e -> false);
                 } catch (Exception e) {
                     return CompletableFuture.completedFuture(false);
@@ -385,7 +400,8 @@ public class ErrorHandlingManager {
                 try {
                     SmartCacheManager.getInstance().performMemoryPressureCleanup();
                     System.gc();
-                    return UnifiedDelayService.getInstance().delayAsync(1000).thenApply(v -> true).get();
+                    Thread.sleep(1000); // 同步等待1秒
+                    return true;
                 } catch (Exception e) {
                     return false;
                 }

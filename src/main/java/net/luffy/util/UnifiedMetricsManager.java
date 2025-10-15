@@ -1,7 +1,6 @@
 package net.luffy.util;
 
-import net.luffy.util.delay.DelayMetricsCollector;
-import net.luffy.util.delay.DelayMetricsReporter;
+import net.luffy.util.UnifiedLogger;
 // 移除错误的Logger导入
 
 import java.util.*;
@@ -30,9 +29,7 @@ public class UnifiedMetricsManager {
     
     // 核心组件 - 使用MetricsCollectable接口
     private final Map<String, MetricsCollectable> metricsComponents = new ConcurrentHashMap<>();
-    private final DelayMetricsReporter delayReporter;
     private final Pocket48MetricsCollector pocket48Metrics;
-    private final DelayMetricsCollector delayMetrics;
     
     // 报告管理
     private final ScheduledExecutorService reportScheduler;
@@ -93,9 +90,7 @@ public class UnifiedMetricsManager {
     private final Map<String, AtomicLong> lastMetricValues = new ConcurrentHashMap<>();
     
     private UnifiedMetricsManager() {
-        this.delayReporter = DelayMetricsReporter.getInstance();
         this.pocket48Metrics = Pocket48MetricsCollector.getInstance();
-        this.delayMetrics = DelayMetricsCollector.getInstance();
         
         this.reportScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "UnifiedMetrics-Reporter");
@@ -125,8 +120,8 @@ public class UnifiedMetricsManager {
             // 注册Pocket48指标收集器
             registerComponent(pocket48Metrics);
             
-            // 注册延迟系统指标收集器
-            registerComponent(delayMetrics);
+            // 延迟系统已移除，不再注册delayMetrics
+            // registerComponent(delayMetrics);
             
             logger.info("UnifiedMetrics", "默认指标收集组件注册完成");
         } catch (Exception e) {
@@ -212,11 +207,8 @@ public class UnifiedMetricsManager {
                 break;
                 
             case "delay":
-                if ("calculation".equals(name)) {
-                    delayMetrics.recordDelayCalculation("unified", (long) value, true);
-                } else if ("retry".equals(name)) {
-                    delayMetrics.recordRetryAttempt("unified_retry", (long) value);
-                }
+                // 延迟系统已移除，记录为自定义指标
+                pocket48Metrics.recordCustomMetric("delay_" + name, (long) value);
                 break;
                 
             case "cache":
@@ -340,8 +332,8 @@ public class UnifiedMetricsManager {
                 report.componentReports.put(entry.getKey(), entry.getValue());
             }
             
-            // 生成延迟系统详细报告（保持兼容性）
-            report.delaySystemReport = delayReporter.generateFullReport();
+            // 延迟系统已移除，设置为空报告
+            report.delaySystemReport = "延迟系统已移除以提升性能";
             
             // 收集缓存性能
             report.cachePerformance = generateCachePerformance(allMetrics);
@@ -451,10 +443,11 @@ public class UnifiedMetricsManager {
             recommendations.append("  ⚠️ 消息丢弃率过高，建议增加队列容量或优化处理速度\n");
         }
         
-        double avgDelay = delayMetrics.getAverageDelay();
-        if (avgDelay > 1000.0) {
-            recommendations.append("  ⚠️ 平均延迟过高，建议优化延迟策略或网络配置\n");
-        }
+        // 延迟系统已移除，跳过延迟检查
+        // double avgDelay = delayMetrics.getAverageDelay();
+        // if (avgDelay > 1000.0) {
+        //     recommendations.append("  ⚠️ 平均延迟过高，建议优化延迟策略或网络配置\n");
+        // }
         
         // 频率自适应建议
         if (isHighFrequencyMode.get()) {

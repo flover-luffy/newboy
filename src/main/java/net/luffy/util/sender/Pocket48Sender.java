@@ -9,11 +9,6 @@ import net.luffy.util.PerformanceMonitor;
 import net.luffy.util.MessageIntegrityChecker;
 import net.luffy.util.UnifiedLogger;
 import net.luffy.util.Pocket48MetricsCollector;
-import net.luffy.util.delay.UnifiedDelayService;
-import net.luffy.util.delay.DelayPolicy;
-
-import net.luffy.util.delay.DelayMetricsCollector;
-import net.luffy.util.delay.DelayConfig;
 import net.luffy.util.StringMatchUtils;
 
 import net.luffy.model.*;
@@ -54,8 +49,6 @@ public class Pocket48Sender extends Sender {
     private final Pocket48MediaQueue mediaQueue;
     private final Pocket48ActivityMonitor activityMonitor;
     private final ScheduledExecutorService delayExecutor;
-    private final UnifiedDelayService unifiedDelayService;
-    private final DelayPolicy delayPolicy;
     
     // 统一日志和指标收集
     private final UnifiedLogger logger = UnifiedLogger.getInstance();
@@ -74,8 +67,6 @@ public class Pocket48Sender extends Sender {
         this.activityMonitor = Pocket48ActivityMonitor.getInstance();
         // 使用统一调度管理器替代自建线程池
         this.delayExecutor = net.luffy.util.UnifiedSchedulerManager.getInstance().getScheduledExecutor();
-        this.unifiedDelayService = UnifiedDelayService.getInstance();
-        this.delayPolicy = new DelayPolicy();
         
         // 初始化缓存设置（从配置文件读取）
         initializeCacheSettings();
@@ -1231,9 +1222,8 @@ public class Pocket48Sender extends Sender {
                 return sendBatchWithSmoothing(batch, group, currentBatchIndex)
                     .thenCompose(result -> {
                         if (!isLastBatch) {
-                            // 批次间智能延迟：根据批次内容调整
-                            long delay = calculateBatchInterval(batch, batches.get(currentBatchIndex + 1));
-                            return unifiedDelayService.delayAsync((int) delay);
+                            // 批次间延迟已移除，直接继续
+                            // 移除延迟计算，立即执行下一批次
                         }
                         return CompletableFuture.completedFuture(null);
                     });
@@ -1292,33 +1282,7 @@ public class Pocket48Sender extends Sender {
     }
     
     /**
-     * 计算批次间延迟
-     * @param currentBatch 当前批次
-     * @param nextBatch 下一批次
-     * @return 延迟时间（毫秒）
-     */
-    private long calculateBatchInterval(List<Pocket48Message> currentBatch, List<Pocket48Message> nextBatch) {
-        boolean currentHasMedia = currentBatch.stream().anyMatch(m -> !isTextMessage(m));
-        boolean nextHasMedia = nextBatch.stream().anyMatch(m -> !isTextMessage(m));
-        
-        // 优化后的批次间延迟策略（实时性能优化）：
-        // 文本到文本：5ms
-        // 文本到媒体：15ms
-        // 媒体到文本：10ms
-        // 媒体到媒体：20ms
-        if (!currentHasMedia && !nextHasMedia) {
-            return 5;
-        } else if (!currentHasMedia && nextHasMedia) {
-            return 15;
-        } else if (currentHasMedia && !nextHasMedia) {
-            return 10;
-        } else {
-            return 20;
-        }
-    }
-    
-    /**
-     * 批次内智能平滑发送
+     * 批次内智能平滑发送 - 移除延迟计算
      * @param batch 批次消息
      * @param group 群组
      * @param batchIndex 批次索引
@@ -1334,7 +1298,6 @@ public class Pocket48Sender extends Sender {
         
         try {
             Pocket48Message message = batch.get(index);
-            Pocket48Message nextMessage = (index < batch.size() - 1) ? batch.get(index + 1) : null;
             
             // 根据消息类型选择处理策略
             Pocket48SenderMessage senderMessage;
@@ -1349,11 +1312,9 @@ public class Pocket48Sender extends Sender {
                 sendSingleMessageOptimized(senderMessage, group);
             }
             
-            // 批次内消息间的智能延迟
+            // 立即处理下一条消息，移除延迟
             if (index < batch.size() - 1) {
-                long delay = calculateOrderedSendDelay(message, nextMessage, batch.size(), index);
-                return unifiedDelayService.delayAsync((int) delay)
-                    .thenCompose(v -> sendBatchWithSmoothingAsync(batch, group, index + 1));
+                return sendBatchWithSmoothingAsync(batch, group, index + 1);
             } else {
                 return CompletableFuture.completedFuture(null);
             }
@@ -1362,8 +1323,13 @@ public class Pocket48Sender extends Sender {
             logger.warn("Pocket48Sender", "批次消息处理失败: " + e.getMessage());
             // 继续处理下一条消息，不中断整个批次
             if (index < batch.size() - 1) {
-                return unifiedDelayService.delayAsync(100)
-                    .thenCompose(v -> sendBatchWithSmoothingAsync(batch, group, index + 1));
+                return CompletableFuture.runAsync(() -> {
+                    try {
+                        Thread.sleep(100);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                    }
+                }).thenCompose(v -> sendBatchWithSmoothingAsync(batch, group, index + 1));
             }
             return CompletableFuture.completedFuture(null);
         }
@@ -1412,13 +1378,19 @@ public class Pocket48Sender extends Sender {
                     }
                 })
             ).thenCompose(senderMessage -> {
-                // 直接使用DelayPolicy计算延迟，移除GroupRateLimiter
+                // 使用固定延迟，移除DelayPolicy依赖
                 if (nextMessage != null) {
-                    // 使用DelayPolicy计算延迟
+                    // 根据消息类型使用固定延迟
                     boolean isMedia = !isTextMessage(nextMessage);
-                    long delay = delayPolicy.calculateSendDelay(isMedia);
+                    long delay = isMedia ? 1000 : 500; // 媒体消息1秒，文本消息0.5秒
                     if (delay > 0) {
-                        return unifiedDelayService.delayAsync(delay, isMedia ? "media" : "text");
+                        return CompletableFuture.runAsync(() -> {
+                            try {
+                                Thread.sleep(delay);
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                            }
+                        });
                     }
                 }
                 return CompletableFuture.completedFuture(null);
@@ -1492,7 +1464,7 @@ public class Pocket48Sender extends Sender {
      * @param group 目标群组
      */
     private void sendMediaMessagesSync(List<Pocket48Message> mediaMessages, Group group) {
-        long baseInterval = calculateSendInterval(mediaMessages.size(), true);
+        // 移除延迟计算，直接发送媒体消息
         
         for (int i = 0; i < mediaMessages.size(); i++) {
             try {
@@ -1522,34 +1494,12 @@ public class Pocket48Sender extends Sender {
      * @param isMediaMessage 是否为媒体消息
      * @return 延迟时间（毫秒）
      */
-    private long calculateSendInterval(int messageCount, boolean isMediaMessage) {
-        // 直接返回最小延迟，移除所有复杂的计算逻辑
-        return isMediaMessage ? 10 : 5; // 媒体消息10ms，文本消息5ms
-    }
+
     
-    /**
-     * 智能有序发送延迟计算 - 基于消息类型、时间间隔和系统状态
-     * @param currentMessage 当前消息
-     * @param nextMessage 下一条消息
-     * @param totalMessageCount 总消息数量
-     * @param currentIndex 当前消息索引
-     * @return 延迟毫秒数
-     */
-    private long calculateOrderedSendDelay(Pocket48Message currentMessage, Pocket48Message nextMessage, int totalMessageCount, int currentIndex) {
-        // 直接返回最小延迟，移除所有复杂的计算逻辑
-        return 5; // 最小5ms延迟
-    }
-    
-    /**
-     * 智能延迟计算：根据消息类型动态调整延迟
-     * @param currentMessage 当前消息
-     * @param nextMessage 下一条消息
-     * @return 延迟时间（毫秒）
-     */
 
     
     /**
-     * 发送单条处理后的消息 - 优化版本：智能重试和错误处理
+     * 发送单条处理后的消息 - 简化版本：移除延迟计算
      * @param senderMessage 处理后的消息
      * @param group 目标群组
      */
@@ -1568,12 +1518,13 @@ public class Pocket48Sender extends Sender {
         }
         
         Message[] unjointMessages = senderMessage.getUnjointMessage();
-        DelayConfig config = DelayConfig.getInstance();
+        // 使用固定重试次数，移除DelayConfig依赖
+        int maxRetries = 3; // 默认重试3次
         
         // 并行发送消息部分（如果有多个部分）
         if (unjointMessages.length == 1) {
             // 单部分消息：直接发送
-            sendMessageWithRetryAsync(unjointMessages[0], group, config.getMaxRetries());
+            sendMessageWithRetryAsync(unjointMessages[0], group, maxRetries);
         } else {
             // 多部分消息：串行发送保证顺序，但减少延迟
             CompletableFuture<Void> sendChain = CompletableFuture.completedFuture(null);
@@ -1583,14 +1534,12 @@ public class Pocket48Sender extends Sender {
                 final boolean isLast = i == unjointMessages.length - 1;
                 
                 sendChain = sendChain.thenCompose(v -> {
-                    return sendMessageWithRetryAsync(message, group, config.getMaxRetries())
+                    return sendMessageWithRetryAsync(message, group, maxRetries)
                         .thenCompose(result -> {
                             // 消息部分间最小延迟（仅在非最后一部分时）- 优化版本
                             if (!isLast) {
-                                // 根据系统负载动态调整部分间延迟
-                                double loadFactor = Math.max(0.5, Math.min(2.0, config.getCurrentSystemLoad() + 0.5)); // 转换为0.5-2.0的调整因子
-                                long partDelay = Math.max(3, (long)(5 * loadFactor)); // 减少到5ms基础延迟，最小3ms
-                                return unifiedDelayService.delayAsync(partDelay);
+                                // 移除延迟计算，立即执行下一部分
+                                return CompletableFuture.completedFuture(null);
                             }
                             return CompletableFuture.completedFuture(null);
                         });
@@ -1619,14 +1568,11 @@ public class Pocket48Sender extends Sender {
                 group.sendMessage(message);
                 
                 // 记录发送成功度量
-                DelayConfig config = DelayConfig.getInstance();
-                if (config.isMetricsCollectionEnabled()) {
-                    long sendTime = System.currentTimeMillis() - startTime;
-                    DelayMetricsCollector.getInstance().recordSendRate("message", 1);
-                    metricsCollector.recordDownloadSuccess(sendTime);
-                    if (attempt > 1) {
-                        DelayMetricsCollector.getInstance().recordRetryResult(true);
-                    }
+                long sendTime = System.currentTimeMillis() - startTime;
+                metricsCollector.recordDownloadSuccess(sendTime);
+                metricsCollector.recordCustomMetric("message_send_success", 1);
+                if (attempt > 1) {
+                    metricsCollector.recordCustomMetric("retry_success", 1);
                 }
                 
                 logger.debug("Pocket48Sender", "消息发送成功，耗时: " + (System.currentTimeMillis() - startTime) + "ms");
@@ -1651,19 +1597,21 @@ public class Pocket48Sender extends Sender {
             
             // 简化的重试延迟计算
             String retryReason = isRetryableError ? "network_error" : "unknown_error";
-            long delay = 10; // 固定最小延迟
+            final long delay = Math.min(10 * (long) Math.pow(2, attempt - 1), 30000); // 指数退避延迟，最大30秒
             
             // 记录重试结果
-            DelayConfig config = DelayConfig.getInstance();
-            if (config.isMetricsCollectionEnabled()) {
-                DelayMetricsCollector.getInstance().recordRetryResult(false);
-            }
+            metricsCollector.recordCustomMetric("retry_failure", 1);
             
             logger.warn("Pocket48Sender", String.format("消息发送失败，准备重试 %d/%d，延迟 %dms，原因: %s", 
                 attempt, maxRetries, delay, retryReason));
             
-            return unifiedDelayService.delayWithExponentialBackoff(delay, attempt - 1, 30000, retryReason)
-                .thenCompose(v -> sendMessageWithRetryAsync(message, group, maxRetries, attempt + 1));
+            return CompletableFuture.runAsync(() -> {
+                try {
+                    Thread.sleep(delay);
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                }
+            }).thenCompose(v -> sendMessageWithRetryAsync(message, group, maxRetries, attempt + 1));
         });
     }
     
@@ -1813,12 +1761,17 @@ public class Pocket48Sender extends Sender {
             
             Exception currentException = (Exception) throwable.getCause();
             if (retryCount < maxRetries) {
-                // 使用DelayPolicy的指数退避延迟
-                long delayMs = delayPolicy.calculateRetryDelay(retryCount);
+                // 使用指数退避延迟，移除DelayPolicy依赖
+                long delayMs = Math.min(1000 * (1L << Math.min(retryCount, 4)), 8000); // 最大8秒
                 uploadLogger.warning("图片上传失败，第" + (retryCount + 1) + "次重试，延迟" + delayMs + "ms: " + currentException.getMessage());
                 
-                return unifiedDelayService.delayAsync(delayMs)
-                    .thenCompose(v -> uploadImageWithRetryAsync(resource, maxRetries, retryCount + 1, currentException));
+                return CompletableFuture.runAsync(() -> {
+                    try {
+                        Thread.sleep(delayMs);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                }).thenCompose(v -> uploadImageWithRetryAsync(resource, maxRetries, retryCount + 1, currentException));
             } else {
                 uploadLogger.severe("图片上传失败，已达到最大重试次数: " + currentException.getMessage());
                 CompletableFuture<Image> failedFuture = new CompletableFuture<>();
@@ -1829,30 +1782,11 @@ public class Pocket48Sender extends Sender {
     }
     
     /**
-     * 自适应延迟调节：根据活跃度和系统负载动态调整延迟 - 优化版本
+     * 自适应延迟调节 - 简化版本：移除延迟调节
      * @param baseDelay 基础延迟时间
      * @return 调整后的延迟时间
      */
-    private int getAdaptiveDelay(int baseDelay) {
-        DelayConfig config = DelayConfig.getInstance();
-         boolean isActive = activityMonitor.isGlobalActive();
-         double loadFactor = Math.max(0.5, Math.min(2.0, config.getCurrentSystemLoad() + 0.5)); // 转换为0.5-2.0的调整因子
-        
-        // 综合考虑活跃度和系统负载
-        double adjustmentFactor = loadFactor;
-        
-        if (isActive) {
-            // 活跃期：根据负载适度调整，避免刷屏
-            adjustmentFactor *= (loadFactor > 1.0) ? 1.15 : 1.05; // 高负载时更保守
-        } else {
-            // 非活跃期：可以更积极地加快发送
-            adjustmentFactor *= (loadFactor < 0.8) ? 0.7 : 0.85; // 低负载时更激进
-        }
-        
-        // 确保延迟在合理范围内
-        int adjustedDelay = (int)(baseDelay * adjustmentFactor);
-        return Math.max(3, Math.min(adjustedDelay, baseDelay * 2)); // 最小3ms，最大不超过基础延迟的2倍
-    }
+
     
     /**
      * 用户名脱敏处理

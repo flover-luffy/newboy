@@ -5,7 +5,7 @@ import net.luffy.handler.AsyncWebHandler;
 import net.luffy.handler.AsyncWebHandler.BatchMemberStatusResult;
 import net.luffy.util.UnifiedSchedulerManager;
 import net.luffy.util.SubscriptionConfig;
-import net.luffy.util.delay.UnifiedDelayService;
+
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -27,7 +27,8 @@ public class AsyncOnlineStatusMonitor {
     
     private final AsyncWebHandler asyncWebHandler;
     private final MonitorConfig config;
-    private final UnifiedDelayService unifiedDelayService;
+    // UnifiedDelayService已移除，使用CompletableFuture.runAsync替代
+    // private final UnifiedDelayService unifiedDelayService;
     private String batchQueryTaskId;
     private String cacheCleanupTaskId;
     
@@ -66,7 +67,8 @@ public class AsyncOnlineStatusMonitor {
     private AsyncOnlineStatusMonitor() {
         this.asyncWebHandler = AsyncWebHandler.getInstance();
         this.config = MonitorConfig.getInstance();
-        this.unifiedDelayService = UnifiedDelayService.getInstance();
+        // UnifiedDelayService已移除，不再初始化
+        // this.unifiedDelayService = UnifiedDelayService.getInstance();
         
         // 从配置文件读取设置并更新MonitorConfig
         updateConfigFromProperties();
@@ -122,8 +124,8 @@ public class AsyncOnlineStatusMonitor {
         if (pendingQueries.size() >= config.getBatchQuerySize()) {
             UnifiedSchedulerManager.getInstance().executeTask(this::executeBatchQuery);
         } else {
-            // 对于单个查询，设置较短的延迟后执行批量查询以提高响应速度
-            delayAsync(500).thenRun(this::executeBatchQuery);
+            // 延迟已移除，直接执行批量查询
+            UnifiedSchedulerManager.getInstance().executeTask(this::executeBatchQuery);
         }
         
         return future;
@@ -867,13 +869,20 @@ public class AsyncOnlineStatusMonitor {
      * @param delayMs 延迟毫秒数
      * @return CompletableFuture用于异步处理
      */
-    private java.util.concurrent.CompletableFuture<Void> delayAsync(long delayMs) {
-        try {
-            // 使用统一延迟服务替代CompletableFuture.delayedExecutor
-            return unifiedDelayService.delayAsync((int)delayMs);
-        } catch (Exception e) {
-            // 如果异步延迟失败，返回立即完成的Future
-            return java.util.concurrent.CompletableFuture.completedFuture(null);
-        }
-    }
+    // 延迟方法已移除
+    // private java.util.concurrent.CompletableFuture<Void> delayAsync(long delayMs) {
+    //     try {
+    //         // 使用CompletableFuture.runAsync替代统一延迟服务
+    //         return CompletableFuture.runAsync(() -> {
+    //             try {
+    //                 Thread.sleep(delayMs);
+    //             } catch (InterruptedException e) {
+    //                 Thread.currentThread().interrupt();
+    //             }
+    //         });
+    //     } catch (Exception e) {
+    //         // 如果异步延迟失败，返回立即完成的Future
+    //         return java.util.concurrent.CompletableFuture.completedFuture(null);
+    //     }
+    // }
 }

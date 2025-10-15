@@ -1,7 +1,6 @@
 package net.luffy.util;
 
-import net.luffy.Newboy;
-import net.luffy.util.delay.DelayConfig;
+import net.luffy.util.UnifiedLogger;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -75,12 +74,10 @@ public class MonitorConfig {
     private final long coroutineTimeout;
     private final long coroutineDefaultTimeout;
     
-    // 消息延迟优化配置已迁移到DelayConfig中
-    private final DelayConfig delayConfig;
+    // 延迟配置已移除
     
     private MonitorConfig() {
-        // 初始化DelayConfig
-        delayConfig = DelayConfig.getInstance();
+        // 延迟配置已移除
         properties = new Properties();
         loadConfiguration();
         
@@ -95,8 +92,8 @@ public class MonitorConfig {
         pocket48FastFailEnabled = getBooleanProperty("monitor.pocket48.fast.fail.enabled", true);
         pocket48ConnectTimeout = getIntProperty("monitor.pocket48.connect.timeout", 1000); // 从2秒降至1秒连接超时
         pocket48ReadTimeout = getIntProperty("monitor.pocket48.read.timeout", 10000); // 调整为10秒读取超时，适应媒体文件下载
-        pocket48MaxRetries = getIntProperty("monitor.pocket48.max.retries", delayConfig.getMaxRetries()); // 使用DelayConfig的重试次数
-        pocket48RetryBaseDelay = getLongProperty("monitor.pocket48.retry.base.delay", delayConfig.getRetryBaseDelay()); // 使用DelayConfig的基础延迟
+        pocket48MaxRetries = getIntProperty("monitor.pocket48.max.retries", 3); // 使用默认重试次数
+        pocket48RetryBaseDelay = getLongProperty("monitor.pocket48.retry.base.delay", 1000L); // 使用默认基础延迟
         
         // 初始化健康检查配置 - 优化为实时监控
         maxConsecutiveFailures = getIntProperty("monitor.health.max.consecutive.failures", 3);
@@ -175,7 +172,7 @@ public class MonitorConfig {
                 // 未找到monitor-config.properties文件，使用默认配置
             }
         } catch (IOException e) {
-            Newboy.INSTANCE.getLogger().error("加载监控配置文件失败: " + e.getMessage(), e);
+            UnifiedLogger.getInstance().error("MonitorConfig", "加载监控配置文件失败: " + e.getMessage(), e);
         }
     }
     
@@ -193,7 +190,7 @@ public class MonitorConfig {
             try {
                 return Integer.parseInt(value.trim());
             } catch (NumberFormatException e) {
-                Newboy.INSTANCE.getLogger().error("配置项 " + key + " 格式错误，使用默认值: " + defaultValue);
+                UnifiedLogger.getInstance().error("MonitorConfig", "配置项 " + key + " 格式错误，使用默认值: " + defaultValue);
             }
         }
         return defaultValue;
@@ -205,7 +202,7 @@ public class MonitorConfig {
             try {
                 return Long.parseLong(value.trim());
             } catch (NumberFormatException e) {
-                Newboy.INSTANCE.getLogger().error("配置项 " + key + " 格式错误，使用默认值: " + defaultValue);
+                UnifiedLogger.getInstance().error("MonitorConfig", "配置项 " + key + " 格式错误，使用默认值: " + defaultValue);
             }
         }
         return defaultValue;
@@ -217,7 +214,7 @@ public class MonitorConfig {
             try {
                 return Double.parseDouble(value.trim());
             } catch (NumberFormatException e) {
-                Newboy.INSTANCE.getLogger().error("配置项 " + key + " 格式错误，使用默认值: " + defaultValue);
+                UnifiedLogger.getInstance().error("MonitorConfig", "配置项 " + key + " 格式错误，使用默认值: " + defaultValue);
             }
         }
         return defaultValue;
@@ -296,15 +293,13 @@ public class MonitorConfig {
     public long getCoroutineTimeout() { return coroutineTimeout; }
     public long getCoroutineDefaultTimeout() { return coroutineDefaultTimeout; }
     
-    // DelayConfig 访问方法
-    public DelayConfig getDelayConfig() { return delayConfig; }
+    // DelayConfig 访问方法已移除
     
     /**
-     * 重新加载延迟配置
-     * 支持热更新延迟参数
+     * 延迟配置已移除
      */
     public void reloadDelayConfig() {
-        delayConfig.reloadConfig();
+        // 延迟配置已移除，无需重新加载
     }
     
     

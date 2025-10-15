@@ -89,39 +89,3 @@ tasks.register<JavaExec>("runVideoTest") {
     mainClass.set("net.luffy.test.SimpleVideoTest")
     jvmArgs = listOf("-Dfile.encoding=UTF-8")
 }
-
-// 添加运行微店API测试的任务
-tasks.register<JavaExec>("runWeidianApiTest") {
-    group = "application"
-    description = "Run Weidian API test"
-    classpath = sourceSets["main"].runtimeClasspath
-    mainClass.set("weidian_api_test")
-    jvmArgs = listOf("-Dfile.encoding=UTF-8")
-}
-
-// 添加运行微店API修复测试的任务
-tasks.register<JavaExec>("runWeidianApiFixTest") {
-    group = "application"
-    description = "Run Weidian API fix test"
-    classpath = sourceSets["main"].runtimeClasspath
-    mainClass.set("test_weidian_api_fix")
-    jvmArgs = listOf("-Dfile.encoding=UTF-8")
-}
-
-// 添加运行微店搜索测试的任务
-tasks.register<JavaExec>("runWeidianSearchTest") {
-    group = "application"
-    description = "Run Weidian search test"
-    classpath = sourceSets["main"].runtimeClasspath
-    mainClass.set("test_weidian_search")
-    jvmArgs = listOf("-Dfile.encoding=UTF-8")
-}
-
-// 添加运行微店购买者测试的任务
-tasks.register<JavaExec>("runWeidianBuyerTest") {
-    group = "application"
-    description = "Run Weidian buyer test"
-    classpath = sourceSets["main"].runtimeClasspath
-    mainClass.set("test_weidian_buyer")
-    jvmArgs = listOf("-Dfile.encoding=UTF-8")
-}

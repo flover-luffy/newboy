@@ -1,6 +1,6 @@
 package net.luffy.util;
 
-import net.luffy.util.delay.DelayMetricsCollector;
+
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -30,10 +30,11 @@ public class Pocket48MetricsCollector implements MetricsCollectable {
     private final AtomicInteger maxRetries = new AtomicInteger(0);
     
     // 延迟相关指标
-    private final LongAdder totalLatency = new LongAdder();
-    private final AtomicLong latencyCount = new AtomicLong(0);
-    private final AtomicLong maxLatency = new AtomicLong(0);
-    private final AtomicLong minLatency = new AtomicLong(Long.MAX_VALUE);
+    // 延迟指标字段已移除
+    // private final LongAdder totalLatency = new LongAdder();
+    // private final AtomicLong latencyCount = new AtomicLong(0);
+    // private final AtomicLong maxLatency = new AtomicLong(0);
+    // private final AtomicLong minLatency = new AtomicLong(Long.MAX_VALUE);
     
     // 队列相关指标
     private final AtomicInteger currentQueueSize = new AtomicInteger(0);
@@ -85,13 +86,14 @@ public class Pocket48MetricsCollector implements MetricsCollectable {
      */
     public void recordDownloadSuccess(long latencyMs) {
         downloadSuccesses.incrementAndGet();
-        recordLatency(latencyMs);
+        // 移除延迟记录
+        // recordLatency(latencyMs);
         incrementHourlyStat("download_successes");
         
-        // 同步到延迟度量收集器
-        DelayMetricsCollector.getInstance().recordDelayCalculation("download", latencyMs, true);
+        // 延迟系统已移除，记录为自定义指标
+        recordCustomMetric("download_latency", latencyMs);
         
-        logger.debug("Pocket48Metrics", "下载成功，延迟: " + latencyMs + "ms");
+        logger.debug("Pocket48Metrics", "下载成功");
     }
     
     /**
@@ -102,9 +104,8 @@ public class Pocket48MetricsCollector implements MetricsCollectable {
         errorTypes.computeIfAbsent(errorType, k -> new AtomicLong(0)).incrementAndGet();
         incrementHourlyStat("download_failures");
         
-        // 同步到延迟度量收集器
-        DelayMetricsCollector.getInstance().recordRetryAttempt(errorType, 0);
-        DelayMetricsCollector.getInstance().recordRetryResult(false);
+        // 延迟系统已移除，记录为自定义指标
+        recordCustomMetric("download_failure", 1);
         
         logger.warn("Pocket48Metrics", "下载失败，错误类型: " + errorType);
     }
@@ -161,22 +162,22 @@ public class Pocket48MetricsCollector implements MetricsCollectable {
     // ==================== 延迟指标 ====================
     
     /**
-     * 记录延迟
+     * 记录延迟 - 已移除
+     * @deprecated 延迟系统已移除
      */
+    @Deprecated
     public void recordLatency(long latencyMs) {
-        totalLatency.add(latencyMs);
-        latencyCount.incrementAndGet();
-        maxLatency.updateAndGet(current -> Math.max(current, latencyMs));
-        minLatency.updateAndGet(current -> Math.min(current, latencyMs));
+        // 延迟指标收集已移除
     }
     
     /**
-     * 获取平均延迟
+     * 获取平均延迟 - 已移除
+     * @deprecated 延迟系统已移除
+     * @return 始终返回0
      */
+    @Deprecated
     public double getAverageLatency() {
-        long count = latencyCount.get();
-        if (count == 0) return 0.0;
-        return (double) totalLatency.sum() / count;
+        return 0.0;
     }
     
     // ==================== 队列指标 ====================
@@ -328,11 +329,11 @@ public class Pocket48MetricsCollector implements MetricsCollectable {
         report.append(String.format("  平均重试次数: %.2f\n", getAverageRetries()));
         report.append(String.format("  最大重试次数: %d\n", maxRetries.get()));
         
-        // 延迟指标
-        report.append("\n⏱️ 延迟指标:\n");
-        report.append(String.format("  平均延迟: %.2fms\n", getAverageLatency()));
-        report.append(String.format("  最大延迟: %dms\n", maxLatency.get()));
-        report.append(String.format("  最小延迟: %dms\n", minLatency.get() == Long.MAX_VALUE ? 0 : minLatency.get()));
+        // 延迟指标已移除
+        // report.append("\n⏱️ 延迟指标:\n");
+        // report.append(String.format("  平均延迟: %.2fms\n", getAverageLatency()));
+        // report.append(String.format("  最大延迟: %dms\n", maxLatency.get()));
+        // report.append(String.format("  最小延迟: %dms\n", minLatency.get() == Long.MAX_VALUE ? 0 : minLatency.get()));
         
         // 队列指标
         report.append("\n📋 队列指标:\n");
@@ -413,10 +414,11 @@ public class Pocket48MetricsCollector implements MetricsCollectable {
         downloadFailures.set(0);
         totalRetries.set(0);
         maxRetries.set(0);
-        totalLatency.reset();
-        latencyCount.set(0);
-        maxLatency.set(0);
-        minLatency.set(Long.MAX_VALUE);
+        // 延迟指标重置已移除
+        // totalLatency.reset();
+        // latencyCount.set(0);
+        // maxLatency.set(0);
+        // minLatency.set(Long.MAX_VALUE);
         currentQueueSize.set(0);
         maxQueueSize.set(0);
         queueOffers.set(0);
@@ -454,12 +456,12 @@ public class Pocket48MetricsCollector implements MetricsCollectable {
         metrics.put("retry.total", totalRetries.get());
         metrics.put("retry.average", getAverageRetries());
         
-        // 延迟指标
-        metrics.put("latency.average", getAverageLatency());
-        metrics.put("latency.max", maxLatency.get());
-        metrics.put("latency.min", minLatency.get() == Long.MAX_VALUE ? 0 : minLatency.get());
-        metrics.put("latency.total", totalLatency.sum());
-        metrics.put("latency.count", latencyCount.get());
+        // 延迟指标已移除
+        // metrics.put("latency.average", getAverageLatency());
+        // metrics.put("latency.max", maxLatency.get());
+        // metrics.put("latency.min", minLatency.get() == Long.MAX_VALUE ? 0 : minLatency.get());
+        // metrics.put("latency.total", totalLatency.sum());
+        // metrics.put("latency.count", latencyCount.get());
         
         // 队列指标
         metrics.put("queue.current_size", currentQueueSize.get());
@@ -495,12 +497,12 @@ public class Pocket48MetricsCollector implements MetricsCollectable {
         double cacheHealth = getCacheHitRate();
         double queueHealth = Math.max(0, 100 - getDropRate());
         
-        // 延迟健康度：延迟越低越健康
-        double avgLatency = getAverageLatency();
-        double latencyHealth = Math.max(0, 100 - Math.min(100, avgLatency / 10));
+        // 延迟健康度已移除
+        // double avgLatency = getAverageLatency();
+        // double latencyHealth = Math.max(0, 100 - Math.min(100, avgLatency / 10));
         
-        // 综合健康度
-        return (downloadHealth + cacheHealth + queueHealth + latencyHealth) / 4.0;
+        // 综合健康度（不包含延迟）
+        return (downloadHealth + cacheHealth + queueHealth) / 3.0;
     }
     
     @Override

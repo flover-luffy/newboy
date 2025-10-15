@@ -1,6 +1,5 @@
 package net.luffy.util;
 
-import net.luffy.util.delay.DelayConfig;
 import net.luffy.util.UnifiedLogger;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
@@ -105,8 +104,8 @@ public class DynamicTimeoutManager {
      * 获取动态重试延迟
      */
     public long getDynamicRetryDelay(int retryCount, long baseDelay) {
-        // 简化延迟计算，使用指数退避
-        return Math.min(baseDelay * (1L << Math.min(retryCount, 6)), 30000);
+        // 移除延迟计算，直接返回基础延迟
+        return baseDelay;
     }
     
     /**

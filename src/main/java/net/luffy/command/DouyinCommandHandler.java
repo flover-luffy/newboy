@@ -2,7 +2,7 @@ package net.luffy.command;
 
 import net.luffy.Newboy;
 import net.luffy.util.DouyinMonitorService;
-import net.luffy.util.delay.UnifiedDelayService;
+
 import net.mamoe.mirai.Bot;
 import net.mamoe.mirai.contact.Group;
 import net.mamoe.mirai.event.events.GroupMessageEvent;
@@ -14,6 +14,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.ArrayList;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * 抖音命令处理器
@@ -24,10 +25,10 @@ public class DouyinCommandHandler {
     
     private static final Logger logger = LoggerFactory.getLogger(DouyinCommandHandler.class);
     private static final DouyinCommandHandler INSTANCE = new DouyinCommandHandler();
-    private final UnifiedDelayService unifiedDelayService;
+    // 延迟服务已移除
     
     private DouyinCommandHandler() {
-        this.unifiedDelayService = UnifiedDelayService.getInstance();
+        // 延迟服务已移除，使用直接延迟
     }
     
     public static DouyinCommandHandler getInstance() {
@@ -241,24 +242,28 @@ public class DouyinCommandHandler {
         try {
             DouyinMonitorService monitorService = DouyinMonitorService.getInstance();
             monitorService.stopMonitoring();
-            // 使用异步延迟替代Thread.sleep，避免阻塞
-            delayAsync(1000).thenRun(() -> {
-                try {
-                    monitorService.startMonitoring(10); // 默认10分钟检查间隔
-                } catch (Exception e) {
-                    logger.error("启动抖音监控服务失败: {}", e.getMessage());
-                }
-            });
+            // 延迟已移除，直接执行
+            try {
+                monitorService.startMonitoring(10); // 默认10分钟检查间隔
+            } catch (Exception e) {
+                logger.error("启动抖音监控服务失败: {}", e.getMessage());
+            }
             return new PlainText("✅ 抖音监控服务重启中...");
         } catch (Exception e) {
             return new PlainText("❌ 重启抖音监控服务失败: " + e.getMessage());
         }
     }
 
-    // 异步延迟方法
-    private java.util.concurrent.CompletableFuture<Void> delayAsync(long delayMs) {
-        return unifiedDelayService.delayAsync((int)delayMs);
-    }
+    // 延迟方法已移除
+    // private java.util.concurrent.CompletableFuture<Void> delayAsync(long delayMs) {
+    //     return CompletableFuture.runAsync(() -> {
+    //         try {
+    //             Thread.sleep(delayMs);
+    //         } catch (InterruptedException e) {
+    //             Thread.currentThread().interrupt();
+    //         }
+    //     });
+    // }
     
     /**
      * 处理私聊抖音订阅管理命令

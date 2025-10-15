@@ -7,7 +7,6 @@ import net.luffy.model.Pocket48SenderMessage;
 import net.luffy.util.Properties;
 import net.luffy.util.UnifiedLogger;
 import net.luffy.util.AdaptiveThreadPoolManager;
-import net.luffy.util.delay.DelayMetricsCollector;
 import net.mamoe.mirai.contact.Group;
 import net.mamoe.mirai.message.data.Message;
 
@@ -219,7 +218,7 @@ public class Pocket48MediaQueue {
             
             // 记录队列状态（提交前）
             int currentQueueSize = mediaQueue.size();
-            DelayMetricsCollector.getInstance().recordQueueStatus(currentQueueSize, 0);
+            // 延迟系统已移除，直接记录队列大小
             
             // 尝试添加到主队列
             boolean offered = mediaQueue.offer(task, 100, TimeUnit.MILLISECONDS);
@@ -228,7 +227,7 @@ public class Pocket48MediaQueue {
                     "媒体消息已提交到队列: " + task.getTaskDescription());
                 
                 // 记录队列状态（提交后）
-                DelayMetricsCollector.getInstance().recordQueueStatus(mediaQueue.size(), 0);
+                // 延迟系统已移除，直接记录队列大小
             } else {
                 // 队列满时处理溢出
                 handleQueueOverflow(task);
@@ -256,11 +255,10 @@ public class Pocket48MediaQueue {
             overflowCount.incrementAndGet();
             
             // 记录队列溢出
-            DelayMetricsCollector.getInstance().recordQueueOverflow();
+            // 延迟系统已移除，直接记录溢出
             
             // 记录溢出队列状态
-            DelayMetricsCollector.getInstance().recordQueueStatus(
-                mediaQueue.size() + overflowQueue.size(), 0);
+            // 延迟系统已移除，直接记录队列状态
             
             // 持久化到磁盘
             persistOverflowTask(task);
@@ -488,7 +486,7 @@ public class Pocket48MediaQueue {
             }
             
             // 记录队列等待时间
-            DelayMetricsCollector.getInstance().recordQueueStatus(mediaQueue.size(), waitTime);
+            // 延迟系统已移除，直接记录队列状态
             
             // 使用完整的上下文信息处理任务
             processMediaTaskWithContext(task);

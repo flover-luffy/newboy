@@ -4,7 +4,6 @@ import net.luffy.Newboy;
 import net.luffy.util.Properties;
 import net.luffy.util.MonitorConfig;
 import net.luffy.util.UnifiedHttpClient;
-import net.luffy.util.delay.DelayConfig;
 // OkHttp imports removed - migrated to UnifiedHttpClient
 // HttpLoggingInterceptor import removed - migrated to UnifiedHttpClient
 
@@ -174,13 +173,13 @@ public class AsyncWebHandlerBase {
     // HTTP请求构建和执行已迁移到UnifiedHttpClient
     
     /**
-     * 计算重试延迟（指数退避）- 保留给子类使用
+     * 计算重试延迟（指数退避）- 保留给子类使用（延迟配置已移除）
      */
     protected long calculateRetryDelay(int retryCount) {
-        DelayConfig delayConfig = DelayConfig.getInstance();
-        long baseDelay = delayConfig.getRetryBaseDelay();
-        double backoffMultiplier = delayConfig.getRetryBackoffMultiplier();
-        long maxDelay = delayConfig.getRetryMaxDelay();
+        // 使用默认配置（延迟配置已移除）
+        long baseDelay = 1000L; // 默认基础延迟1秒
+        double backoffMultiplier = 2.0; // 默认退避倍数
+        long maxDelay = 30000L; // 默认最大延迟30秒
         return Math.min((long)(baseDelay * Math.pow(backoffMultiplier, retryCount - 1)), maxDelay);
     }
     

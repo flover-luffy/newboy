@@ -4,7 +4,6 @@ import net.luffy.handler.AsyncWebHandlerBase;
 import net.luffy.util.UnifiedHttpClient;
 import net.luffy.util.UnifiedLogger;
 import net.luffy.util.Pocket48MetricsCollector;
-import net.luffy.util.delay.UnifiedDelayService;
 import net.luffy.handler.Pocket48Handler;
 import net.luffy.Newboy;
 import net.luffy.util.AdaptiveThreadPoolManager;
@@ -38,7 +37,7 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
     // 统一日志和指标收集
     private final UnifiedLogger logger = UnifiedLogger.getInstance();
     private final Pocket48MetricsCollector metricsCollector = Pocket48MetricsCollector.getInstance();
-    private final UnifiedDelayService unifiedDelayService = UnifiedDelayService.getInstance();
+    // 延迟服务已移除
     
     // 域名记忆化：记录不支持HEAD请求的域名
     private static final Set<String> HEAD_UNSUPPORTED_DOMAINS = new ConcurrentSkipListSet<>();
@@ -172,8 +171,8 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
                 logger.warn("Pocket48ResourceHandler", "获取资源流失败，将在" + delayMs + "ms后重试(" + retries + "/" + maxRetries + "): " + url);
                 
                 try {
-                    unifiedDelayService.delayAsync(delayMs).join();
-                } catch (Exception ie) {
+                    Thread.sleep(delayMs);
+                } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
                     throw new RuntimeException("获取口袋48资源流被中断", ie);
                 }
@@ -382,6 +381,8 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
                         info.setContentLength(getResponse.getHeaders().get("Content-Length"));
                         
                         long duration = System.currentTimeMillis() - startTime;
+                        // 延迟记录已移除
+                        // metricsCollector.recordLatency(duration);
                         metricsCollector.recordDownloadSuccess(duration);
                         logger.debug("Pocket48ResourceHandler", "GET探测成功: " + url + ", Content-Type: " + contentType);
                         return info;
@@ -423,7 +424,8 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
             return info;
         } finally {
             long duration = System.currentTimeMillis() - startTime;
-            metricsCollector.recordLatency(duration);
+            // 延迟记录已移除
+            // metricsCollector.recordLatency(duration);
         }
     }
     
@@ -589,13 +591,13 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
                       return null;
                   }
                   
-                  // 指数退避重试 - 使用异步延迟替代Thread.sleep避免阻塞
+                  // 指数退避重试 - 使用Thread.sleep替代异步延迟
                   long delayMs = 1000 * (long)Math.pow(2, retries - 1);
                   logger.warn("Pocket48ResourceHandler", "下载失败，将在" + delayMs + "ms后重试(" + retries + "/" + maxRetries + "): " + url);
                   
                   try {
-                      unifiedDelayService.delayAsync(delayMs).join();
-                  } catch (Exception ie) {
+                      Thread.sleep(delayMs);
+                  } catch (InterruptedException ie) {
                       Thread.currentThread().interrupt();
                       return null;
                   }

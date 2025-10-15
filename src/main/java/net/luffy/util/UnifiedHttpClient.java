@@ -1,6 +1,5 @@
 package net.luffy.util;
 
-import net.luffy.util.delay.DelayConfig;
 import okhttp3.*;
 import okhttp3.Dispatcher;
 import org.slf4j.Logger;
@@ -1132,8 +1131,8 @@ public class UnifiedHttpClient {
          * @return 延迟毫秒数
          */
         public static long calculateRetryDelay(int retryCount, int responseCode) {
-            DelayConfig delayConfig = DelayConfig.getInstance();
-            long baseDelayMs = delayConfig.getRetryBaseDelay(); // 使用DelayConfig的基础延迟
+            // 使用默认配置（延迟配置已移除）
+            long baseDelayMs = 1000L; // 默认基础延迟1秒
             
             // 对于HTTP 503错误（服务不可用），使用较短的重试间隔
             if (responseCode == 503) {
@@ -1157,8 +1156,8 @@ public class UnifiedHttpClient {
             }
             
             // 其他错误使用标准指数退避策略：baseDelay * (backoffMultiplier^retryCount)，最大延迟由配置决定
-            double backoffMultiplier = delayConfig.getRetryBackoffMultiplier();
-            long maxDelay = Math.min(delayConfig.getRetryMaxDelay(), 5000); // 强制限制最大延迟为5秒
+            double backoffMultiplier = 2.0; // 默认退避倍数
+            long maxDelay = Math.min(30000L, 5000); // 强制限制最大延迟为5秒
             return Math.min((long)(baseDelayMs * Math.pow(backoffMultiplier, retryCount)), maxDelay);
         }
     }
