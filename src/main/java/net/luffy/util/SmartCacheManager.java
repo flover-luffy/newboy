@@ -12,7 +12,6 @@ import java.util.Map;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Collections;
-import net.luffy.util.sender.Pocket48ActivityMonitor;
 
 /**
  * 智能缓存管理器
@@ -40,9 +39,6 @@ public class SmartCacheManager {
     // 清理队列
     private final ConcurrentLinkedQueue<String> cleanupQueue = new ConcurrentLinkedQueue<>();
     
-    // 活跃度监控器
-    private final Pocket48ActivityMonitor activityMonitor;
-    
     // 日志记录器
     private final UnifiedLogger logger = UnifiedLogger.getInstance();
     
@@ -50,7 +46,6 @@ public class SmartCacheManager {
     private String cleanupTaskId;
     
     private SmartCacheManager() {
-        this.activityMonitor = Pocket48ActivityMonitor.getInstance();
         // 启动后台清理任务
         startBackgroundCleanup();
     }
@@ -72,9 +67,8 @@ public class SmartCacheManager {
     public LRUCache<String, CacheEntry> getCache(String cacheName, int maxSize, long ttlMs) {
         return caches.computeIfAbsent(cacheName, k -> {
             activeCaches.incrementAndGet();
-            // 根据活跃度动态调整TTL
-            long dynamicTtl = activityMonitor.getCurrentCacheTTL();
-            return new LRUCache<>(maxSize, dynamicTtl);
+            // 使用默认TTL，移除活跃度动态调整
+            return new LRUCache<>(maxSize, ttlMs);
         });
     }
     

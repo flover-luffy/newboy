@@ -29,7 +29,6 @@ import net.luffy.model.WeidianCookie;
 import net.luffy.model.Pocket48Subscribe;
 import net.luffy.util.DouyinMonitorService;
 import net.luffy.service.WeiboApiService;
-import net.luffy.util.sender.Pocket48ActivityMonitor;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;

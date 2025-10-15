@@ -4,7 +4,6 @@ import cn.hutool.core.date.DateUtil;
 import net.luffy.Newboy;
 import net.luffy.handler.Pocket48Handler;
 import net.luffy.util.sender.Pocket48UnifiedResourceManager;
-import net.luffy.util.sender.Pocket48ActivityMonitor;
 import net.luffy.util.PerformanceMonitor;
 import net.luffy.util.MessageIntegrityChecker;
 import net.luffy.util.UnifiedLogger;
@@ -47,7 +46,6 @@ public class Pocket48Sender extends Sender {
 
     private final net.luffy.util.CpuLoadBalancer loadBalancer;
     private final Pocket48MediaQueue mediaQueue;
-    private final Pocket48ActivityMonitor activityMonitor;
     private final ScheduledExecutorService delayExecutor;
     
     // 统一日志和指标收集
@@ -64,7 +62,6 @@ public class Pocket48Sender extends Sender {
 
         this.loadBalancer = net.luffy.util.CpuLoadBalancer.getInstance();
         this.mediaQueue = new Pocket48MediaQueue();
-        this.activityMonitor = Pocket48ActivityMonitor.getInstance();
         // 使用统一调度管理器替代自建线程池
         this.delayExecutor = net.luffy.util.UnifiedSchedulerManager.getInstance().getScheduledExecutor();
         
@@ -174,8 +171,7 @@ public class Pocket48Sender extends Sender {
                     }
                     
                     if (a.length > 0) {
-                        // 记录消息活跃度
-                        activityMonitor.recordBatchMessageActivity(roomID, java.util.Arrays.asList(a));
+                        // 移除活跃度记录功能，直接处理消息
                         
                         totalMessages.add(a);
                     }
@@ -1136,31 +1132,16 @@ public class Pocket48Sender extends Sender {
         if (messages.size() > 30) {
             PerformanceMonitor monitor = PerformanceMonitor.getInstance();
             
-            // 根据活跃度调整清理策略 - 优化版
-            if (activityMonitor.isGlobalActive()) {
-                // 活跃期：适度清理，避免过度清理影响性能
-                if (monitor.shouldForceCleanup()) {
-                    unifiedResourceManager.cleanupExpiredCache(5); // 5分钟内的缓存（延长）
-                    // 减少GC调用频率
-                    if (monitor.getTotalQueries() % 100 == 0) {
-                        System.gc();
-                    }
-                } else if (monitor.getTotalQueries() % 100 == 0) { // 降低清理频率
-                    unifiedResourceManager.cleanupExpiredCache(10); // 10分钟内的缓存（延长）
+            // 简化清理策略，移除活跃度判断
+            // 统一使用适度清理策略
+            if (monitor.shouldForceCleanup()) {
+                unifiedResourceManager.cleanupExpiredCache(5); // 5分钟内的缓存
+                // 减少GC调用频率
+                if (monitor.getTotalQueries() % 100 == 0) {
+                    System.gc();
                 }
-            } else {
-                // 非活跃期：更宽松的清理策略
-                if (monitor.shouldForceCleanup()) {
-                    unifiedResourceManager.cleanupExpiredCache(15); // 15分钟（延长）
-                    // 减少GC调用频率
-                    if (monitor.getTotalQueries() % 200 == 0) {
-                        System.gc();
-                    }
-                } else if (monitor.shouldCleanup() && monitor.getTotalQueries() % 200 == 0) { // 降低频率
-                    unifiedResourceManager.cleanupExpiredCache(60); // 60分钟
-                } else if (monitor.getTotalQueries() % 500 == 0) { // 大幅降低频率
-                    unifiedResourceManager.cleanupExpiredCache(120); // 2小时
-                }
+            } else if (monitor.getTotalQueries() % 100 == 0) { // 降低清理频率
+                unifiedResourceManager.cleanupExpiredCache(10); // 10分钟内的缓存
             }
         }
     }

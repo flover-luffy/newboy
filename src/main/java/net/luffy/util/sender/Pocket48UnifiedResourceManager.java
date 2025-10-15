@@ -6,7 +6,6 @@ import net.luffy.util.AdaptiveThreadPoolManager;
 import net.luffy.util.CpuLoadBalancer;
 import net.luffy.util.UnifiedSchedulerManager;
 import net.luffy.util.UnifiedLogger;
-import net.luffy.util.sender.Pocket48ActivityMonitor;
 import net.luffy.model.Pocket48Message;
 
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -35,7 +34,6 @@ public class Pocket48UnifiedResourceManager {
     private final Pocket48ResourceCache cacheManager;
     private final Pocket48ResourceHandler resourceHandler;
     private final Pocket48ResourceOptimizer optimizer;
-    private final Pocket48ActivityMonitor activityMonitor;
     
     // 直接管理配置，移除中间层
     private final AtomicBoolean mediaQueueEnabled = new AtomicBoolean(true);
@@ -65,7 +63,6 @@ public class Pocket48UnifiedResourceManager {
         this.cacheManager = Pocket48ResourceCache.getInstance();
         this.resourceHandler = new Pocket48ResourceHandler();
         this.optimizer = new Pocket48ResourceOptimizer(resourceHandler);
-        this.activityMonitor = Pocket48ActivityMonitor.getInstance();
         
         // 根据系统资源动态调整配置
         adjustConfigurationBasedOnSystemResources();
