@@ -357,12 +357,23 @@ public class DouyinMonitorService {
      */
     private String formatAwemeMessage(UserMonitorInfo userInfo, JSONObject aweme) {
         StringBuilder message = new StringBuilder();
-        message.append("🎵 抖音新作品推送\n\n");
-        message.append("👤 用户: ").append(userInfo.nickname).append("\n");
+        message.append("抖音新作品推送\n\n");
+        message.append("用户: ").append(userInfo.nickname).append("\n");
         
         String desc = aweme.getStr("desc", "");
         if (!desc.isEmpty()) {
-            message.append("📝 描述: ").append(desc).append("\n");
+            message.append("内容: ").append(desc).append("\n");
+        }
+        
+        // 获取并格式化作品更新时间
+        long createTime = aweme.getLong("create_time", 0L) * 1000;
+        if (createTime > 0) {
+            java.time.LocalDateTime dateTime = java.time.LocalDateTime.ofInstant(
+                java.time.Instant.ofEpochMilli(createTime), 
+                java.time.ZoneId.systemDefault()
+            );
+            String formattedTime = dateTime.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
+            message.append("发布时间: ").append(formattedTime).append("\n");
         }
         
         // 获取作品统计信息
@@ -372,15 +383,15 @@ public class DouyinMonitorService {
             int commentCount = statistics.getInt("comment_count", 0);
             int shareCount = statistics.getInt("share_count", 0);
             
-            message.append("❤️ 点赞: ").append(formatCount(diggCount));
-            message.append(" 💬 评论: ").append(formatCount(commentCount));
-            message.append(" 🔄 分享: ").append(formatCount(shareCount)).append("\n");
+            message.append("点赞 ").append(formatCount(diggCount));
+            message.append(" | 评论 ").append(formatCount(commentCount));
+            message.append(" | 分享 ").append(formatCount(shareCount)).append("\n");
         }
         
         // 作品链接
         String awemeId = aweme.getStr("aweme_id");
         if (awemeId != null) {
-            message.append("🔗 链接: https://www.douyin.com/video/").append(awemeId);
+            message.append("\n观看链接: https://www.douyin.com/video/").append(awemeId);
         }
         
         return message.toString();
