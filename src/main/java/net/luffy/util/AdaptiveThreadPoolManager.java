@@ -22,14 +22,14 @@ public class AdaptiveThreadPoolManager {
     private final AtomicLong lastAdjustTime = new AtomicLong(0);
     private final AtomicInteger adjustmentCount = new AtomicInteger(0);
     
-    // 配置参数 - 增加线程池大小以适应低CPU占用率
-    private static final int MIN_POOL_SIZE = 3; // 从2增加到3
-    private static final int MAX_POOL_SIZE = 8; // 从4增加到8，适应低CPU占用率
-    private static final int INITIAL_POOL_SIZE = 4; // 从2增加到4
-    private static final long ADJUSTMENT_INTERVAL_MS = 30000; // 30秒调整间隔
-    private static final double HIGH_CPU_THRESHOLD = 0.75; // 75% CPU使用率阈值
-    private static final double LOW_CPU_THRESHOLD = 0.4;   // 40% CPU使用率阈值
-    private static final int HIGH_QUEUE_THRESHOLD = 40;    // 从20增加到40，适应更大的队列
+    // 配置参数 - 大幅增加线程池大小以提高并发处理能力
+    private static final int MIN_POOL_SIZE = 6; // 从3增加到6
+    private static final int MAX_POOL_SIZE = 16; // 从8增加到16，大幅提升并发能力
+    private static final int INITIAL_POOL_SIZE = 8; // 从4增加到8
+    private static final long ADJUSTMENT_INTERVAL_MS = 15000; // 从30秒减少到15秒，更快响应
+    private static final double HIGH_CPU_THRESHOLD = 0.85; // 从75%增加到85%，允许更高CPU使用率
+    private static final double LOW_CPU_THRESHOLD = 0.3;   // 从40%降低到30%，更积极地增加线程
+    private static final int HIGH_QUEUE_THRESHOLD = 20;    // 从40减少到20，更快响应队列积压
     
     private AdaptiveThreadPoolManager() {
         // 线程池参数初始化完成
@@ -47,7 +47,7 @@ public class AdaptiveThreadPoolManager {
             INITIAL_POOL_SIZE,
             MAX_POOL_SIZE,
             60L, TimeUnit.SECONDS,
-            new LinkedBlockingQueue<>(200), // 从100增加到200
+            new LinkedBlockingQueue<>(500), // 从200增加到500，提高队列容量
             r -> {
                 Thread t = new Thread(r, "Adaptive-Pool-" + System.currentTimeMillis());
                 t.setDaemon(true);

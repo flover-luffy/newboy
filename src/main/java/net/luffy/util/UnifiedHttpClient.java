@@ -95,10 +95,10 @@ public class UnifiedHttpClient {
         private final int writeTimeout;
         
         public TimeoutConfig(int connectTimeout, int readTimeout, int writeTimeout) {
-            // 验证超时配置的合理性
-            this.connectTimeout = Math.max(1000, Math.min(connectTimeout, 60000)); // 1秒到60秒
-            this.readTimeout = Math.max(5000, Math.min(readTimeout, 300000)); // 5秒到5分钟
-            this.writeTimeout = Math.max(5000, Math.min(writeTimeout, 300000)); // 5秒到5分钟
+            // 优化超时配置的合理性验证，减少最小超时时间
+            this.connectTimeout = Math.max(500, Math.min(connectTimeout, 30000)); // 0.5秒到30秒
+            this.readTimeout = Math.max(2000, Math.min(readTimeout, 120000)); // 2秒到2分钟
+            this.writeTimeout = Math.max(2000, Math.min(writeTimeout, 120000)); // 2秒到2分钟
         }
         
         public int getConnectTimeout() { return connectTimeout; }
@@ -135,9 +135,9 @@ public class UnifiedHttpClient {
      */
     private Dispatcher createOptimizedDispatcher() {
         Dispatcher dispatcher = new Dispatcher();
-        // 设置最大并发请求数
-        dispatcher.setMaxRequests(128);  // 总的最大并发请求数
-        dispatcher.setMaxRequestsPerHost(32);  // 每个主机的最大并发请求数
+        // 大幅增加最大并发请求数以提高HTTP连接池性能
+        dispatcher.setMaxRequests(256);  // 从128增加到256，总的最大并发请求数
+        dispatcher.setMaxRequestsPerHost(64);  // 从32增加到64，每个主机的最大并发请求数
         return dispatcher;
     }
     
@@ -150,7 +150,7 @@ public class UnifiedHttpClient {
                 .connectTimeout(config.getConnectTimeout(), TimeUnit.MILLISECONDS)  // 使用配置的连接超时时间
                 .readTimeout(config.getReadTimeout(), TimeUnit.MILLISECONDS)     // 使用配置的读取超时时间
                 .writeTimeout(config.getReadTimeout(), TimeUnit.MILLISECONDS)    // 写入超时使用读取超时时间
-                .connectionPool(new ConnectionPool(200, 5, TimeUnit.MINUTES))  // 优化连接池：200个连接，5分钟空闲时间
+                .connectionPool(new ConnectionPool(400, 3, TimeUnit.MINUTES))  // 从200增加到400个连接，从5分钟减少到3分钟空闲时间
                 .dispatcher(createOptimizedDispatcher())  // 使用优化的调度器
                 .retryOnConnectionFailure(true)      // 启用连接失败重试机制
                 .addInterceptor(new RetryInterceptor(config.getMaxRetries())) // 使用配置的重试次数
@@ -836,17 +836,10 @@ public class UnifiedHttpClient {
                         // 计算重试延迟
                         long retryDelay = RetryInterceptor.calculateRetryDelay(attempt, responseCode);
                         
-                        logger.warn("[HTTP-SYNC-RETRY] 图片下载失败，准备重试 {}/{}, 状态码: {}, 延迟: {}ms, URL: {}", 
-                            attempt + 1, maxRetries + 1, responseCode, retryDelay, url);
+                        logger.warn("[HTTP-SYNC-RETRY] 图片下载响应异常，准备重试 {}/{}, 响应码: {}, URL: {}", 
+                            attempt + 1, maxRetries + 1, responseCode, url);
                         
-                        // 同步延迟
-                        try {
-                            Thread.sleep(retryDelay);
-                        } catch (InterruptedException ie) {
-                            Thread.currentThread().interrupt();
-                            throw new IOException("重试被中断: " + ie.getMessage(), ie);
-                        }
-                        
+                        // 移除延迟，直接重试
                         continue; // 继续重试
                     } else {
                         // 不可重试的错误或已达到最大重试次数
@@ -875,17 +868,10 @@ public class UnifiedHttpClient {
                     // 计算重试延迟（网络异常使用响应码0）
                     long retryDelay = RetryInterceptor.calculateRetryDelay(attempt, 0);
                     
-                    logger.warn("[HTTP-SYNC-RETRY] 图片下载网络异常，准备重试 {}/{}, 异常: {}, 延迟: {}ms, URL: {}", 
-                        attempt + 1, maxRetries + 1, e.getMessage(), retryDelay, url);
+                    logger.warn("[HTTP-SYNC-RETRY] 图片下载网络异常，准备重试 {}/{}, 异常: {}, URL: {}", 
+                        attempt + 1, maxRetries + 1, e.getMessage(), url);
                     
-                    // 同步延迟
-                    try {
-                        Thread.sleep(retryDelay);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        throw new IOException("重试被中断: " + ie.getMessage(), ie);
-                    }
-                    
+                    // 移除延迟，直接重试
                     continue; // 继续重试
                 }
             }

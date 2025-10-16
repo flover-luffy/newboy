@@ -166,16 +166,10 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
                     throw new RuntimeException("获取口袋48资源流失败，已达到最大重试次数: " + e.getMessage(), e);
                 }
                 
-                // 指数退避重试 - 使用异步延迟替代Thread.sleep避免阻塞
-                long delayMs = 1000 * (long)Math.pow(2, retries - 1);
-                logger.warn("Pocket48ResourceHandler", "获取资源流失败，将在" + delayMs + "ms后重试(" + retries + "/" + maxRetries + "): " + url);
+                // 优化重试延迟 - 减少指数退避延迟时间
+                logger.warn("Pocket48ResourceHandler", "获取资源流失败，立即重试(" + retries + "/" + maxRetries + "): " + url);
                 
-                try {
-                    Thread.sleep(delayMs);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    throw new RuntimeException("获取口袋48资源流被中断", ie);
-                }
+                // 移除延迟，直接重试
             }
         }
         
@@ -312,7 +306,7 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
             
             // 根据域名记忆化决定是否跳过HEAD请求
             if (!skipHead) {
-                // 首先尝试HEAD请求
+                // 首先尝试HEAD请求 - 注意：这里保留同步调用，因为调用方需要立即获得资源可用性结果
                 try {
                 UnifiedHttpClient.HttpResponse headResponse = client.head(url, headers);
                 int statusCode = headResponse.getStatusCode();
@@ -365,7 +359,7 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
                 metricsCollector.recordError("head_request_skipped");
             }
             
-            // HEAD失败，尝试GET请求（只获取头部信息）
+            // HEAD失败，尝试GET请求（只获取头部信息） - 注意：保留同步调用，因为调用方需要立即获得资源可用性结果
             try {
                 UnifiedHttpClient.HttpResponse getResponse = client.get(url, headers);
                 int statusCode = getResponse.getStatusCode();
@@ -591,16 +585,10 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
                       return null;
                   }
                   
-                  // 指数退避重试 - 使用Thread.sleep替代异步延迟
-                  long delayMs = 1000 * (long)Math.pow(2, retries - 1);
-                  logger.warn("Pocket48ResourceHandler", "下载失败，将在" + delayMs + "ms后重试(" + retries + "/" + maxRetries + "): " + url);
+                  // 优化下载重试延迟 - 移除延迟，立即重试
+                  logger.warn("Pocket48ResourceHandler", "下载失败，立即重试(" + retries + "/" + maxRetries + "): " + url);
                   
-                  try {
-                      Thread.sleep(delayMs);
-                  } catch (InterruptedException ie) {
-                      Thread.currentThread().interrupt();
-                      return null;
-                  }
+                  // 移除延迟，直接重试
               }
           }
           

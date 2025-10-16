@@ -60,6 +60,8 @@ public class Pocket48SenderCache {
             // 第三步：获取消息列表（非关键步骤，失败可使用空数组）
             Pocket48Message[] messages = new Pocket48Message[0]; // 默认为空数组
             try {
+                // 使用异步获取消息，但需要同步等待结果来构建缓存
+                // 这里的get()调用是必要的，因为需要立即构建完整的缓存对象
                 Pocket48Message[] fetchedMessages = pocket.getMessagesAsync(roomInfo, endTime).get();
                 if (fetchedMessages != null) {
                     messages = fetchedMessages;

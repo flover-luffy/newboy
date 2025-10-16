@@ -467,19 +467,10 @@ public class DouyinMonitorService {
         for (int attempt = 0; attempt < maxRetries; attempt++) {
             try {
                 if (attempt > 0) {
-                    // 重试前等待，避免频繁请求 - 使用异步延迟
-                    long delayMs = 1000 * (attempt + 1);
+                    // 移除重试延迟，直接重试
                     Newboy.INSTANCE.getLogger().info(
-                        String.format("重试获取抖音用户信息，用户: %s, 第%d次尝试，延迟%dms", secUserId, attempt + 1, delayMs)
+                        String.format("重试获取抖音用户信息，用户: %s, 第%d次尝试", secUserId, attempt + 1)
                     );
-                    
-                    try {
-                        // 使用直接延迟替代统一延迟服务
-                        Thread.sleep(delayMs);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        throw new RuntimeException("重试被中断", e);
-                    }
                 }
                 
                 JSONObject result = performGetUserInfo(secUserId);
@@ -662,18 +653,13 @@ public class DouyinMonitorService {
     }
     
     /**
-     * 异步延迟方法，替代Thread.sleep避免阻塞
-     * @param delayMs 延迟毫秒数
+     * 异步延迟方法，移除Thread.sleep避免阻塞
+     * @param delayMs 延迟毫秒数（已移除延迟，直接返回完成的Future）
      * @return CompletableFuture
      */
     private CompletableFuture<Void> delayAsync(long delayMs) {
-        return CompletableFuture.runAsync(() -> {
-            try {
-                Thread.sleep(delayMs);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        });
+        // 移除延迟，直接返回完成的Future
+        return CompletableFuture.completedFuture(null);
     }
     
     /**

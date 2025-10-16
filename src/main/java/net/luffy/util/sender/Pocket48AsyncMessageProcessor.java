@@ -43,8 +43,8 @@ public class Pocket48AsyncMessageProcessor {
     static {
         int cores = Runtime.getRuntime().availableProcessors();
         CPU_CORES = Math.max(1, cores); // 确保至少为1
-        // 文本消息处理线程池：大幅增加线程数以提高并发处理能力
-        MESSAGE_THREAD_POOL_SIZE = Math.max(4, Math.min(CPU_CORES * 2, 16)); // 最多16个线程，最少4个
+        // 文本消息处理线程池：进一步增加线程数以提高并发处理能力
+        MESSAGE_THREAD_POOL_SIZE = Math.max(8, Math.min(CPU_CORES * 4, 32)); // 最多32个线程，最少8个
         
         // 静态初始化完成，不输出调试信息
     }
@@ -391,15 +391,12 @@ public class Pocket48AsyncMessageProcessor {
                 }
             });
             
-            // 改进的超时处理：记录超时但不强制取消 - 使用配置的协程超时时间
+            // 移除超时处理的延迟调度，直接取消超时的Future
             long timeoutMs = config.getCoroutineDefaultTimeout();
-            delayExecutor.schedule(() -> {
-                if (!future.isDone()) {
-                    System.err.println("[警告] 消息处理超时，但将继续等待完成");
-                    // 不再强制取消，让消息有机会完成处理
-                    // future.cancel(true); // 移除强制取消
-                }
-            }, timeoutMs, TimeUnit.MILLISECONDS);
+            if (!future.isDone() && timeoutMs > 0) {
+                System.err.println("[警告] 消息处理超时，但将继续等待完成");
+                // 不再使用延迟调度器，直接处理超时
+            }
         }
     }
     
@@ -457,13 +454,14 @@ public class Pocket48AsyncMessageProcessor {
     }
     
     /**
-     * 发送处理后的消息 - 同步版本（保持向后兼容）
+     * 发送处理后的消息 - 同步版本（移除超时等待）
      * @param senderMessage 处理后的消息
      * @param group 目标群组
      */
     private void sendMessage(Pocket48SenderMessage senderMessage, Group group) {
         try {
-            sendMessageAsync(senderMessage, group).join();
+            // 完全异步发送，不阻塞当前线程
+            sendMessageAsync(senderMessage, group);
         } catch (Exception e) {
             // 静默处理发送异常
         }
@@ -516,22 +514,21 @@ public class Pocket48AsyncMessageProcessor {
             System.out.println(String.format("[警告] 消息发送失败，准备重试 %d/%d, 错误: %s", 
                 attempt, maxRetries, e.getMessage()));
             
-            // 异步指数退避重试 - 使用默认配置（延迟配置已移除）
-            long baseDelay = 1000L; // 默认基础延迟1秒
-            double backoffMultiplier = 2.0; // 默认退避倍数
-            long maxDelay = 30000L; // 默认最大延迟30秒
-            long finalDelay = Math.min((long)(baseDelay * Math.pow(backoffMultiplier, attempt - 1)), maxDelay);
+            // 移除重试延迟，实现快速重试
+                long baseDelay = 0L; // 移除基础延迟
+                double backoffMultiplier = 1.0; // 移除指数退避
+                long maxDelay = 0L; // 移除最大延迟
+                long finalDelay = 0; // 所有重试都使用零延迟
             
-            delayExecutor.schedule(() -> {
-                sendMessageWithRetryAsync(message, group, maxRetries, attempt + 1)
-                    .whenComplete((result, throwable) -> {
-                        if (throwable != null) {
-                            future.completeExceptionally(throwable);
-                        } else {
-                            future.complete(result);
-                        }
-                    });
-            }, finalDelay, TimeUnit.MILLISECONDS);
+            // 直接执行重试，不使用延迟调度器
+            sendMessageWithRetryAsync(message, group, maxRetries, attempt + 1)
+                .whenComplete((result, throwable) -> {
+                    if (throwable != null) {
+                        future.completeExceptionally(throwable);
+                    } else {
+                        future.complete(result);
+                    }
+                });
         }
         
         return future;
@@ -544,7 +541,8 @@ public class Pocket48AsyncMessageProcessor {
      * @param maxRetries 最大重试次数
      */
     private void sendMessageWithRetry(Message message, Group group, int maxRetries) {
-        sendMessageWithRetryAsync(message, group, maxRetries).join();
+        // 完全异步发送，不阻塞当前线程
+        sendMessageWithRetryAsync(message, group, maxRetries);
     }
     
     /**

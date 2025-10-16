@@ -142,11 +142,11 @@ public class Pocket48MediaQueue {
     public Pocket48MediaQueue(Pocket48UnifiedResourceManager resourceManager) {
         this.resourceManager = resourceManager;
         
-        // 初始化主队列（容量1000）
-        this.mediaQueue = new LinkedBlockingQueue<>(1000);
+        // 初始化主队列（容量2000，从1000增加）
+        this.mediaQueue = new LinkedBlockingQueue<>(2000);
         
-        // 初始化溢出队列（内存，容量5000）
-        this.overflowQueue = new LinkedBlockingQueue<>(5000);
+        // 初始化溢出队列（内存，容量10000，从5000增加）
+        this.overflowQueue = new LinkedBlockingQueue<>(10000);
         
         // 初始化持久化目录
         this.overflowDir = initializeOverflowDirectory();
@@ -161,7 +161,7 @@ public class Pocket48MediaQueue {
         startWorkerThreads();
         
         UnifiedLogger.getInstance().debug("Pocket48MediaQueue", 
-            "媒体队列已启动 - Worker模式，主队列容量: 1000, 溢出队列容量: 5000");
+            "媒体队列已启动 - Worker模式，主队列容量: 2000, 溢出队列容量: 10000");
     }
     
     public static Pocket48MediaQueue getInstance(Properties properties) {
@@ -438,13 +438,8 @@ public class Pocket48MediaQueue {
                             }
                         }
                     }
-                    // 使用更高效的轮询间隔，避免过度CPU占用
-                    try {
-                        Thread.sleep(100); // 优化轮询间隔，平衡响应性和CPU使用
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        break;
-                    }
+                    // 移除轮询延迟，使用阻塞队列的阻塞特性
+                    // 不再使用Thread.sleep，让队列自然阻塞等待
                 } catch (Exception e) {
                     UnifiedLogger.getInstance().error("Pocket48MediaQueue", "溢出队列worker处理异常: " + e.getMessage());
                 }

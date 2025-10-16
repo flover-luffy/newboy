@@ -62,7 +62,7 @@ public class DynamicTimeoutManager {
      * @return 调整后的超时时间
      */
     public int getDynamicConnectTimeout(int baseTimeout) {
-        return Math.max(500, Math.min(10000, baseTimeout));
+        return Math.max(300, Math.min(5000, baseTimeout));
     }
     
     /**
@@ -71,7 +71,7 @@ public class DynamicTimeoutManager {
      * @return 调整后的超时时间
      */
     public int getDynamicReadTimeout(int baseTimeout) {
-        return Math.max(1000, Math.min(15000, baseTimeout));
+        return Math.max(1000, Math.min(10000, baseTimeout));
     }
     
     /**

@@ -605,14 +605,8 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
                             return CompletableFuture.completedFuture(null);
                         } else {
                             logger.warn("{} - 准备重试", errorMsg);
-                            // 异步延迟重试
-                            return CompletableFuture.runAsync(() -> {
-                                try {
-                                    Thread.sleep((long)(baseDelay * (attempt + 1)));
-                                } catch (InterruptedException e) {
-                                    Thread.currentThread().interrupt();
-                                }
-                            }).thenCompose(v -> attemptRequestAsync(roomID, serverID, timeoutConfig, attempt + 1, maxRetries, baseDelay, startTime));
+                            // 移除延迟，直接重试
+                            return attemptRequestAsync(roomID, serverID, timeoutConfig, attempt + 1, maxRetries, baseDelay, startTime);
                         }
                     }
                 } catch (Exception e) {
@@ -624,14 +618,8 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
                         return CompletableFuture.completedFuture(null);
                     } else {
                         logger.warn("{} - 准备重试", errorMsg);
-                        // 异步延迟重试
-                        return CompletableFuture.runAsync(() -> {
-                            try {
-                                Thread.sleep((long)(baseDelay * (attempt + 1)));
-                            } catch (InterruptedException ex) {
-                                Thread.currentThread().interrupt();
-                            }
-                        }).thenCompose(v -> attemptRequestAsync(roomID, serverID, timeoutConfig, attempt + 1, maxRetries, baseDelay, startTime));
+                        // 移除延迟，直接重试
+                        return attemptRequestAsync(roomID, serverID, timeoutConfig, attempt + 1, maxRetries, baseDelay, startTime);
                     }
                 }
             })
@@ -647,17 +635,12 @@ public class Pocket48Handler extends AsyncWebHandlerBase {
                     return null;
                 } else {
                     logger.warn("{} - 准备重试", errorMsg);
-                    // 异步延迟重试
+                    // 移除延迟，直接重试，同时移除超时等待
                     try {
-                        return CompletableFuture.runAsync(() -> {
-                            try {
-                                Thread.sleep((long)(baseDelay * (attempt + 1)));
-                            } catch (InterruptedException ex) {
-                                Thread.currentThread().interrupt();
-                            }
-                        }).thenCompose(v -> attemptRequestAsync(roomID, serverID, timeoutConfig, attempt + 1, maxRetries, baseDelay, startTime))
-                            .join();
+                        return attemptRequestAsync(roomID, serverID, timeoutConfig, attempt + 1, maxRetries, baseDelay, startTime)
+                            .join(); // 移除超时限制，直接获取结果
                     } catch (Exception ex) {
+                        logger.warn("[Pocket48Handler] 异常重试请求失败 - 房间ID: {}, 尝试: {}/{}", roomID, attempt + 1, maxRetries);
                         return null;
                     }
                 }

@@ -78,7 +78,7 @@ public class ConfigOperator {
             
             // 设置UI期望配置默认值
             tempSetting.setByGroup("ui_expectations", "enable_placeholder_messages", "true");
-            tempSetting.setByGroup("ui_expectations", "placeholder_timeout_ms", "5000");
+            tempSetting.setByGroup("ui_expectations", "placeholder_timeout_ms", "3000");
             tempSetting.setByGroup("ui_expectations", "show_processing_status", "true");
             tempSetting.setByGroup("ui_expectations", "high_priority_channel_enabled", "true");
             
@@ -86,7 +86,7 @@ public class ConfigOperator {
             tempSetting.setByGroup("message_optimization", "text_message_priority", "high");
             tempSetting.setByGroup("message_optimization", "media_message_priority", "normal");
             tempSetting.setByGroup("message_optimization", "placeholder_fallback_enabled", "true");
-            tempSetting.setByGroup("message_optimization", "async_processing_timeout", "30000");
+            tempSetting.setByGroup("message_optimization", "async_processing_timeout", "15000");
             
             // 口袋48异步处理队列配置已迁移到 Pocket48UnifiedResourceManager
             
@@ -133,8 +133,8 @@ public class ConfigOperator {
 
         // 进群欢迎功能已移除
 
-        //schedule pattern - 优化为每10秒执行一次，大幅降低消息延迟
-        properties.pocket48_pattern = setting.getStr("schedule", "pocket48", "*/10 * * * * *");
+        //schedule pattern - 优化为每3秒执行一次，进一步降低消息延迟
+        properties.pocket48_pattern = setting.getStr("schedule", "pocket48", "*/3 * * * * *");
 
         properties.weibo_pattern = setting.getStr("schedule", "weibo", "*/5 * * * *");
         properties.douyin_pattern = setting.getStr("schedule", "douyin", "*/10 * * * *");
@@ -148,7 +148,7 @@ public class ConfigOperator {
         
         // UI期望配置
         properties.enable_placeholder_messages = setting.getBool("ui_expectations", "enable_placeholder_messages", true);
-        properties.placeholder_timeout_ms = setting.getInt("ui_expectations", "placeholder_timeout_ms", 5000);
+        properties.placeholder_timeout_ms = setting.getInt("ui_expectations", "placeholder_timeout_ms", 3000);
         properties.show_processing_status = setting.getBool("ui_expectations", "show_processing_status", true);
         properties.high_priority_channel_enabled = setting.getBool("ui_expectations", "high_priority_channel_enabled", true);
         
@@ -156,7 +156,7 @@ public class ConfigOperator {
         properties.text_message_priority = setting.getStr("message_optimization", "text_message_priority", "high");
         properties.media_message_priority = setting.getStr("message_optimization", "media_message_priority", "normal");
         properties.placeholder_fallback_enabled = setting.getBool("message_optimization", "placeholder_fallback_enabled", true);
-        properties.async_processing_timeout = setting.getInt("message_optimization", "async_processing_timeout", 30000);
+        properties.async_processing_timeout = setting.getInt("message_optimization", "async_processing_timeout", 15000);
         
         // 口袋48异步处理队列配置已迁移到 Pocket48UnifiedResourceManager
 

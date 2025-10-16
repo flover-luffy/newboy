@@ -371,16 +371,7 @@ public class WeiboMonitorService {
                     return;
                 }
                 
-                // 计算重试延迟：2^retryCount * 1000ms，最大30秒
-                long delayMs = Math.min((long)(Math.pow(2, retryCount) * 1000), 30000);
-                try {
-                    // 使用Thread.sleep进行同步延迟
-                    Thread.sleep(delayMs);
-                } catch (InterruptedException ex) {
-                    Thread.currentThread().interrupt();
-                    logger.error("用户{}信息加载延迟被中断", uid);
-                    return;
-                }
+                // 移除重试延迟，直接重试
             }
         }
     }

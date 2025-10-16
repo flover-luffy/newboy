@@ -26,7 +26,7 @@ public class ErrorHandlingManager {
     
     // 重试配置
     private static final int DEFAULT_MAX_RETRIES = 3;
-    private static final long DEFAULT_RETRY_DELAY_MS = 1000;
+    private static final long DEFAULT_RETRY_DELAY_MS = 300;
     private static final double DEFAULT_BACKOFF_MULTIPLIER = 2.0;
     
     // 断路器配置
@@ -108,15 +108,9 @@ public class ErrorHandlingManager {
                     String.format("[错误处理] 操作 '%s' 第 %d 次重试，%dms 后重试", 
                         operationName, attempt + 1, delay));
                 
-                // 异步延迟后重试
-                return CompletableFuture.runAsync(() -> {
-                    try {
-                        Thread.sleep(delay);
-                    } catch (InterruptedException ex) {
-                        Thread.currentThread().interrupt();
-                    }
-                }).thenCompose(v -> executeWithRetryAsyncInternal(
-                        operationName, operation, maxRetries, retryDelayMs, attempt + 1, e));
+                // 移除延迟，直接重试
+                return executeWithRetryAsyncInternal(
+                        operationName, operation, maxRetries, retryDelayMs, attempt + 1, e);
             } else {
                 // 所有重试都失败了
                 recordFinalFailure(operationName, e, maxRetries);
@@ -347,15 +341,8 @@ public class ErrorHandlingManager {
     private void initializeDefaultRecoveryStrategies() {
         // 网络连接异常恢复策略（异步版本）
         registerAsyncRecoveryStrategy(java.net.ConnectException.class, (exception) -> {
-            // 尝试重新建立网络连接
-            return CompletableFuture.runAsync(() -> {
-                try {
-                    Thread.sleep(2000); // 异步等待2秒
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
-            }).thenApply(v -> true)
-                .exceptionally(e -> false);
+            // 移除网络连接重试延迟
+            return CompletableFuture.completedFuture(true);
         });
         
         // 内存不足恢复策略（异步版本）
@@ -366,15 +353,8 @@ public class ErrorHandlingManager {
                     // 触发缓存清理
                     SmartCacheManager.getInstance().performMemoryPressureCleanup();
                     System.gc();
-                    // 异步等待1秒
-                    return CompletableFuture.runAsync(() -> {
-                        try {
-                            Thread.sleep(1000);
-                        } catch (InterruptedException e) {
-                            Thread.currentThread().interrupt();
-                        }
-                    }).thenApply(v -> true)
-                        .exceptionally(e -> false);
+                    // 移除内存清理延迟
+                    return CompletableFuture.completedFuture(true);
                 } catch (Exception e) {
                     return CompletableFuture.completedFuture(false);
                 }
@@ -400,7 +380,7 @@ public class ErrorHandlingManager {
                 try {
                     SmartCacheManager.getInstance().performMemoryPressureCleanup();
                     System.gc();
-                    Thread.sleep(1000); // 同步等待1秒
+                    // 移除同步等待延迟
                     return true;
                 } catch (Exception e) {
                     return false;

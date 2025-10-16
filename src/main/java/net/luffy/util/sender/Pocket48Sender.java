@@ -1151,7 +1151,7 @@ public class Pocket48Sender extends Sender {
 
     /**
      * 按时间顺序发送消息，确保顺序的同时维持实时性
-     * 核心策略：严格按时间戳排序，智能批次分组发送
+     * 优化策略：移除批量处理，改为单条消息立即处理
      * @param messages 消息列表
      * @param group 群组
      */
@@ -1160,14 +1160,8 @@ public class Pocket48Sender extends Sender {
             return;
         }
         
-        // 智能选择发送策略
-        if (messages.size() > 8) {
-            // 大量消息：使用批次分组发送
-            sendMessagesInBatches(messages, group);
-        } else {
-            // 少量消息：使用原有的顺序发送
-            sendMessagesSequentially(messages, group);
-        }
+        // 移除批量处理机制，统一使用顺序发送以减少延迟
+        sendMessagesSequentially(messages, group);
         
         // 清理缓存
         if (messages.size() > 10) {
@@ -1176,144 +1170,52 @@ public class Pocket48Sender extends Sender {
     }
     
     /**
-     * 智能分批发送：基于消息类型和系统负载优化批次策略
+     * 智能分批发送：已弃用，保留用于兼容性
+     * @deprecated 使用单条消息立即处理替代批量发送
      * @param messages 消息列表
      * @param group 群组
      */
+    @Deprecated
     private void sendMessagesInBatches(List<Pocket48Message> messages, Group group) {
-        if (messages == null || messages.isEmpty()) {
-            return;
-        }
-        
-        // 按时间戳排序
-        messages.sort((m1, m2) -> Long.compare(m1.getTime(), m2.getTime()));
-        
-        // 智能分批：根据消息类型和数量动态调整
-        List<List<Pocket48Message>> batches = createSmartBatches(messages);
-        
-        // 异步处理所有批次
-        CompletableFuture<Void> batchChain = CompletableFuture.completedFuture(null);
-        
-        for (int batchIndex = 0; batchIndex < batches.size(); batchIndex++) {
-            final List<Pocket48Message> batch = batches.get(batchIndex);
-            final int currentBatchIndex = batchIndex;
-            final boolean isLastBatch = batchIndex == batches.size() - 1;
-            
-            batchChain = batchChain.thenCompose(v -> {
-                return sendBatchWithSmoothing(batch, group, currentBatchIndex)
-                    .thenCompose(result -> {
-                        if (!isLastBatch) {
-                            // 批次间延迟已移除，直接继续
-                            // 移除延迟计算，立即执行下一批次
-                        }
-                        return CompletableFuture.completedFuture(null);
-                    });
-            });
-        }
+        // 改为直接调用顺序发送，避免批量延迟
+        sendMessagesSequentially(messages, group);
     }
     
     /**
-     * 创建智能批次：根据消息类型分组
+     * 创建智能批次：已弃用，保留用于兼容性
+     * @deprecated 使用单条消息立即处理替代批量发送
      * @param messages 消息列表
      * @return 批次列表
      */
+    @Deprecated
     private List<List<Pocket48Message>> createSmartBatches(List<Pocket48Message> messages) {
+        // 返回单个批次，包含所有消息
         List<List<Pocket48Message>> batches = new ArrayList<>();
-        List<Pocket48Message> currentBatch = new ArrayList<>();
-        
-        int textCount = 0;
-        int mediaCount = 0;
-        
-        for (Pocket48Message message : messages) {
-            boolean isText = isTextMessage(message);
-            
-            // 批次规则：
-            // 1. 文本消息：最多8条一批
-            // 2. 媒体消息：最多3条一批
-            // 3. 混合批次：最多5条一批
-            boolean shouldStartNewBatch = false;
-            
-            if (isText) {
-                textCount++;
-                if (textCount > 8 || (mediaCount > 0 && currentBatch.size() >= 5)) {
-                    shouldStartNewBatch = true;
-                }
-            } else {
-                mediaCount++;
-                if (mediaCount > 3 || currentBatch.size() >= 5) {
-                    shouldStartNewBatch = true;
-                }
-            }
-            
-            if (shouldStartNewBatch && !currentBatch.isEmpty()) {
-                batches.add(new ArrayList<>(currentBatch));
-                currentBatch.clear();
-                textCount = isText ? 1 : 0;
-                mediaCount = isText ? 0 : 1;
-            }
-            
-            currentBatch.add(message);
+        if (!messages.isEmpty()) {
+            batches.add(new ArrayList<>(messages));
         }
-        
-        if (!currentBatch.isEmpty()) {
-            batches.add(currentBatch);
-        }
-        
         return batches;
     }
     
     /**
-     * 批次内智能平滑发送 - 移除延迟计算
+     * 批次内智能平滑发送：已弃用，保留用于兼容性
+     * @deprecated 使用单条消息立即处理替代批量发送
      * @param batch 批次消息
      * @param group 群组
      * @param batchIndex 批次索引
      */
+    @Deprecated
     private CompletableFuture<Void> sendBatchWithSmoothing(List<Pocket48Message> batch, Group group, int batchIndex) {
-        return sendBatchWithSmoothingAsync(batch, group, 0);
+        // 改为直接调用顺序发送
+        sendMessagesSequentially(batch, group);
+        return CompletableFuture.completedFuture(null);
     }
     
+    @Deprecated
     private CompletableFuture<Void> sendBatchWithSmoothingAsync(List<Pocket48Message> batch, Group group, int index) {
-        if (index >= batch.size()) {
-            return CompletableFuture.completedFuture(null);
-        }
-        
-        try {
-            Pocket48Message message = batch.get(index);
-            
-            // 根据消息类型选择处理策略
-            Pocket48SenderMessage senderMessage;
-            if (isTextMessage(message)) {
-                senderMessage = pharseMessageFast(message, group, false);
-            } else {
-                senderMessage = pharseMessage(message, group, false);
-            }
-            
-            // 立即发送处理完的消息
-            if (senderMessage != null) {
-                sendSingleMessageOptimized(senderMessage, group);
-            }
-            
-            // 立即处理下一条消息，移除延迟
-            if (index < batch.size() - 1) {
-                return sendBatchWithSmoothingAsync(batch, group, index + 1);
-            } else {
-                return CompletableFuture.completedFuture(null);
-            }
-            
-        } catch (Exception e) {
-            logger.warn("Pocket48Sender", "批次消息处理失败: " + e.getMessage());
-            // 继续处理下一条消息，不中断整个批次
-            if (index < batch.size() - 1) {
-                return CompletableFuture.runAsync(() -> {
-                    try {
-                        Thread.sleep(100);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                    }
-                }).thenCompose(v -> sendBatchWithSmoothingAsync(batch, group, index + 1));
-            }
-            return CompletableFuture.completedFuture(null);
-        }
+        // 改为直接调用顺序发送
+        sendMessagesSequentially(batch, group);
+        return CompletableFuture.completedFuture(null);
     }
     
     /**
@@ -1359,31 +1261,18 @@ public class Pocket48Sender extends Sender {
                     }
                 })
             ).thenCompose(senderMessage -> {
-                // 使用固定延迟，移除DelayPolicy依赖
+                // 移除消息间延迟，实现零延迟发送
                 if (nextMessage != null) {
-                    // 根据消息类型使用固定延迟
-                    boolean isMedia = !isTextMessage(nextMessage);
-                    long delay = isMedia ? 1000 : 500; // 媒体消息1秒，文本消息0.5秒
-                    if (delay > 0) {
-                        return CompletableFuture.runAsync(() -> {
-                            try {
-                                Thread.sleep(delay);
-                            } catch (InterruptedException e) {
-                                Thread.currentThread().interrupt();
-                            }
-                        });
-                    }
+                    // 移除所有延迟，立即发送下一条消息
+                    long delay = 0; // 所有消息类型都使用零延迟
+                    // 延迟逻辑已完全移除，直接返回
                 }
                 return CompletableFuture.completedFuture(null);
             });
         }
         
-        // 等待所有消息处理完成，但不阻塞主线程过久
-        try {
-            previousTask.get(60, TimeUnit.SECONDS); // 最多等待60秒，给重试更多时间
-        } catch (Exception e) {
-            System.err.println("[警告] 消息发送超时或异常: " + e.getMessage());
-        }
+        // 移除超时等待，直接异步处理，不阻塞主线程
+        // 原来的60秒超时等待已移除，消息将异步处理完成
     }
     
     /**
@@ -1576,23 +1465,18 @@ public class Pocket48Sender extends Sender {
                 return CompletableFuture.completedFuture(null);
             }
             
-            // 简化的重试延迟计算
+            // 移除重试延迟，实现快速重试
             String retryReason = isRetryableError ? "network_error" : "unknown_error";
-            final long delay = Math.min(10 * (long) Math.pow(2, attempt - 1), 30000); // 指数退避延迟，最大30秒
+            final long delay = 0; // 移除重试延迟，立即重试
             
             // 记录重试结果
             metricsCollector.recordCustomMetric("retry_failure", 1);
             
-            logger.warn("Pocket48Sender", String.format("消息发送失败，准备重试 %d/%d，延迟 %dms，原因: %s", 
-                attempt, maxRetries, delay, retryReason));
+            logger.warn("Pocket48Sender", String.format("消息发送失败，立即重试 %d/%d，原因: %s", 
+                attempt, maxRetries, retryReason));
             
-            return CompletableFuture.runAsync(() -> {
-                try {
-                    Thread.sleep(delay);
-                } catch (InterruptedException ex) {
-                    Thread.currentThread().interrupt();
-                }
-            }).thenCompose(v -> sendMessageWithRetryAsync(message, group, maxRetries, attempt + 1));
+            // 移除延迟，直接重试
+            return sendMessageWithRetryAsync(message, group, maxRetries, attempt + 1);
         });
     }
     
@@ -1703,7 +1587,7 @@ public class Pocket48Sender extends Sender {
     }
     
     /**
-     * 带重试机制的图片上传方法，解决网络超时问题
+     * 带重试机制的图片上传方法，移除超时等待
      * @param resource 图片资源
      * @param maxRetries 最大重试次数
      * @return 上传的图片对象
@@ -1711,7 +1595,9 @@ public class Pocket48Sender extends Sender {
      */
     private Image uploadImageWithRetry(ExternalResource resource, int maxRetries) {
         try {
-            return uploadImageWithRetryAsync(resource, maxRetries).get();
+            // 使用异步上传，但需要同步返回结果（因为返回类型为Image）
+            // 这里保持join()调用，因为调用方需要立即获得Image对象
+            return uploadImageWithRetryAsync(resource, maxRetries).join();
         } catch (Exception e) {
             throw new RuntimeException("图片上传失败", e);
         }
@@ -1742,17 +1628,11 @@ public class Pocket48Sender extends Sender {
             
             Exception currentException = (Exception) throwable.getCause();
             if (retryCount < maxRetries) {
-                // 使用指数退避延迟，移除DelayPolicy依赖
-                long delayMs = Math.min(1000 * (1L << Math.min(retryCount, 4)), 8000); // 最大8秒
-                uploadLogger.warning("图片上传失败，第" + (retryCount + 1) + "次重试，延迟" + delayMs + "ms: " + currentException.getMessage());
+                // 移除图片上传重试延迟，实现快速重试
+                uploadLogger.warning("图片上传失败，第" + (retryCount + 1) + "次立即重试: " + currentException.getMessage());
                 
-                return CompletableFuture.runAsync(() -> {
-                    try {
-                        Thread.sleep(delayMs);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                    }
-                }).thenCompose(v -> uploadImageWithRetryAsync(resource, maxRetries, retryCount + 1, currentException));
+                // 移除延迟，直接重试
+                return uploadImageWithRetryAsync(resource, maxRetries, retryCount + 1, currentException);
             } else {
                 uploadLogger.severe("图片上传失败，已达到最大重试次数: " + currentException.getMessage());
                 CompletableFuture<Image> failedFuture = new CompletableFuture<>();
@@ -1853,7 +1733,7 @@ public class Pocket48Sender extends Sender {
      */
     private void createCacheWithAsyncRetry(long roomID, HashMap<Long, Long> endTime) {
         int maxRetries = 2;
-        long[] retryDelays = {500, 1500}; // 0.5秒、1.5秒
+        long[] retryDelays = {0, 0}; // 移除缓存重试延迟，立即重试
         
         createCacheWithAsyncRetryInternal(roomID, endTime, 0, maxRetries, retryDelays);
     }
@@ -1873,15 +1753,8 @@ public class Pocket48Sender extends Sender {
             return;
         }
         
-        // 如果是第一次尝试，直接执行；否则延迟执行
-        if (attempt == 0) {
-            executeCreateCache(roomID, endTime, attempt, maxRetries, retryDelays);
-        } else {
-            // 使用异步延迟
-            delayExecutor.schedule(() -> {
-                executeCreateCache(roomID, endTime, attempt, maxRetries, retryDelays);
-            }, retryDelays[attempt - 1], TimeUnit.MILLISECONDS);
-        }
+        // 移除延迟调度器，直接执行重试
+        executeCreateCache(roomID, endTime, attempt, maxRetries, retryDelays);
     }
     
     /**
