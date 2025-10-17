@@ -36,7 +36,6 @@ public class UnifiedResourceManager {
     private PerformanceMonitor performanceMonitor;
     
     // 新增核心组件
-    private SmartCacheManager cacheManager;
     private EnhancedPerformanceMonitor enhancedMonitor;
     private ConcurrencySafetyUtils concurrencyUtils;
     private ErrorHandlingManager errorManager;
@@ -97,9 +96,6 @@ public class UnifiedResourceManager {
             
             // 初始化性能监控器
             performanceMonitor = PerformanceMonitor.getInstance();
-            
-            // 初始化智能缓存管理器
-            cacheManager = SmartCacheManager.getInstance();
             
             // 初始化增强性能监控器
             enhancedMonitor = EnhancedPerformanceMonitor.getInstance();
@@ -336,11 +332,6 @@ public class UnifiedResourceManager {
                  enhancedMonitor.cleanup();
              }
              
-             // 清理智能缓存管理器
-             if (cacheManager != null) {
-                 cacheManager.clearAllCaches();
-             }
-             
              // 关闭并发安全工具
              if (concurrencyUtils != null) {
                  concurrencyUtils.shutdown();
@@ -355,10 +346,6 @@ public class UnifiedResourceManager {
     /**
      * 获取智能缓存管理器
      */
-    public SmartCacheManager getCacheManager() {
-        return cacheManager;
-    }
-    
     /**
      * 获取增强性能监控器
      */
@@ -401,7 +388,7 @@ public class UnifiedResourceManager {
          report.append(String.format("  线程池管理器: %s\n", threadPoolManager != null ? "✅ 活跃" : "❌ 未初始化"));
          report.append(String.format("  调度器管理器: %s\n", schedulerManager != null ? "✅ 活跃" : "❌ 未初始化"));
          report.append(String.format("  性能监控器: %s\n", performanceMonitor != null ? "✅ 活跃" : "❌ 未初始化"));
-         report.append(String.format("  智能缓存管理器: %s\n", cacheManager != null ? "✅ 活跃" : "❌ 未初始化"));
+         report.append(String.format("  智能缓存管理器: %s\n", "❌ 已移除"));
          report.append(String.format("  增强性能监控器: %s\n", enhancedMonitor != null ? "✅ 活跃" : "❌ 未初始化"));
          report.append(String.format("  并发安全工具: %s\n", concurrencyUtils != null ? "✅ 活跃" : "❌ 未初始化"));
          report.append(String.format("  错误处理管理器: %s\n", errorManager != null ? "✅ 活跃" : "❌ 未初始化"));
@@ -419,11 +406,6 @@ public class UnifiedResourceManager {
          
          // 详细组件报告
          if (initialized.get()) {
-             // 智能缓存报告
-             if (cacheManager != null) {
-                 report.append("\n").append(cacheManager.getCacheReport());
-             }
-             
              // 增强性能监控报告
              if (enhancedMonitor != null) {
                  report.append("\n").append(enhancedMonitor.getPerformanceReport());
@@ -457,7 +439,6 @@ public class UnifiedResourceManager {
              healthResults.put("unified_resource_manager", initialized.get() && !shutdownInProgress.get());
              healthResults.put("thread_pool_manager", threadPoolManager != null);
              healthResults.put("scheduler_manager", schedulerManager != null);
-             healthResults.put("cache_manager", cacheManager != null);
              healthResults.put("enhanced_monitor", enhancedMonitor != null);
              healthResults.put("concurrency_utils", concurrencyUtils != null);
              healthResults.put("error_manager", errorManager != null);

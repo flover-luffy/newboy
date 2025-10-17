@@ -57,14 +57,14 @@ public class ConfigOperator {
             tempSetting.setByGroup("basic", "admins", "123456789");
             tempSetting.setByGroup("basic", "secureGroup", "");
             
-            // 设置定时任务默认配置 - 优化为10秒间隔，大幅降低消息延迟
-            tempSetting.setByGroup("schedule", "pocket48", "*/10 * * * * *");
+            // 设置定时任务默认配置 - 优化为3秒间隔，大幅降低消息延迟
+            tempSetting.setByGroup("schedule", "pocket48", "*/3 * * * * *");
             tempSetting.setByGroup("schedule", "weibo", "*/5 * * * *");
             tempSetting.setByGroup("schedule", "douyin", "*/10 * * * *");
     
             // onlineStatus定时任务已迁移到异步监控系统
-            tempSetting.setByGroup("schedule_order", "weidian", "*/2 * * * *");
-            tempSetting.setByGroup("schedule_item", "weidian", "*/5 * * * *");
+            tempSetting.setByGroup("schedule_order", "weidian", "*/1 * * * *");
+            tempSetting.setByGroup("schedule_item", "weidian", "*/3 * * * *");
             
             // 设置口袋48默认配置
             tempSetting.setByGroup("pocket48", "account", "");
@@ -74,11 +74,11 @@ public class ConfigOperator {
             tempSetting.setByGroup("subscribe", "async_monitor", "[]");
             
             // 设置异步监控配置默认值
-            tempSetting.setByGroup("async_monitor", "schedule_pattern", "*/30 * * * * *");
+            tempSetting.setByGroup("async_monitor", "schedule_pattern", "*/5 * * * * *");
             
             // 设置UI期望配置默认值
             tempSetting.setByGroup("ui_expectations", "enable_placeholder_messages", "true");
-            tempSetting.setByGroup("ui_expectations", "placeholder_timeout_ms", "3000");
+            tempSetting.setByGroup("ui_expectations", "placeholder_timeout_ms", "2000");
             tempSetting.setByGroup("ui_expectations", "show_processing_status", "true");
             tempSetting.setByGroup("ui_expectations", "high_priority_channel_enabled", "true");
             
@@ -86,7 +86,7 @@ public class ConfigOperator {
             tempSetting.setByGroup("message_optimization", "text_message_priority", "high");
             tempSetting.setByGroup("message_optimization", "media_message_priority", "normal");
             tempSetting.setByGroup("message_optimization", "placeholder_fallback_enabled", "true");
-            tempSetting.setByGroup("message_optimization", "async_processing_timeout", "15000");
+            tempSetting.setByGroup("message_optimization", "async_processing_timeout", "8000");
             
             // 口袋48异步处理队列配置已迁移到 Pocket48UnifiedResourceManager
             
@@ -101,8 +101,8 @@ public class ConfigOperator {
             tempSetting.setByGroup("douyin", "cookie", "");
             tempSetting.setByGroup("douyin", "user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
             tempSetting.setByGroup("douyin", "referer", "https://www.douyin.com/");
-            tempSetting.setByGroup("douyin", "api_timeout", "30000");
-            tempSetting.setByGroup("douyin", "max_retries", "3");
+            tempSetting.setByGroup("douyin", "api_timeout", "15000");
+            tempSetting.setByGroup("douyin", "max_retries", "2");
             
             // 设置商店配置默认值
             tempSetting.setByGroup("shops", "weidian", "[]");

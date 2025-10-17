@@ -4,6 +4,7 @@ import cn.hutool.core.date.DateUtil;
 import net.luffy.Newboy;
 import net.luffy.handler.Pocket48Handler;
 import net.luffy.util.sender.Pocket48UnifiedResourceManager;
+import net.luffy.util.sender.MessageRateLimiter;
 import net.luffy.util.PerformanceMonitor;
 import net.luffy.util.MessageIntegrityChecker;
 import net.luffy.util.UnifiedLogger;
@@ -43,10 +44,11 @@ public class Pocket48Sender extends Sender {
     private final HashMap<Long, Pocket48SenderCache> cache;
     private final Pocket48UnifiedResourceManager unifiedResourceManager;
     private final Pocket48AsyncMessageProcessor asyncProcessor;
+    private final MessageRateLimiter rateLimiter;
 
     private final net.luffy.util.CpuLoadBalancer loadBalancer;
     private final Pocket48MediaQueue mediaQueue;
-    private final ScheduledExecutorService delayExecutor;
+    // 移除delayExecutor，不再需要延迟处理
     
     // 统一日志和指标收集
     private final UnifiedLogger logger = UnifiedLogger.getInstance();
@@ -59,58 +61,16 @@ public class Pocket48Sender extends Sender {
         this.cache = cache;
         this.unifiedResourceManager = Pocket48UnifiedResourceManager.getInstance();
         this.asyncProcessor = new Pocket48AsyncMessageProcessor(this);
+        this.rateLimiter = MessageRateLimiter.getInstance();
 
         this.loadBalancer = net.luffy.util.CpuLoadBalancer.getInstance();
         this.mediaQueue = new Pocket48MediaQueue();
-        // 使用统一调度管理器替代自建线程池
-        this.delayExecutor = net.luffy.util.UnifiedSchedulerManager.getInstance().getScheduledExecutor();
-        
-        // 初始化缓存设置（从配置文件读取）
-        initializeCacheSettings();
+        // 移除delayExecutor初始化
         
         logger.debug("Pocket48Sender", "Pocket48Sender初始化完成，群组: " + group);
     }
     
-    /**
-     * 初始化缓存设置
-     */
-    private void initializeCacheSettings() {
-        try {
-            // 从配置文件读取缓存启用状态，默认启用
-            boolean cacheEnabled = Newboy.INSTANCE.getConfig().getSetting().getBool("pocket48", "cache.enabled", true);
-            setCacheEnabled(cacheEnabled);
-        } catch (Exception e) {
-            // 配置读取失败时默认启用缓存
-            setCacheEnabled(true);
-        }
-    }
-    
-    /**
-     * 设置缓存启用状态
-     * @param enabled true启用缓存，false禁用缓存
-     */
-    public void setCacheEnabled(boolean enabled) {
-        if (unifiedResourceManager != null) {
-            unifiedResourceManager.setCacheEnabled(enabled);
-        }
-    }
-    
-    /**
-     * 检查缓存是否启用
-     * @return true如果缓存启用
-     */
-    public boolean isCacheEnabled() {
-        return unifiedResourceManager != null && unifiedResourceManager.isCacheEnabled();
-    }
-    
-    /**
-     * 清空所有缓存
-     */
-    public void clearAllCache() {
-        if (unifiedResourceManager != null) {
-            unifiedResourceManager.clearAllCache();
-        }
-    }
+
 
     @Override
     public void run() {
@@ -118,7 +78,7 @@ public class Pocket48Sender extends Sender {
             Pocket48Subscribe subscribe = Newboy.INSTANCE.getProperties().pocket48_subscribe.get(group_id);
             Pocket48Handler pocket = Newboy.INSTANCE.getHandlerPocket48();
 
-            //房间消息获取 - 改进的重试机制和缓存刷新（优化：减少重试延迟）
+            //房间消息获取 - 改进的重试机制（优化：减少重试延迟）
             for (long roomID : subscribe.getRoomIDs()) {
                 Pocket48SenderCache currentCache = cache.get(roomID);
                 
@@ -126,7 +86,6 @@ public class Pocket48Sender extends Sender {
                 boolean needsRefresh = currentCache == null || currentCache.isExpired();
                 
                 if (needsRefresh) {
-                    // 移除缓存过期的信息日志，减少日志噪音
                     cache.put(roomID, Pocket48SenderCache.create(roomID, endTime));
                 }
                 
@@ -364,14 +323,9 @@ public class Pocket48Sender extends Sender {
                 File audioFile = null;
                 
                 try {
-                    // 智能获取音频文件（优先使用缓存）
+                    // 缓存功能已移除，直接使用下载方式
                     String audioExt = message.getExt() != null && !message.getExt().isEmpty() ? "." + message.getExt() : ".amr";
-                    audioFile = unifiedResourceManager.getResourceSmart(audioUrl);
-                    
-                    // 如果缓存未命中，使用传统下载方式
-                    if (audioFile == null) {
-                        audioFile = unifiedResourceManager.downloadToTempFile(audioUrl, audioExt);
-                    }
+                    audioFile = unifiedResourceManager.downloadToTempFile(audioUrl, audioExt);
                     
                     if (audioFile == null || !audioFile.exists()) {
                         throw new RuntimeException("音频文件获取失败");
@@ -541,14 +495,9 @@ public class Pocket48Sender extends Sender {
                 try {
                     // 开始处理视频
                     
-                    // 智能获取视频文件（优先使用缓存）
+                    // 缓存功能已移除，直接使用下载方式
                     String videoExt = message.getExt() != null && !message.getExt().isEmpty() ? "." + message.getExt() : ".mp4";
-                    videoFile = unifiedResourceManager.getResourceSmart(videoUrl);
-                    
-                    // 如果缓存未命中，使用传统下载方式
-                    if (videoFile == null) {
-                        videoFile = unifiedResourceManager.downloadToTempFile(videoUrl, videoExt);
-                    }
+                    videoFile = unifiedResourceManager.downloadToTempFile(videoUrl, videoExt);
                     
                     if (videoFile == null || !videoFile.exists()) {
                         throw new RuntimeException("视频文件获取失败");
@@ -682,15 +631,9 @@ public class Pocket48Sender extends Sender {
                     }
                     
                     // 回退方案：使用原有的下载处理方式
-                    // 优先使用缓存，缓存未命中时下载
-                    coverFile = unifiedResourceManager.getResourceSmart(coverUrl);
-                    
-                    // 如果智能获取失败，使用带重试的下载方式
-                    if (coverFile == null || !coverFile.exists()) {
-                        // 根据URL推断文件扩展名
-                        String inferredExt = inferImageExtensionFromUrl(coverUrl);
-                        coverFile = unifiedResourceManager.downloadToTempFileWithRetry(coverUrl, inferredExt, 3);
-                    }
+                    // 缓存功能已移除，直接使用下载方式
+                    String inferredExt = inferImageExtensionFromUrl(coverUrl);
+                    coverFile = unifiedResourceManager.downloadToTempFileWithRetry(coverUrl, inferredExt, 3);
                     
                     if (coverFile == null || !coverFile.exists()) {
                         throw new RuntimeException("直播封面下载失败");
@@ -806,14 +749,9 @@ public class Pocket48Sender extends Sender {
                 try {
                     // 开始处理翻牌音频
                     
-                    // 智能获取翻牌音频文件（优先使用缓存）
+                    // 缓存功能已移除，直接使用下载方式
                     String audioExt = message.getAnswer().getExt() != null && !message.getAnswer().getExt().isEmpty() ? "." + message.getAnswer().getExt() : ".amr";
-                    audioFile = unifiedResourceManager.getResourceSmart(flipcardAudioUrl);
-                    
-                    // 如果缓存未命中，使用传统下载方式
-                    if (audioFile == null) {
-                        audioFile = unifiedResourceManager.downloadToTempFile(flipcardAudioUrl, audioExt);
-                    }
+                    audioFile = unifiedResourceManager.downloadToTempFile(flipcardAudioUrl, audioExt);
                     
                     if (audioFile == null || !audioFile.exists()) {
                         throw new RuntimeException("翻牌音频文件获取失败");
@@ -1135,13 +1073,12 @@ public class Pocket48Sender extends Sender {
             // 简化清理策略，移除活跃度判断
             // 统一使用适度清理策略
             if (monitor.shouldForceCleanup()) {
-                unifiedResourceManager.cleanupExpiredCache(5); // 5分钟内的缓存
                 // 减少GC调用频率
                 if (monitor.getTotalQueries() % 100 == 0) {
                     System.gc();
                 }
             } else if (monitor.getTotalQueries() % 100 == 0) { // 降低清理频率
-                unifiedResourceManager.cleanupExpiredCache(10); // 10分钟内的缓存
+                // 缓存功能已移除，不再需要清理
             }
         }
     }
@@ -1163,10 +1100,7 @@ public class Pocket48Sender extends Sender {
         // 移除批量处理机制，统一使用顺序发送以减少延迟
         sendMessagesSequentially(messages, group);
         
-        // 清理缓存
-        if (messages.size() > 10) {
-            unifiedResourceManager.cleanupExpiredCache(60);
-        }
+        // 缓存功能已移除，不再需要清理缓存
     }
     
     /**
@@ -1261,12 +1195,7 @@ public class Pocket48Sender extends Sender {
                     }
                 })
             ).thenCompose(senderMessage -> {
-                // 移除消息间延迟，实现零延迟发送
-                if (nextMessage != null) {
-                    // 移除所有延迟，立即发送下一条消息
-                    long delay = 0; // 所有消息类型都使用零延迟
-                    // 延迟逻辑已完全移除，直接返回
-                }
+                // 直接返回，无需延迟处理
                 return CompletableFuture.completedFuture(null);
             });
         }
@@ -1431,6 +1360,9 @@ public class Pocket48Sender extends Sender {
     private CompletableFuture<Void> sendMessageWithRetryAsync(Message message, Group group, int maxRetries, int attempt) {
         return CompletableFuture.runAsync(() -> {
             try {
+                // 应用速率限制
+                rateLimiter.acquire();
+                
                 long startTime = System.currentTimeMillis();
                 
                 // 直接发送消息，移除GroupRateLimiter速率限制
@@ -1447,6 +1379,9 @@ public class Pocket48Sender extends Sender {
                 
                 logger.debug("Pocket48Sender", "消息发送成功，耗时: " + (System.currentTimeMillis() - startTime) + "ms");
                 
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("消息发送被中断", e);
             } catch (Exception e) {
                 throw new RuntimeException(e);
             }
@@ -1501,13 +1436,6 @@ public class Pocket48Sender extends Sender {
                 return null;
             });
     }
-
-    /**
-     * 异步延迟方法，使用统一延迟服务
-     * @param delayMs 延迟时间（毫秒）
-     * @return CompletableFuture用于异步等待
-     */
-
 
     /**
      * 根据URL推断图片文件扩展名
@@ -1792,6 +1720,12 @@ public class Pocket48Sender extends Sender {
         logger.info("Pocket48Sender", "开始关闭Pocket48Sender，群组: " + group);
         
         try {
+            // 关闭速率限制器
+            if (rateLimiter != null) {
+                rateLimiter.shutdown();
+                logger.debug("Pocket48Sender", "速率限制器已关闭");
+            }
+            
             // 关闭异步处理器
             if (asyncProcessor != null) {
                 asyncProcessor.shutdown();

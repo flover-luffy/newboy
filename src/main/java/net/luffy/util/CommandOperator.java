@@ -19,8 +19,6 @@ import net.luffy.command.DouyinCommandHandler;
 
 import net.luffy.util.AsyncOnlineStatusMonitor;
 import net.luffy.util.DouyinMonitorService;
-import net.luffy.util.sender.Pocket48ResourceCache;
-import net.luffy.util.SmartCacheManager;
 import net.luffy.util.JsonOptimizer;
 import net.luffy.service.WeiboApiService;
 import net.luffy.service.WeiboMonitorService;
@@ -1194,12 +1192,6 @@ public class CommandOperator extends AsyncWebHandlerBase {
             case "/clearcache": {
                 if (testPermission(event) == null) {
                     try {
-                        // 清理智能缓存管理器
-                        SmartCacheManager.getInstance().clearAllCaches();
-                        
-                        // 清理口袋48资源缓存
-                        Pocket48ResourceCache.getInstance().clearAll();
-                        
                         // 清理JSON优化器缓存
                         JsonOptimizer.clearCache();
                         

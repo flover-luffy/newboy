@@ -348,10 +348,7 @@ public class ErrorHandlingManager {
         // 内存不足恢复策略（异步版本）
         registerAsyncRecoveryStrategy(RuntimeException.class, (exception) -> {
             if (exception.getCause() instanceof OutOfMemoryError) {
-                // 检测到内存不足，尝试清理缓存
                 try {
-                    // 触发缓存清理
-                    SmartCacheManager.getInstance().performMemoryPressureCleanup();
                     System.gc();
                     // 移除内存清理延迟
                     return CompletableFuture.completedFuture(true);
@@ -378,7 +375,6 @@ public class ErrorHandlingManager {
         registerRecoveryStrategy(RuntimeException.class, (exception) -> {
             if (exception.getCause() instanceof OutOfMemoryError) {
                 try {
-                    SmartCacheManager.getInstance().performMemoryPressureCleanup();
                     System.gc();
                     // 移除同步等待延迟
                     return true;

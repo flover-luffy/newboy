@@ -259,9 +259,6 @@ public final class Newboy extends JavaPlugin {
             // 关闭Pocket48媒体队列
             net.luffy.util.sender.Pocket48MediaQueue.getInstance().shutdown();
             
-            // 关闭Pocket48资源缓存
-            net.luffy.util.sender.Pocket48ResourceCache.getInstance().shutdown();
-            
             // 关闭Pocket48发送器缓存
             net.luffy.model.Pocket48SenderCache.shutdownCacheRefreshExecutor();
             

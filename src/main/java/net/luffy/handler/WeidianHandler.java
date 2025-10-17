@@ -258,21 +258,55 @@ public class WeidianHandler extends SyncWebHandler {
     //包括屏蔽的商品
     public WeidianItem[] getItems(WeidianCookie cookie) {
         //【出售中】 仅提取pageSize=5个
-        String s = get(APIItemList + cookie.wdtoken, cookie);
+        // 添加重试机制，避免因网络波动导致的误报Cookie失效
+        int maxRetries = 2;
+        Exception lastException = null;
+        
+        for (int retry = 0; retry <= maxRetries; retry++) {
+            try {
+                String s = get(APIItemList + cookie.wdtoken, cookie);
+                
+                // 检查响应是否为空或无效
+                if (s == null || s.trim().isEmpty()) {
+                    if (retry < maxRetries) {
+                        Thread.sleep(1000); // 等待1秒后重试
+                        continue;
+                    }
+                    return null;
+                }
 
-        JSONObject object = JSONUtil.parseObj(s);
-        if (object.getJSONObject("status").getInt("code") == 0) {
-            JSONObject result = object.getJSONObject("result");
-            JSONArray data = result.getJSONArray("dataList");
-            List<WeidianItem> items = new ArrayList<>();
-            for (Object item_ : data.toArray(new Object[0])) {
-                JSONObject item = JSONUtil.parseObj(item_);
-                long id = item.getLong("itemId");
-                String name = item.getStr("itemName");
-                String pic = item.getStr("imgHead");
-                items.add(new WeidianItem(id, name, pic));
+                JSONObject object = JSONUtil.parseObj(s);
+                if (object.getJSONObject("status").getInt("code") == 0) {
+                    JSONObject result = object.getJSONObject("result");
+                    JSONArray data = result.getJSONArray("dataList");
+                    List<WeidianItem> items = new ArrayList<>();
+                    for (Object item_ : data.toArray(new Object[0])) {
+                        JSONObject item = JSONUtil.parseObj(item_);
+                        long id = item.getLong("itemId");
+                        String name = item.getStr("itemName");
+                        String pic = item.getStr("imgHead");
+                        items.add(new WeidianItem(id, name, pic));
+                    }
+                    return items.toArray(new WeidianItem[0]);
+                } else {
+                    // API返回错误状态码，可能是真正的Cookie失效
+                    return null;
+                }
+            } catch (Exception e) {
+                lastException = e;
+                if (retry < maxRetries) {
+                    try {
+                        Thread.sleep(1000); // 等待1秒后重试
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        return null;
+                    }
+                } else {
+                    // 最后一次重试失败，记录异常但不抛出
+                    // 可能是网络问题，不应该立即标记Cookie失效
+                    System.err.println("微店API请求失败，重试" + maxRetries + "次后仍然失败: " + e.getMessage());
+                }
             }
-            return items.toArray(new WeidianItem[0]);
         }
         return null;
     }

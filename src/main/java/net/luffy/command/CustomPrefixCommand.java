@@ -605,14 +605,6 @@ public class CustomPrefixCommand {
             // 4. 核心服务状态
             report.append("\n🔧 核心服务状态:\n");
             try {
-                // 简化显示核心服务状态
-                net.luffy.util.SmartCacheManager cacheManager = net.luffy.util.SmartCacheManager.getInstance();
-                if (cacheManager != null) {
-                    report.append("  💾 智能缓存: ✅ 运行中\n");
-                } else {
-                    report.append("  💾 智能缓存: ❌ 未启用\n");
-                }
-                
                 net.luffy.util.UnifiedHttpClient httpClient = net.luffy.util.UnifiedHttpClient.getInstance();
                 if (httpClient != null) {
                     report.append("  🌐 HTTP客户端: ✅ 运行中\n");

@@ -60,53 +60,10 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
         "video/mp4", "video/mpeg", "video/quicktime", "video/x-msvideo"
     };
     
-    /**
-     * 将文件添加到缓存
-     * @param cacheKey 缓存键
-     * @param file 文件
-     * @param fileExtension 文件扩展名
-     */
-    private void addToCache(String cacheKey, File file, String fileExtension) {
-         try {
-             Pocket48ResourceCache cache = Pocket48ResourceCache.getInstance();
-             cache.cacheFile(cacheKey, file, fileExtension);
-             logger.debug("Pocket48ResourceHandler", "文件已添加到缓存: " + cacheKey);
-         } catch (Exception e) {
-             logger.warn("Pocket48ResourceHandler", "添加到缓存失败: " + e.getMessage());
-         }
-     }
+
     
     /**
-     * 生成缓存键
-     * @param url 资源URL
-     * @return 缓存键
-     */
-    private String generateCacheKey(String url) {
-        if (url == null || url.isEmpty()) {
-            return "";
-        }
-        // 使用URL的哈希值作为缓存键
-        return String.valueOf(url.hashCode());
-    }
-    
-    /**
-     * 从缓存中获取文件
-     * @param cacheKey 缓存键
-     * @param fileExtension 文件扩展名
-     * @return 缓存的文件，如果不存在则返回null
-     */
-    private File getCachedFile(String cacheKey, String fileExtension) {
-        try {
-            Pocket48ResourceCache cache = Pocket48ResourceCache.getInstance();
-            return cache.getCachedFile(cacheKey);
-        } catch (Exception e) {
-            logger.warn("Pocket48ResourceHandler", "获取缓存文件失败: " + e.getMessage());
-            return null;
-        }
-    }
-    
-    /**
-     * 获取口袋48资源的输入流（带缓存支持）
+     * 获取口袋48资源的输入流
      * 添加必要的请求头以确保资源能够正常访问
      * 
      * 重要提示：调用者必须负责关闭返回的InputStream以避免文件句柄泄漏！
@@ -121,15 +78,8 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
      */
     public InputStream getPocket48InputStream(String url) {
         try {
-            // 首先检查缓存
-            Pocket48ResourceCache cache = Pocket48ResourceCache.getInstance();
-            File cachedFile = cache.getCachedFile(url);
-            if (cachedFile != null) {
-                return new FileInputStream(cachedFile);
-            }
+            logger.debug("Pocket48ResourceHandler", "直接从网络获取资源: " + url);
             
-            // 缓存未命中，从网络获取
-            // 为了避免资源泄漏，我们下载到临时文件然后返回文件流
             // 根据URL推断文件扩展名，避免使用.tmp后缀
             String fileExtension = getFileExtensionFromUrl(url);
             File tempFile = downloadToTempFileInternal(url, fileExtension);
@@ -596,7 +546,7 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
       }
      
      /**
-      * 内部下载方法（集成缓存，增强版）- 同步版本（保持向后兼容）
+      * 内部下载方法 - 同步版本（保持向后兼容）
       * 
       * @param url 资源URL
       * @param fileExtension 文件扩展名
@@ -609,42 +559,39 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
         
         logger.info("开始下载资源: " + url);
         
-        Pocket48ResourceCache cache = Pocket48ResourceCache.getInstance();
-        
-        // 使用UnifiedHttpClient下载文件并直接缓存
+        // 使用UnifiedHttpClient下载文件
         try (InputStream inputStream = UnifiedHttpClient.getInstance().getInputStreamWithHeaders(url, getPocket48Headers())) {
             if (inputStream == null) {
                 throw new IOException("获取输入流失败，可能是网络问题或资源不存在: " + url);
             }
             
+            // 创建临时文件
+            Path tempDir = Paths.get(System.getProperty("java.io.tmpdir"));
+            String fileName = "pocket48_" + System.currentTimeMillis() + fileExtension;
+            File tempFile = tempDir.resolve(fileName).toFile();
+            
             // 使用BufferedInputStream提高读取性能
-            try (java.io.BufferedInputStream bufferedStream = new java.io.BufferedInputStream(inputStream, 8192)) {
-                // 直接从流缓存文件
-                File cachedFile = cache.cacheFromStream(url, bufferedStream, fileExtension);
-                if (cachedFile != null && cachedFile.exists() && cachedFile.length() > 0) {
-                    logger.info("资源下载并缓存成功: " + url + ", 文件大小: " + cachedFile.length() + " bytes");
-                    
-                    // 验证下载的文件是否为有效图片（如果是图片文件）
-                    if (fileExtension != null && (fileExtension.toLowerCase().contains("jpg") || 
-                        fileExtension.toLowerCase().contains("jpeg") || 
-                        fileExtension.toLowerCase().contains("png") || 
-                        fileExtension.toLowerCase().contains("gif"))) {
-                        
-                        // 验证图片完整性
-                        if (!net.luffy.util.ImageFormatDetector.validateImageIntegrity(cachedFile)) {
-                            logger.warning("下载的图片文件可能损坏: " + cachedFile.getAbsolutePath());
-                            // 不抛出异常，让上层处理
-                        }
-                    }
-                    
-                    return cachedFile;
+            try (java.io.BufferedInputStream bufferedStream = new java.io.BufferedInputStream(inputStream, 8192);
+                 FileOutputStream outputStream = new FileOutputStream(tempFile)) {
+                
+                byte[] buffer = new byte[8192];
+                int bytesRead;
+                long totalBytes = 0;
+                while ((bytesRead = bufferedStream.read(buffer)) != -1) {
+                    outputStream.write(buffer, 0, bytesRead);
+                    totalBytes += bytesRead;
+                }
+                
+                if (tempFile.exists() && tempFile.length() > 0) {
+                    logger.info("资源下载成功: " + url + ", 文件大小: " + tempFile.length() + " bytes");
+                    return tempFile;
                 } else {
-                    throw new IOException("缓存文件失败或文件为空: " + url);
+                    throw new IOException("下载的文件为空或不存在: " + url);
                 }
             }
         } catch (Exception e) {
-            logger.severe("下载失败: " + e.getMessage() + ", URL: " + url);
-            throw new IOException("下载失败: " + e.getMessage() + " " + url, e);
+            logger.severe("下载资源失败: " + url + ", 错误: " + e.getMessage());
+            throw new IOException("下载资源失败: " + e.getMessage(), e);
         }
     }
     
@@ -683,7 +630,7 @@ public class Pocket48ResourceHandler extends AsyncWebHandlerBase {
                            (header[2] & 0xFF) == 0x46 && (header[3] & 0xFF) == 0x38;
                 }
             } catch (Exception e) {
-                logger.warn("Pocket48ResourceHandler", "验证文件格式时出错: " + e.getMessage());
+                this.logger.warn("Pocket48ResourceHandler", "验证文件格式时出错: " + e.getMessage());
                 return false;
             }
         }

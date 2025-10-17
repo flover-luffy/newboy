@@ -38,23 +38,39 @@ public class WeidianItemSender extends SyncSender {
         WeidianItem[] items = weidian.getItems(cookie);
         if (items == null) {
             if (!cookie.invalid) {
-                // 发送详细的错误提示
-                String errorMsg = "❌ 微店Cookie已失效\n" +
-                        "🔧 请使用以下命令重新设置：\n" +
-                        "`/微店 " + group_id + " cookie <您的新Cookie>`\n" +
-                        "💡 获取Cookie方法：\n" +
-                        "1. 登录微店商家后台\n" +
-                        "2. 按F12打开开发者工具\n" +
-                        "3. 在Network标签页找到请求头中的Cookie\n" +
-                        "4. 复制完整的Cookie值";
+                // 增加延迟检查机制，避免因临时网络问题导致的误报
+                // 等待5秒后再次尝试，如果仍然失败才标记为失效
                 try {
-                    group.getOwner().sendMessage(errorMsg);
-                } catch (Exception e) {
-                    // 静默处理异常
+                    Thread.sleep(5000);
+                    WeidianItem[] retryItems = weidian.getItems(cookie);
+                    if (retryItems != null) {
+                        // 重试成功，继续正常流程
+                        items = retryItems;
+                    } else {
+                        // 重试仍然失败，发送详细的错误提示
+                        String errorMsg = "❌ 微店Cookie已失效\n" +
+                                "🔧 请使用以下命令重新设置：\n" +
+                                "`/微店 " + group_id + " cookie <您的新Cookie>`\n" +
+                                "💡 获取Cookie方法：\n" +
+                                "1. 登录微店商家后台\n" +
+                                "2. 按F12打开开发者工具\n" +
+                                "3. 在Network标签页找到请求头中的Cookie\n" +
+                                "4. 复制完整的Cookie值";
+                        try {
+                            group.getOwner().sendMessage(errorMsg);
+                        } catch (Exception e) {
+                            // 静默处理异常
+                        }
+                        cookie.invalid = true;
+                        return;
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
                 }
-                cookie.invalid = true;
+            } else {
+                return;
             }
-            return;
         }
 
         if (cookie.invalid) {

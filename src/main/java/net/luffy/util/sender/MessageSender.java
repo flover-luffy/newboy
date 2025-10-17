@@ -17,12 +17,27 @@ import java.net.URLConnection;
 
 import net.luffy.util.sender.Sender;
 import net.luffy.util.UnifiedLogger;
+import net.luffy.util.sender.MessageRateLimiter;
 
 /**
  * 消息发送器服务类
  * 提供统一的消息发送接口
  */
 public class MessageSender {
+    
+    private final MessageRateLimiter rateLimiter;
+    
+    private final Bot bot;
+    
+    public MessageSender() {
+        this.bot = null;
+        this.rateLimiter = MessageRateLimiter.getInstance();
+    }
+    
+    public MessageSender(Bot bot) {
+        this.bot = bot;
+        this.rateLimiter = MessageRateLimiter.getInstance();
+    }
     
     /**
      * 发送消息到指定群组
@@ -32,12 +47,19 @@ public class MessageSender {
      */
     public void sendMessage(Bot bot, long groupId, Message message) {
         try {
+            // 应用速率限制
+            rateLimiter.acquire();
+            
             if (bot != null) {
                 Group group = bot.getGroup(groupId);
                 if (group != null) {
                     group.sendMessage(message);
                 }
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            UnifiedLogger.getInstance().error("MessageSender", 
+                "消息发送被中断: " + e.getMessage(), e);
         } catch (Exception e) {
             UnifiedLogger.getInstance().error("MessageSender", 
                 "发送消息失败: " + e.getMessage(), e);
@@ -51,9 +73,16 @@ public class MessageSender {
      */
     public void sendMessage(Group group, Message message) {
         try {
+            // 应用速率限制
+            rateLimiter.acquire();
+            
             if (group != null) {
                 group.sendMessage(message);
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            UnifiedLogger.getInstance().error("MessageSender", 
+                "消息发送被中断: " + e.getMessage(), e);
         } catch (Exception e) {
             UnifiedLogger.getInstance().error("MessageSender", 
                 "发送消息失败: " + e.getMessage(), e);
@@ -68,14 +97,22 @@ public class MessageSender {
      */
     public void sendTextMessage(Bot bot, long groupId, String text) {
         try {
+            // 应用速率限制
+            rateLimiter.acquire();
+            
             if (bot != null) {
                 Group group = bot.getGroup(groupId);
                 if (group != null) {
                     group.sendMessage(text);
                 }
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            UnifiedLogger.getInstance().error("MessageSender", 
+                "消息发送被中断: " + e.getMessage(), e);
         } catch (Exception e) {
-            System.err.println("发送文本消息失败: " + e.getMessage());
+            UnifiedLogger.getInstance().error("MessageSender", 
+                "发送文本消息失败: " + e.getMessage(), e);
         }
     }
     
@@ -86,9 +123,16 @@ public class MessageSender {
      */
     public void sendTextMessage(Group group, String text) {
         try {
+            // 应用速率限制
+            rateLimiter.acquire();
+            
             if (group != null) {
                 group.sendMessage(text);
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            UnifiedLogger.getInstance().error("MessageSender", 
+                "消息发送被中断: " + e.getMessage(), e);
         } catch (Exception e) {
             UnifiedLogger.getInstance().error("MessageSender", 
                 "发送文本消息失败: " + e.getMessage(), e);
@@ -102,6 +146,9 @@ public class MessageSender {
      */
     public void sendGroupMessage(String groupId, String messageText) {
         try {
+            // 应用速率限制
+            rateLimiter.acquire();
+            
             Bot bot = Newboy.getBot();
             if (bot != null) {
                 long groupIdLong = Long.parseLong(groupId);
@@ -110,6 +157,10 @@ public class MessageSender {
                     group.sendMessage(messageText);
                 }
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            UnifiedLogger.getInstance().error("MessageSender", 
+                "消息发送被中断: " + e.getMessage(), e);
         } catch (Exception e) {
             UnifiedLogger.getInstance().error("MessageSender", 
                 "发送群组消息失败: " + e.getMessage(), e);
@@ -123,6 +174,9 @@ public class MessageSender {
      */
     public void sendGroupImage(String groupId, String imageUrl) {
         try {
+            // 应用速率限制
+            rateLimiter.acquire();
+            
             Bot bot = Newboy.getBot();
             if (bot != null && imageUrl != null && !imageUrl.isEmpty()) {
                 long groupIdLong = Long.parseLong(groupId);
@@ -146,6 +200,10 @@ public class MessageSender {
                     }
                 }
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            UnifiedLogger.getInstance().error("MessageSender", 
+                "消息发送被中断: " + e.getMessage(), e);
         } catch (Exception e) {
             UnifiedLogger.getInstance().error("MessageSender", 
                 "发送群组图片失败: " + e.getMessage(), e);
@@ -171,6 +229,9 @@ public class MessageSender {
      */
     public void sendGroupMessageWithImage(String groupId, String messageText, String imageUrl, boolean atAll) {
         try {
+            // 应用速率限制
+            rateLimiter.acquire();
+            
             Bot bot = Newboy.getBot();
             if (bot != null) {
                 long groupIdLong = Long.parseLong(groupId);
@@ -221,6 +282,10 @@ public class MessageSender {
                     }
                 }
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            UnifiedLogger.getInstance().error("MessageSender", 
+                "消息发送被中断: " + e.getMessage(), e);
         } catch (Exception e) {
             UnifiedLogger.getInstance().error("MessageSender", 
                 "发送群组消息（文本+图片）失败: " + e.getMessage(), e);
@@ -234,6 +299,9 @@ public class MessageSender {
      */
     public void sendGroupLocalImage(String groupId, String imageFilePath) {
         try {
+            // 应用速率限制
+            rateLimiter.acquire();
+            
             Bot bot = Newboy.getBot();
             if (bot != null && imageFilePath != null && !imageFilePath.isEmpty()) {
                 long groupIdLong = Long.parseLong(groupId);
@@ -251,6 +319,10 @@ public class MessageSender {
                     }
                 }
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            UnifiedLogger.getInstance().error("MessageSender", 
+                "消息发送被中断: " + e.getMessage(), e);
         } catch (Exception e) {
             UnifiedLogger.getInstance().error("MessageSender", 
                 "发送群组本地图片失败: " + e.getMessage(), e);
@@ -276,6 +348,9 @@ public class MessageSender {
      */
     public void sendGroupMessageWithLocalImage(String groupId, String messageText, String imageFilePath, boolean atAll) {
         try {
+            // 应用速率限制
+            rateLimiter.acquire();
+            
             Bot bot = Newboy.getBot();
             if (bot != null) {
                 long groupIdLong = Long.parseLong(groupId);
@@ -321,6 +396,10 @@ public class MessageSender {
                     }
                 }
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            UnifiedLogger.getInstance().error("MessageSender", 
+                "消息发送被中断: " + e.getMessage(), e);
         } catch (Exception e) {
             UnifiedLogger.getInstance().error("MessageSender", 
                 "发送群组消息（文本+本地图片）失败: " + e.getMessage(), e);

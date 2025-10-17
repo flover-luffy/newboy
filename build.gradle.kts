@@ -4,6 +4,7 @@ plugins {
     kotlin("plugin.serialization") version kotlinVersion
     id("net.mamoe.mirai-console") version "2.16.0"
     id("com.github.johnrengelman.shadow") version "7.1.2"
+    application
 }
 
 java {
@@ -14,6 +15,10 @@ java {
 
 group = "net.luffy"
 version = "1.0.0"
+
+application {
+    mainClass.set("net.luffy.test.WeidianApiRawTest")
+}
 
 repositories {
     maven("https://maven.aliyun.com/repository/public")

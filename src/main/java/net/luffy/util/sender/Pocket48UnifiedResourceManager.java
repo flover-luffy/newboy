@@ -31,9 +31,7 @@ public class Pocket48UnifiedResourceManager {
     private final Object lock = new Object();
     
     // 核心组件
-    private final Pocket48ResourceCache cacheManager;
     private final Pocket48ResourceHandler resourceHandler;
-    private final Pocket48ResourceOptimizer optimizer;
     
     // 直接管理配置，移除中间层
     private final AtomicBoolean mediaQueueEnabled = new AtomicBoolean(true);
@@ -50,8 +48,6 @@ public class Pocket48UnifiedResourceManager {
     private final UnifiedResourceManager unifiedManager;
     
     // 资源统计
-    private final AtomicLong totalCacheHits = new AtomicLong(0);
-    private final AtomicLong totalCacheMisses = new AtomicLong(0);
     private final AtomicLong totalResourcesProcessed = new AtomicLong(0);
     private final AtomicLong totalMemoryUsed = new AtomicLong(0);
     
@@ -60,9 +56,7 @@ public class Pocket48UnifiedResourceManager {
     
     private Pocket48UnifiedResourceManager() {
         this.unifiedManager = UnifiedResourceManager.getInstance();
-        this.cacheManager = Pocket48ResourceCache.getInstance();
         this.resourceHandler = new Pocket48ResourceHandler();
-        this.optimizer = new Pocket48ResourceOptimizer(resourceHandler);
         
         // 根据系统资源动态调整配置
         adjustConfigurationBasedOnSystemResources();
@@ -140,25 +134,12 @@ public class Pocket48UnifiedResourceManager {
      */
     private void updatePerformanceMetrics() {
         try {
-            performanceMetrics.put("cacheHits", totalCacheHits.get());
-            performanceMetrics.put("cacheMisses", totalCacheMisses.get());
             performanceMetrics.put("resourcesProcessed", totalResourcesProcessed.get());
             performanceMetrics.put("memoryUsed", totalMemoryUsed.get());
-            performanceMetrics.put("cacheHitRate", calculateCacheHitRate());
             performanceMetrics.put("activeConfigs", getActiveConfigCount());
         } catch (Exception e) {
             UnifiedLogger.getInstance().error("Pocket48UnifiedResourceManager", "[口袋48统一资源管理器] 性能指标更新失败", e);
         }
-    }
-    
-    /**
-     * 计算缓存命中率
-     */
-    private double calculateCacheHitRate() {
-        long hits = totalCacheHits.get();
-        long misses = totalCacheMisses.get();
-        long total = hits + misses;
-        return total > 0 ? (double) hits / total * 100 : 0.0;
     }
     
     /**
@@ -298,26 +279,6 @@ public class Pocket48UnifiedResourceManager {
         }
     }
     
-    // ==================== 缓存管理接口 ====================
-    
-    public File getCachedFile(String url) {
-        File file = cacheManager.getCachedFile(url);
-        if (file != null) {
-            totalCacheHits.incrementAndGet();
-        } else {
-            totalCacheMisses.incrementAndGet();
-        }
-        return file;
-    }
-    
-    public File cacheFile(String url, File sourceFile, String fileExtension) {
-        File cachedFile = cacheManager.cacheFile(url, sourceFile, fileExtension);
-        if (cachedFile != null) {
-            totalMemoryUsed.addAndGet(cachedFile.length());
-        }
-        return cachedFile;
-    }
-    
     // ==================== 资源处理接口 ====================
     
     public java.io.InputStream getPocket48InputStream(String url) {
@@ -349,70 +310,6 @@ public class Pocket48UnifiedResourceManager {
         return resourceHandler.checkResourceAvailability(url);
     }
     
-    // ==================== 资源优化接口 ====================
-    
-    public List<CompletableFuture<Void>> preloadResources(List<String> resourceUrls) {
-        return optimizer.preloadResources(resourceUrls);
-    }
-    
-    public File getCachedResource(String resourceUrl) {
-        File file = optimizer.getCachedResource(resourceUrl);
-        if (file != null) {
-            totalCacheHits.incrementAndGet();
-        } else {
-            totalCacheMisses.incrementAndGet();
-        }
-        return file;
-    }
-    
-    public File getResourceSmart(String resourceUrl) {
-        totalResourcesProcessed.incrementAndGet();
-        return optimizer.getResourceSmart(resourceUrl);
-    }
-    
-    public void cleanupExpiredCache(int maxAgeMinutes) {
-        optimizer.cleanupExpiredCache(maxAgeMinutes);
-    }
-    
-    /**
-     * 设置缓存启用状态
-     * @param enabled true启用缓存，false禁用缓存
-     */
-    public void setCacheEnabled(boolean enabled) {
-        if (optimizer != null) {
-            optimizer.setCacheEnabled(enabled);
-        }
-        // 同时控制Pocket48ResourceCache
-        Pocket48ResourceCache.getInstance().setCacheEnabled(enabled);
-    }
-    
-    /**
-     * 检查缓存是否启用
-     * @return true如果缓存启用
-     */
-    public boolean isCacheEnabled() {
-        return optimizer != null && optimizer.isCacheEnabled();
-    }
-    
-    /**
-     * 清空所有缓存
-     */
-    public void clearAllCache() {
-        if (optimizer != null) {
-            optimizer.clearAllCache();
-        }
-        // 同时清空Pocket48ResourceCache
-        Pocket48ResourceCache.getInstance().clearAllCache();
-    }
-    
-    public String getCacheStats() {
-        return optimizer.getCacheStats();
-    }
-    
-    public List<CompletableFuture<Void>> preloadMessageResources(List<Pocket48Message> messages) {
-        return optimizer.preloadMessageResources(messages);
-    }
-    
     // ==================== 系统管理接口 ====================
     
     /**
@@ -421,13 +318,12 @@ public class Pocket48UnifiedResourceManager {
     public String getSystemStatusReport() {
         StringBuilder report = new StringBuilder();
         report.append("=== 口袋48统一资源管理器状态报告 ===\n");
-        report.append(String.format("缓存命中率: %.2f%%\n", calculateCacheHitRate()));
         report.append(String.format("总处理资源数: %d\n", totalResourcesProcessed.get()));
         report.append(String.format("内存使用: %.2f MB\n", totalMemoryUsed.get() / 1024.0 / 1024.0));
         report.append(String.format("媒体队列状态: %s\n", isMediaQueueEnabled() ? "启用" : "禁用"));
         report.append(String.format("队列大小: %d\n", getMediaQueueSize()));
         report.append(String.format("线程池大小: %d\n", getMediaThreadPoolSize()));
-        report.append(getCacheStats());
+        // 缓存功能已移除，不再显示缓存统计信息
         return report.toString();
     }
     
@@ -436,8 +332,7 @@ public class Pocket48UnifiedResourceManager {
      */
     public void performSystemOptimization() {
         try {
-            // 清理过期缓存
-            cleanupExpiredCache(240); // 4小时
+            // 缓存功能已移除，不再需要清理过期缓存
             
             // 根据当前负载调整配置
             optimizeConfigurationBasedOnLoad();
@@ -474,15 +369,7 @@ public class Pocket48UnifiedResourceManager {
             }
         }
         
-        // 根据缓存命中率调整队列大小
-        double hitRate = calculateCacheHitRate();
-        if (hitRate > 0.8) {
-            // 高命中率时可以增加队列大小
-            int currentSize = getMediaQueueSize();
-            if (currentSize < 200) {
-                setMediaQueueSize(Math.min(200, currentSize + 20));
-            }
-        }
+        // 缓存功能已移除，不再根据缓存命中率调整队列大小
     }
     
     /**
@@ -490,12 +377,9 @@ public class Pocket48UnifiedResourceManager {
      */
     public void shutdown() {
         try {
-            // 先清理缓存，再关闭optimizer
-            cleanupExpiredCache(0);
+            // 缓存功能已移除，不再需要清理缓存
             
-            if (optimizer != null) {
-                optimizer.shutdown();
-            }
+            // 优化器已移除，不再需要关闭
             
             // 口袋48统一资源管理器已关闭
         } catch (Exception e) {

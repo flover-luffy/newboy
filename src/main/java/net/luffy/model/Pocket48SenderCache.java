@@ -117,39 +117,26 @@ public class Pocket48SenderCache {
     }
     
     /**
-     * 启动缓存刷新任务
-     * @param pocket Pocket48Handler实例
-     * @param roomInfo 房间信息
-     * @param cacheUpdateCallback 缓存更新回调
+     * 启动缓存刷新任务 - 定时刷新功能已移除
+     * @param pocket Pocket48Handler实例（已无效）
+     * @param roomInfo 房间信息（已无效）
+     * @param cacheUpdateCallback 缓存更新回调（已无效）
+     * @deprecated 定时刷新功能已移除，缓存现在由业务逻辑按需更新
      */
+    @Deprecated
     public static void startCacheRefreshTask(Pocket48Handler pocket, Pocket48RoomInfo roomInfo, 
                                            CacheUpdateCallback cacheUpdateCallback) {
-        cacheRefreshExecutor.scheduleAtFixedRate(() -> {
-            try {
-                // 移除正常情况下的缓存刷新开始日志，减少日志噪音
-                HashMap<Long, Long> endTimeMap = new HashMap<>();
-                endTimeMap.put(roomInfo.getRoomId(), System.currentTimeMillis());
-                Pocket48SenderCache newCache = create(roomInfo.getRoomId(), endTimeMap);
-                if (newCache != null) {
-                    cacheUpdateCallback.onCacheUpdated(newCache);
-                    // 移除正常情况下的缓存刷新成功日志，减少日志噪音
-                } else {
-                    System.err.println(String.format("[错误] 房间 %d 缓存刷新失败", roomInfo.getRoomId()));
-                }
-            } catch (Exception e) {
-                System.err.println(String.format("[错误] 房间 %d 缓存刷新异常: %s", 
-                    roomInfo.getRoomId(), e.getMessage()));
-            }
-        }, CACHE_REFRESH_INTERVAL_MINUTES, CACHE_REFRESH_INTERVAL_MINUTES, TimeUnit.MINUTES);
+        // 定时刷新功能已移除，不再执行任何操作
+        System.out.println("[INFO] Pocket48SenderCache定时刷新功能已移除，缓存将由业务逻辑按需更新");
     }
     
     /**
-     * 关闭缓存刷新执行器
-     * 注意：现在由UnifiedSchedulerManager统一管理，无需显式关闭
+     * 关闭缓存刷新执行器 - 定时刷新功能已移除
+     * @deprecated 定时刷新功能已移除，无需关闭执行器
      */
+    @Deprecated
     public static void shutdownCacheRefreshExecutor() {
-        System.out.println("[INFO] Pocket48SenderCache线程池现由UnifiedSchedulerManager统一管理，无需显式关闭");
-        // cacheRefreshExecutor现在由UnifiedSchedulerManager管理，在系统关闭时会自动处理
+        System.out.println("[INFO] Pocket48SenderCache定时刷新功能已移除，无需关闭执行器");
     }
     
     /**

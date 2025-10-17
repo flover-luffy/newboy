@@ -16,7 +16,6 @@ import java.io.IOException;
 import java.nio.file.Paths;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import net.luffy.util.sender.Pocket48ResourceCache;
 
 /**
  * 统一指标管理器
@@ -398,26 +397,7 @@ public class UnifiedMetricsManager {
      * 生成缓存性能报告
      */
     private String generateCachePerformanceReport() {
-        StringBuilder cacheReport = new StringBuilder();
-        cacheReport.append("\n💾 缓存性能报告:\n");
-        
-        try {
-            // 获取资源缓存统计
-            Pocket48ResourceCache cache = Pocket48ResourceCache.getInstance();
-            cacheReport.append(cache.getCacheStats());
-            cacheReport.append("\n");
-            cacheReport.append(cache.getShardStats());
-            
-            // 缓存健康检查
-            String validationResult = cache.validateAllFiles();
-            cacheReport.append("\n📋 缓存完整性检查:\n");
-            cacheReport.append("  ").append(validationResult).append("\n");
-            
-        } catch (Exception e) {
-            cacheReport.append("  缓存统计获取失败: ").append(e.getMessage()).append("\n");
-        }
-        
-        return cacheReport.toString();
+        return "";
     }
     
     /**
