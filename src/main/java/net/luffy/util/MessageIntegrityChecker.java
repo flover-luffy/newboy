@@ -238,18 +238,30 @@ public class MessageIntegrityChecker {
         List<String> issues = new ArrayList<>();
         boolean needsSorting = false;
         
-        // 检查消息时间顺序
+        // 检查消息时间顺序并统计异常程度
+        int outOfOrderCount = 0;
+        long maxTimeGap = 0;
         for (int i = 1; i < messages.length; i++) {
             if (messages[i].getTime() < messages[i-1].getTime()) {
                 needsSorting = true;
-                break;
+                outOfOrderCount++;
+                long timeGap = messages[i-1].getTime() - messages[i].getTime();
+                maxTimeGap = Math.max(maxTimeGap, timeGap);
             }
         }
         
         // 如果检测到时间顺序异常，自动按时间戳排序
         if (needsSorting) {
             Arrays.sort(messages, (m1, m2) -> Long.compare(m1.getTime(), m2.getTime()));
-            System.out.println(String.format("[完整性] 房间 %d 消息批次时间顺序异常，已自动排序", roomId));
+            
+            // 只在严重时序异常时输出警告（时间差超过30秒或乱序消息超过批次的50%）
+            boolean isSevereDisorder = maxTimeGap > 30000 || 
+                                     (outOfOrderCount * 2 > messages.length);
+            
+            if (isSevereDisorder) {
+                System.out.println(String.format("[完整性] 房间 %d 消息批次严重时序异常，已自动排序 (乱序:%d/%d, 最大时差:%ds)", 
+                    roomId, outOfOrderCount, messages.length, maxTimeGap / 1000));
+            }
         }
         
         // 逐个检查消息

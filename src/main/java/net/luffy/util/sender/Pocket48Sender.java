@@ -412,65 +412,75 @@ public class Pocket48Sender extends Sender {
                 }
             }
             case EXPRESSIMAGE: {
-                // 口袋表情处理：解析表情信息并优化显示
+                // 口袋表情处理：优先使用URL直接创建，失败时使用完整处理逻辑作为备份
                 try {
                     String emotionName = parseEmotionName(message);
                     String resUrl = message.getResLoc();
                     
-                    // 尝试获取表情图片资源
+                    // 优先尝试直接使用表情图片URL创建消息
                     if (resUrl != null && !resUrl.trim().isEmpty()) {
-                        Newboy.INSTANCE.getLogger().info("开始处理口袋48表情图片: " + resUrl);
-                        
                         try {
-                            // 首先验证资源可用性
-                             Pocket48ResourceHandler.Pocket48ResourceInfo resourceInfo = 
-                                 unifiedResourceManager.checkResourceAvailability(resUrl);
-                            
-                            if (!resourceInfo.isAvailable()) {
-                                Newboy.INSTANCE.getLogger().warning("口袋48表情资源不可用: " + resUrl + 
-                                    ", 状态码: " + resourceInfo.getStatusCode() + 
-                                    ", 错误: " + resourceInfo.getErrorMessage());
-                                throw new RuntimeException("资源不可用: " + resourceInfo.getErrorMessage());
-                            }
-                            
-                            // 推断文件扩展名并下载到临时文件
-                            String inferredExt = inferImageExtensionFromUrl(resUrl);
-                            File emotionFile = unifiedResourceManager.downloadToTempFileWithRetry(resUrl, inferredExt, 3);
-                            
-                            // 获取资源流
-                            try (ExternalResource emotionResource = ExternalResource.create(emotionFile)) {
-                                // 使用带重试机制的图片上传方法
-                                Image emotionImage = uploadImageWithRetry(emotionResource, 3);
-                                // 创建包含表情图片的消息链
-                                MessageChain messageChain = new PlainText("【" + n + "】: " + emotionName + "\n")
-                                        .plus(emotionImage)
-                                        .plus("\n频道：" + r + "\n时间: " + timeStr);
-                                Newboy.INSTANCE.getLogger().info("口袋48表情图片处理成功: " + resUrl);
-                                return new Pocket48SenderMessage(false, null, new Message[]{messageChain});
-                            }
+                            // 方案1：直接使用URL创建图片（快速方案）
+                            Image emotionImage = Image.fromId(resUrl);
+                            MessageChain messageChain = new PlainText("【" + n + "】: " + emotionName + "\n")
+                                    .plus(emotionImage)
+                                    .plus("\n频道：" + r + "\n时间: " + timeStr);
+                            return new Pocket48SenderMessage(false, null, new Message[]{messageChain});
                         } catch (Exception imageEx) {
-                            // 图片加载或上传失败，仅显示文本
-                            String errorMsg = "表情图片处理失败: " + imageEx.getMessage();
-                            System.err.println(errorMsg);
-                            Newboy.INSTANCE.getLogger().warning("口袋48表情图片处理失败: " + resUrl + 
-                                ", 表情名: " + emotionName + 
-                                ", 错误类型: " + imageEx.getClass().getSimpleName() + 
-                                ", 错误信息: " + imageEx.getMessage());
+                            // 方案2：URL直接创建失败，使用完整的图片处理逻辑作为备份
+                            Newboy.INSTANCE.getLogger().info("口袋48表情图片URL直接处理失败，尝试完整处理流程: " + resUrl + 
+                                ", 错误: " + imageEx.getMessage());
                             
-                            // 如果是rich media transfer failed错误，记录更详细信息
-                            if (imageEx.getMessage() != null && StringMatchUtils.isRetryableError(imageEx.getMessage())) {
-                                Newboy.INSTANCE.getLogger().warning("检测到OneBot富媒体传输失败，可能的原因: " +
-                                    "1. 图片文件损坏或格式不支持; " +
-                                    "2. 网络连接问题; " +
-                                    "3. OneBot服务异常; " +
-                                    "4. 图片尺寸过大或过小");
+                            try {
+                                // 备份方案：完整的图片处理流程
+                                // 首先验证资源可用性
+                                Pocket48ResourceHandler.Pocket48ResourceInfo resourceInfo = 
+                                    unifiedResourceManager.checkResourceAvailability(resUrl);
+                                
+                                if (!resourceInfo.isAvailable()) {
+                                    Newboy.INSTANCE.getLogger().warning("口袋48表情资源不可用: " + resUrl + 
+                                        ", 状态码: " + resourceInfo.getStatusCode() + 
+                                        ", 错误: " + resourceInfo.getErrorMessage());
+                                    throw new RuntimeException("资源不可用: " + resourceInfo.getErrorMessage());
+                                }
+                                
+                                // 推断文件扩展名并下载到临时文件
+                                String inferredExt = inferImageExtensionFromUrl(resUrl);
+                                File emotionFile = unifiedResourceManager.downloadToTempFileWithRetry(resUrl, inferredExt, 3);
+                                
+                                // 获取资源流
+                                try (ExternalResource emotionResource = ExternalResource.create(emotionFile)) {
+                                    // 使用带重试机制的图片上传方法
+                                    Image emotionImage = uploadImageWithRetry(emotionResource, 3);
+                                    // 创建包含表情图片的消息链
+                                    MessageChain messageChain = new PlainText("【" + n + "】: " + emotionName + "\n")
+                                            .plus(emotionImage)
+                                            .plus("\n频道：" + r + "\n时间: " + timeStr);
+                                    Newboy.INSTANCE.getLogger().info("口袋48表情图片备份处理成功: " + resUrl);
+                                    return new Pocket48SenderMessage(false, null, new Message[]{messageChain});
+                                }
+                            } catch (Exception backupEx) {
+                                // 备份方案也失败，记录详细错误信息
+                                Newboy.INSTANCE.getLogger().warning("口袋48表情图片备份处理也失败: " + resUrl + 
+                                    ", 表情名: " + emotionName + 
+                                    ", 备份错误类型: " + backupEx.getClass().getSimpleName() + 
+                                    ", 备份错误信息: " + backupEx.getMessage());
+                                
+                                // 如果是rich media transfer failed错误，记录更详细信息
+                                if (backupEx.getMessage() != null && StringMatchUtils.isRetryableError(backupEx.getMessage())) {
+                                    Newboy.INSTANCE.getLogger().warning("检测到OneBot富媒体传输失败，可能的原因: " +
+                                        "1. 图片文件损坏或格式不支持; " +
+                                        "2. 网络连接问题; " +
+                                        "3. OneBot服务异常; " +
+                                        "4. 图片尺寸过大或过小");
+                                }
                             }
                         }
                     } else {
                         Newboy.INSTANCE.getLogger().info("口袋48表情消息无图片资源URL，仅显示文本: " + emotionName);
                     }
                     
-                    // 如果没有图片资源或图片处理失败，仅显示文本
+                    // 如果没有图片资源或所有图片处理方案都失败，仅显示文本
                     String expressContent = "【" + n + "】: " + emotionName + "\n频道：" + r + "\n时间: " + timeStr;
                     return new Pocket48SenderMessage(false, null, new Message[]{new PlainText(expressContent)});
                 } catch (Exception e) {
@@ -1060,14 +1070,58 @@ public class Pocket48Sender extends Sender {
         
         long startTime = System.currentTimeMillis();
         
-        // 按时间戳严格排序，确保消息顺序
-        sendMessagesInOrder(messages, group);
+        // 强化消息排序：严格按时间戳排序并验证
+        List<Pocket48Message> sortedMessages = new ArrayList<>(messages);
+        sortedMessages.sort((m1, m2) -> Long.compare(m1.getTime(), m2.getTime()));
+        
+        // 验证排序结果并记录时序异常
+        boolean hasTimeOrderIssue = false;
+        long maxTimeGap = 0;
+        int outOfOrderCount = 0;
+        
+        for (int i = 0; i < messages.size(); i++) {
+            if (!messages.get(i).equals(sortedMessages.get(i))) {
+                hasTimeOrderIssue = true;
+                outOfOrderCount++;
+            }
+        }
+        
+        // 计算最大时间间隔
+        if (sortedMessages.size() > 1) {
+            for (int i = 1; i < sortedMessages.size(); i++) {
+                long timeGap = Math.abs(sortedMessages.get(i).getTime() - sortedMessages.get(i-1).getTime());
+                maxTimeGap = Math.max(maxTimeGap, timeGap);
+            }
+        }
+        
+        // 记录时序问题的详细信息
+        if (hasTimeOrderIssue) {
+            String currentTime = cn.hutool.core.date.DateUtil.format(new java.util.Date(), "yyyy-MM-dd HH:mm:ss");
+            System.out.println(String.format("[消息排序] %s 群组 %d 检测到消息时序异常 (乱序:%d/%d, 最大时差:%ds)", 
+                currentTime, group.getId(), outOfOrderCount, messages.size(), maxTimeGap / 1000));
+            
+            // 输出前3条和后3条消息的时间戳用于调试
+            System.out.println("[时序调试] 原始消息时间戳:");
+            for (int i = 0; i < Math.min(3, messages.size()); i++) {
+                System.out.println(String.format("  [%d] %s", i, 
+                    cn.hutool.core.date.DateUtil.format(new java.util.Date(messages.get(i).getTime()), "HH:mm:ss")));
+            }
+            if (messages.size() > 6) {
+                System.out.println("  ...");
+            }
+            for (int i = Math.max(3, messages.size() - 3); i < messages.size(); i++) {
+                System.out.println(String.format("  [%d] %s", i, 
+                    cn.hutool.core.date.DateUtil.format(new java.util.Date(messages.get(i).getTime()), "HH:mm:ss")));
+            }
+        }
+        
+        // 使用排序后的消息列表
+        sendMessagesInOrder(sortedMessages, group);
         
         long endTime = System.currentTimeMillis();
         PerformanceMonitor.getInstance().recordQuery(endTime - startTime);
-        
         // 智能缓存清理：基于活跃度和消息数量动态调整
-        if (messages.size() > 30) {
+        if (sortedMessages.size() > 30) {
             PerformanceMonitor monitor = PerformanceMonitor.getInstance();
             
             // 简化清理策略，移除活跃度判断
@@ -1158,50 +1212,97 @@ public class Pocket48Sender extends Sender {
      * @param group 群组
      */
     private void sendMessagesSequentially(List<Pocket48Message> messages, Group group) {
-        // 按时间戳严格排序，确保消息顺序
-        messages.sort((m1, m2) -> Long.compare(m1.getTime(), m2.getTime()));
-        
-        // 异步处理机制：避免消息过多时排队延迟累积
-        CompletableFuture<Void> previousTask = CompletableFuture.completedFuture(null);
-        
-        for (int i = 0; i < messages.size(); i++) {
-            final int index = i;
-            final Pocket48Message message = messages.get(i);
-            final Pocket48Message nextMessage = (i < messages.size() - 1) ? messages.get(i + 1) : null;
+        // 强制排序：无论如何都要确保消息按时间戳严格排序
+        if (messages.size() > 1) {
+            // 记录排序前的状态用于调试
+            List<Long> originalTimes = new ArrayList<>();
+            for (Pocket48Message msg : messages) {
+                originalTimes.add(msg.getTime());
+            }
             
-            // 链式异步处理：每条消息处理完立即发送，避免排队累积
-            previousTask = previousTask.thenCompose(v -> 
-                CompletableFuture.supplyAsync(() -> {
-                    try {
-                        // 根据消息类型选择处理策略
-                        Pocket48SenderMessage senderMessage;
-                        if (isTextMessage(message)) {
-                            // 文本消息：快速处理和发送
-                            senderMessage = pharseMessageFast(message, group, false);
-                        } else {
-                            // 媒体消息：完整处理但保持顺序
-                            senderMessage = pharseMessage(message, group, false);
-                        }
-                        
-                        // 立即发送处理完的消息
-                        if (senderMessage != null) {
-                            sendSingleMessage(senderMessage, group);
-                        }
-                        
-                        return senderMessage;
-                    } catch (Exception e) {
-                        System.err.println("[警告] 消息处理失败: " + e.getMessage());
-                        return null;
+            // 强制按时间戳排序
+            messages.sort((m1, m2) -> Long.compare(m1.getTime(), m2.getTime()));
+            
+            // 验证排序后是否有变化
+            boolean orderChanged = false;
+            for (int i = 0; i < messages.size(); i++) {
+                if (!Long.valueOf(messages.get(i).getTime()).equals(originalTimes.get(i))) {
+                    orderChanged = true;
+                    break;
+                }
+            }
+            
+            // 如果顺序发生了变化，记录详细信息
+            if (orderChanged) {
+                String currentTime = cn.hutool.core.date.DateUtil.format(new java.util.Date(), "yyyy-MM-dd HH:mm:ss");
+                System.out.println(String.format("[发送器] %s 群组 %d 强制重排序消息批次 (共%d条)", 
+                    currentTime, group.getId(), messages.size()));
+                
+                // 输出排序前后的时间戳对比（仅前5条和后5条）
+                System.out.println("[排序对比] 原始顺序 -> 排序后:");
+                int showCount = Math.min(5, messages.size());
+                for (int i = 0; i < showCount; i++) {
+                    String originalTimeStr = cn.hutool.core.date.DateUtil.format(new java.util.Date(originalTimes.get(i)), "HH:mm:ss");
+                    String sortedTimeStr = cn.hutool.core.date.DateUtil.format(new java.util.Date(messages.get(i).getTime()), "HH:mm:ss");
+                    System.out.println(String.format("  [%d] %s -> %s", i, originalTimeStr, sortedTimeStr));
+                }
+                if (messages.size() > 10) {
+                    System.out.println("  ...");
+                    for (int i = messages.size() - showCount; i < messages.size(); i++) {
+                        String originalTimeStr = cn.hutool.core.date.DateUtil.format(new java.util.Date(originalTimes.get(i)), "HH:mm:ss");
+                        String sortedTimeStr = cn.hutool.core.date.DateUtil.format(new java.util.Date(messages.get(i).getTime()), "HH:mm:ss");
+                        System.out.println(String.format("  [%d] %s -> %s", i, originalTimeStr, sortedTimeStr));
                     }
-                })
-            ).thenCompose(senderMessage -> {
-                // 直接返回，无需延迟处理
-                return CompletableFuture.completedFuture(null);
-            });
+                }
+            }
         }
         
-        // 移除超时等待，直接异步处理，不阻塞主线程
-        // 原来的60秒超时等待已移除，消息将异步处理完成
+        // 同步发送机制：确保消息严格按时间顺序发送
+        for (int i = 0; i < messages.size(); i++) {
+            final Pocket48Message message = messages.get(i);
+            
+            try {
+                // 根据消息类型选择处理策略
+                Pocket48SenderMessage senderMessage;
+                if (isTextMessage(message)) {
+                    // 文本消息：快速处理和发送
+                    senderMessage = pharseMessageFast(message, group, false);
+                } else {
+                    // 媒体消息：完整处理但保持顺序
+                    senderMessage = pharseMessage(message, group, false);
+                }
+                
+                // 立即同步发送处理完的消息，确保顺序
+                if (senderMessage != null) {
+                    sendSingleMessage(senderMessage, group);
+                    
+                    // 记录发送完成的消息时间戳（用于调试）
+                    String messageTimeStr = cn.hutool.core.date.DateUtil.format(new java.util.Date(message.getTime()), "HH:mm:ss");
+                    String sendTimeStr = cn.hutool.core.date.DateUtil.format(new java.util.Date(), "HH:mm:ss");
+                    
+                    // 只在时间差异较大时输出警告
+                    long timeDiff = Math.abs(System.currentTimeMillis() - message.getTime());
+                    if (timeDiff > 60000) { // 超过1分钟才警告
+                        System.out.println(String.format("[时序警告] 消息时间: %s, 发送时间: %s, 时差: %d秒", 
+                            messageTimeStr, sendTimeStr, timeDiff / 1000));
+                    }
+                }
+                
+                // 添加适当的发送间隔，避免过快发送导致顺序混乱
+                if (i < messages.size() - 1) {
+                    try {
+                        Thread.sleep(50); // 50ms间隔，确保发送顺序
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+                
+            } catch (Exception e) {
+                System.err.println(String.format("[发送错误] 消息发送失败: %s", e.getMessage()));
+                e.printStackTrace();
+            }
+        }
     }
     
     /**
